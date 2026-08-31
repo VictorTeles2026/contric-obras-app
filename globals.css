@@ -1,0 +1,11 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html, body {
+  height: 100%;
+}
+
+input[type="date"]::-webkit-calendar-picker-indicator {
+  filter: none;
+}
