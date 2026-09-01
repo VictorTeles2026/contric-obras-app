@@ -18,9 +18,6 @@ export default function DashboardPage() {
           <h1 className="font-head font-bold text-xl">Visão Geral</h1>
           <p className="text-sm text-muted">Olá, {usuario?.nome?.split(" ")[0]}.</p>
         </div>
-        <a href="/cronograma" className="px-4 py-2 rounded-lg bg-navy text-white text-sm font-semibold">
-          + Novo PI
-        </a>
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-6">

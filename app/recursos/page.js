@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState } from "react";
 import { useTabela, registrarLog } from "../../lib/dados";
 import { useAuth, podeEditar } from "../../lib/AuthContext";
 import { supabase } from "../../lib/supabase";
@@ -15,10 +15,12 @@ const TIPOS_RECURSO = [
   ["canteiro", "Canteiro"],
   ["conteiner", "Contêiner"],
 ];
+const UNIDADES = [["hora", "Hora"], ["diaria", "Diária"], ["semana", "Semana"], ["quinzena", "Quinzena"], ["mes", "Mês"]];
 const PERFIS_COM_ALOCACAO = ["lider", "funcionario", "terceiro"];
 
 function hojeISO() { return new Date().toISOString().slice(0, 10); }
 function sobrepoe(iniA, fimA, iniB, fimB) { return iniA <= fimB && iniB <= fimA; }
+function rotuloUnidade(u) { return UNIDADES.find((x) => x[0] === u)?.[1] || u; }
 
 export default function RecursosPage() {
   const { usuario } = useAuth();
@@ -33,19 +35,19 @@ export default function RecursosPage() {
   const alocsDoSelecionado = alocacoes.filter((a) => a.recurso_id === selecionadoId);
 
   const [novoOpen, setNovoOpen] = useState(false);
+  const [editarOpen, setEditarOpen] = useState(false);
   const [nrNome, setNrNome] = useState("");
   const [nrTipo, setNrTipo] = useState("mao_obra_propria");
-  const [nrCusto, setNrCusto] = useState(50);
   const [nrUnidade, setNrUnidade] = useState("hora");
   const [nrUsuarioId, setNrUsuarioId] = useState("");
   const ehMaoDeObra = (t) => t === "mao_obra_propria" || t === "mao_obra_terceira";
   const usuariosElegiveis = usuarios.filter((u) => PERFIS_COM_ALOCACAO.includes(u.perfil));
-  const usuarioJaVinculado = (id) => recursos.some((r) => r.usuario_id === id);
+  const usuarioJaVinculado = (id) => recursos.some((r) => r.usuario_id === id && r.id !== selecionadoId);
 
   const criarRecurso = async () => {
     if (!nrNome.trim()) return;
     const { data, error } = await supabase.from("recursos").insert({
-      nome: nrNome, tipo: nrTipo, custo_valor: Number(nrCusto), custo_unidade: nrUnidade,
+      nome: nrNome, tipo: nrTipo, custo_unidade: nrUnidade,
       usuario_id: ehMaoDeObra(nrTipo) && nrUsuarioId ? nrUsuarioId : null,
     }).select().single();
     if (!error) {
@@ -54,6 +56,23 @@ export default function RecursosPage() {
       setSelecionadoId(data.id);
       recarregarRecursos();
     }
+  };
+
+  const abrirEdicao = () => {
+    if (!selecionado) return;
+    setNrNome(selecionado.nome); setNrTipo(selecionado.tipo);
+    setNrUnidade(selecionado.custo_unidade); setNrUsuarioId(selecionado.usuario_id || "");
+    setEditarOpen(true);
+  };
+  const salvarEdicao = async () => {
+    if (!nrNome.trim() || !selecionado) return;
+    await supabase.from("recursos").update({
+      nome: nrNome, tipo: nrTipo, custo_unidade: nrUnidade,
+      usuario_id: ehMaoDeObra(nrTipo) && nrUsuarioId ? nrUsuarioId : null,
+    }).eq("id", selecionado.id);
+    await registrarLog(usuario, "Editou recurso", nrNome);
+    setEditarOpen(false);
+    recarregarRecursos();
   };
 
   const [avisoOverlap, setAvisoOverlap] = useState(false);
@@ -103,37 +122,20 @@ export default function RecursosPage() {
         </div>
 
         {novoOpen && (
-          <div className="bg-panel rounded-lg p-3 mb-3 flex flex-col gap-2">
-            <input placeholder="Nome" value={nrNome} onChange={(e) => setNrNome(e.target.value)} className="input" />
-            <select value={nrTipo} onChange={(e) => setNrTipo(e.target.value)} className="input">
-              {TIPOS_RECURSO.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-            </select>
-            <div className="flex gap-2">
-              <input type="number" value={nrCusto} onChange={(e) => setNrCusto(e.target.value)} className="input flex-1" />
-              <select value={nrUnidade} onChange={(e) => setNrUnidade(e.target.value)} className="input flex-1">
-                {["hora", "dia", "semana", "mes"].map((u) => <option key={u} value={u}>{u}</option>)}
-              </select>
-            </div>
-            {ehMaoDeObra(nrTipo) && (
-              <select value={nrUsuarioId} onChange={(e) => setNrUsuarioId(e.target.value)} className="input">
-                <option value="">Vincular a usuário (opcional)</option>
-                {usuariosElegiveis.map((u) => (
-                  <option key={u.id} value={u.id} disabled={usuarioJaVinculado(u.id)}>
-                    {u.nome}{usuarioJaVinculado(u.id) ? " — já vinculado" : ""}
-                  </option>
-                ))}
-              </select>
-            )}
-            <button onClick={criarRecurso} className="py-1.5 rounded-lg bg-navy text-white text-xs font-semibold">Criar</button>
-          </div>
+          <RecursoForm
+            nome={nrNome} setNome={setNrNome} tipo={nrTipo} setTipo={setNrTipo}
+            unidade={nrUnidade} setUnidade={setNrUnidade} usuarioId={nrUsuarioId} setUsuarioId={setNrUsuarioId}
+            ehMaoDeObra={ehMaoDeObra} usuariosElegiveis={usuariosElegiveis} usuarioJaVinculado={usuarioJaVinculado}
+            onSalvar={criarRecurso} rotuloBotao="Criar"
+          />
         )}
 
         <div className="flex flex-col gap-1">
           {recursos.map((r) => (
-            <button key={r.id} onClick={() => { setSelecionadoId(r.id); setAvisoOverlap(false); setEditandoAlocId(null); }}
+            <button key={r.id} onClick={() => { setSelecionadoId(r.id); setAvisoOverlap(false); setEditandoAlocId(null); setEditarOpen(false); }}
               className={`text-left p-2 rounded-lg border text-xs ${selecionadoId === r.id ? "border-cyan bg-cyan/5" : "border-line"}`}>
               <div className="font-semibold">{r.nome}</div>
-              <div className="text-muteddim font-mono text-[10px]">{TIPOS_RECURSO.find((t) => t[0] === r.tipo)?.[1]} · R$ {r.custo_valor}/{r.custo_unidade}</div>
+              <div className="text-muteddim font-mono text-[10px]">{TIPOS_RECURSO.find((t) => t[0] === r.tipo)?.[1]} · apropriação por {rotuloUnidade(r.custo_unidade)}</div>
             </button>
           ))}
         </div>
@@ -143,12 +145,29 @@ export default function RecursosPage() {
         {!selecionado && <div className="text-sm text-muteddim">Selecione um recurso à esquerda.</div>}
         {selecionado && (
           <>
-            <div className="mb-4">
-              <div className="font-head font-bold text-lg">{selecionado.nome}</div>
-              {selecionado.usuario_id && (
-                <div className="text-xs text-cyan font-mono">Vinculado a: {usuarios.find((u) => u.id === selecionado.usuario_id)?.nome}</div>
+            <div className="mb-4 flex items-start justify-between">
+              <div>
+                <div className="font-head font-bold text-lg">{selecionado.nome}</div>
+                <div className="text-xs text-muted">{TIPOS_RECURSO.find((t) => t[0] === selecionado.tipo)?.[1]} · apropriação por {rotuloUnidade(selecionado.custo_unidade)}</div>
+                {selecionado.usuario_id && (
+                  <div className="text-xs text-cyan font-mono">Vinculado a: {usuarios.find((u) => u.id === selecionado.usuario_id)?.nome}</div>
+                )}
+              </div>
+              {editavel && (
+                <button onClick={abrirEdicao} className="text-xs border border-line rounded-full px-3 py-1 text-muted shrink-0">Editar Recurso</button>
               )}
             </div>
+
+            {editarOpen && (
+              <div className="mb-4 max-w-sm">
+                <RecursoForm
+                  nome={nrNome} setNome={setNrNome} tipo={nrTipo} setTipo={setNrTipo}
+                  unidade={nrUnidade} setUnidade={setNrUnidade} usuarioId={nrUsuarioId} setUsuarioId={setNrUsuarioId}
+                  ehMaoDeObra={ehMaoDeObra} usuariosElegiveis={usuariosElegiveis} usuarioJaVinculado={usuarioJaVinculado}
+                  onSalvar={salvarEdicao} rotuloBotao="Salvar alterações" onCancelar={() => setEditarOpen(false)}
+                />
+              </div>
+            )}
 
             {editavel && (
               <div className="bg-panel rounded-lg p-3 mb-4 flex flex-col gap-2">
@@ -201,10 +220,41 @@ export default function RecursosPage() {
         )}
       </div>
 
-      <style jsx>{`
+      <style jsx global>{`
         .input { width: 100%; padding: 7px 9px; border-radius: 8px; border: 1px solid #D7E0EC; font-size: 12.5px; background: white; }
       `}</style>
     </div>
     </PainelShell>
+  );
+}
+
+function RecursoForm({ nome, setNome, tipo, setTipo, unidade, setUnidade, usuarioId, setUsuarioId, ehMaoDeObra, usuariosElegiveis, usuarioJaVinculado, onSalvar, rotuloBotao, onCancelar }) {
+  return (
+    <div className="bg-panel rounded-lg p-3 mb-3 flex flex-col gap-2">
+      <input placeholder="Nome" value={nome} onChange={(e) => setNome(e.target.value)} className="input" />
+      <select value={tipo} onChange={(e) => setTipo(e.target.value)} className="input">
+        {TIPOS_RECURSO.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+      </select>
+      <div>
+        <div className="text-[10px] text-muteddim mb-1">PERÍODO DE APROPRIAÇÃO</div>
+        <select value={unidade} onChange={(e) => setUnidade(e.target.value)} className="input">
+          {UNIDADES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+        </select>
+      </div>
+      {ehMaoDeObra(tipo) && (
+        <select value={usuarioId} onChange={(e) => setUsuarioId(e.target.value)} className="input">
+          <option value="">Vincular a usuário (opcional)</option>
+          {usuariosElegiveis.map((u) => (
+            <option key={u.id} value={u.id} disabled={usuarioJaVinculado(u.id)}>
+              {u.nome}{usuarioJaVinculado(u.id) ? " — já vinculado" : ""}
+            </option>
+          ))}
+        </select>
+      )}
+      <div className="flex gap-2">
+        <button onClick={onSalvar} className="flex-1 py-1.5 rounded-lg bg-navy text-white text-xs font-semibold">{rotuloBotao}</button>
+        {onCancelar && <button onClick={onCancelar} className="px-3 py-1.5 text-xs text-muted">Cancelar</button>}
+      </div>
+    </div>
   );
 }

@@ -22,12 +22,35 @@ function calcularPico(alocs) {
   eventos.forEach(([, d]) => { atual += d; pico = Math.max(pico, atual); });
   return pico;
 }
+function formatarData(ts) {
+  return new Date(ts).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
+}
+function EixoDatas({ escala, largura }) {
+  const span = escala.max - escala.min || 1;
+  const diasTotais = span / 86400000;
+  const passoDias = diasTotais > 120 ? 14 : diasTotais > 45 ? 7 : diasTotais > 20 ? 3 : 1;
+  const marcas = [];
+  for (let t = escala.min; t <= escala.max; t += passoDias * 86400000) marcas.push(t);
+  return (
+    <div className="flex items-center mb-1">
+      <span className="w-52 shrink-0" />
+      <div className="relative h-5" style={{ width: largura }}>
+        {marcas.map((t) => (
+          <div key={t} className="absolute top-0 text-[9px] font-mono text-muteddim border-l border-line pl-1" style={{ left: ((t - escala.min) / span) * largura }}>
+            {formatarData(t)}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 export default function UtilizacaoRecursosPage() {
   const { dados: recursos } = useTabela("recursos");
   const { dados: alocacoes } = useTabela("alocacoes_recurso");
   const { dados: pis } = useTabela("pis");
   const [filtroTipos, setFiltroTipos] = useState([]);
+  const [zoom, setZoom] = useState(1);
 
   const piNome = (id) => pis.find((p) => p.id === id)?.codigo || "?";
   const piIndex = (id) => pis.findIndex((p) => p.id === id);
@@ -43,10 +66,12 @@ export default function UtilizacaoRecursosPage() {
       return { min: hoje.getTime(), max: hoje.getTime() + 14 * 86400000 };
     }
     const tempos = todasAlocs.flatMap((a) => [new Date(a.periodo_inicio).getTime(), new Date(a.periodo_fim).getTime()]);
-    return { min: Math.min(...tempos), max: Math.max(...tempos) };
+    const min = Math.min(...tempos), max = Math.max(...tempos);
+    const folga = (max - min) * 0.04;
+    return { min: min - folga, max: max + folga };
   }, [todasAlocs]);
 
-  const largura = 560;
+  const largura = 560 * zoom;
   const span = escala.max - escala.min || 1;
 
   const toggleTipo = (t) => setFiltroTipos((p) => p.includes(t) ? p.filter((x) => x !== t) : [...p, t]);
@@ -54,7 +79,14 @@ export default function UtilizacaoRecursosPage() {
   return (
     <PainelShell>
       <div className="p-6">
-        <h1 className="font-head font-bold text-xl mb-1">Utilização de Recursos</h1>
+        <div className="flex items-center justify-between flex-wrap gap-2 mb-1">
+          <h1 className="font-head font-bold text-xl">Utilização de Recursos</h1>
+          <div className="flex items-center gap-1 border border-line rounded-lg px-2 py-1">
+            <button onClick={() => setZoom((z) => Math.max(0.5, z - 0.5))} className="px-2 text-sm text-muted">−</button>
+            <span className="text-[10px] font-mono text-muteddim w-10 text-center">{Math.round(zoom * 100)}%</span>
+            <button onClick={() => setZoom((z) => Math.min(4, z + 0.5))} className="px-2 text-sm text-muted">+</button>
+          </div>
+        </div>
         <p className="text-sm text-muted mb-4">Nível de utilização e sobreposições — barras vermelhas indicam recurso acima de 100%.</p>
 
         <div className="flex flex-wrap gap-2 mb-5">
@@ -64,6 +96,7 @@ export default function UtilizacaoRecursosPage() {
         </div>
 
         <div className="overflow-x-auto flex flex-col gap-5">
+          {recursosFiltrados.length > 0 && <EixoDatas escala={escala} largura={largura} />}
           {recursosFiltrados.map((r) => {
             const alocs = alocacoes.filter((a) => a.recurso_id === r.id);
             const percentuais = alocs.filter((a) => a.modo === "periodo_percentual");

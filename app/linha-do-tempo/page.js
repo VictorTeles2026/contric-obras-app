@@ -14,12 +14,33 @@ const STATUS_COR = {
 function diffDias(iso) {
   return Math.ceil((new Date(iso + "T00:00:00") - new Date(new Date().toISOString().slice(0, 10) + "T00:00:00")) / 86400000);
 }
+function formatarData(ts) {
+  return new Date(ts).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
+}
+
+function EixoDatas({ escala, largura }) {
+  const span = escala.max - escala.min || 1;
+  const diasTotais = span / 86400000;
+  const passoDias = diasTotais > 120 ? 14 : diasTotais > 45 ? 7 : diasTotais > 20 ? 3 : 1;
+  const marcas = [];
+  for (let t = escala.min; t <= escala.max; t += passoDias * 86400000) marcas.push(t);
+  return (
+    <div className="relative h-5 mb-1" style={{ width: largura }}>
+      {marcas.map((t) => (
+        <div key={t} className="absolute top-0 text-[9px] font-mono text-muteddim border-l border-line pl-1" style={{ left: ((t - escala.min) / span) * largura }}>
+          {formatarData(t)}
+        </div>
+      ))}
+    </div>
+  );
+}
 
 export default function LinhaDoTempoPage() {
   const { dados: pis } = useTabela("pis", { order: { coluna: "codigo" } });
   const { dados: etapas } = useTabela("etapas");
   const [selecionarAberto, setSelecionarAberto] = useState(false);
   const [piIds, setPiIds] = useState([]);
+  const [zoom, setZoom] = useState(1);
 
   const pisSelecionados = pis.filter((p) => piIds.includes(p.id));
   const macroEtapas = etapas.filter((e) => !e.parent_etapa_id && piIds.includes(e.pi_id));
@@ -33,28 +54,38 @@ export default function LinhaDoTempoPage() {
       e.data_prevista_inicio ? new Date(e.data_prevista_inicio).getTime() : null,
       e.data_prevista_fim ? new Date(e.data_prevista_fim).getTime() : null,
     ]).filter(Boolean);
-    return { min: Math.min(...tempos), max: Math.max(...tempos) };
+    const min = Math.min(...tempos), max = Math.max(...tempos);
+    const folga = (max - min) * 0.04;
+    return { min: min - folga, max: max + folga };
   }, [macroEtapas]);
 
-  const largura = 640;
+  const largura = 640 * zoom;
   const span = escala.max - escala.min || 1;
 
   return (
     <PainelShell>
       <div className="p-6">
-        <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
           <div>
             <h1 className="font-head font-bold text-xl">Linha do Tempo</h1>
             <p className="text-sm text-muted">Visão multi-PI, para apresentação.</p>
           </div>
-          <button onClick={() => setSelecionarAberto(true)} className="px-4 py-2 rounded-lg border border-cyan text-cyan text-sm font-semibold">
-            🔍 Selecionar PIs ({piIds.length} de {pis.length})
-          </button>
+          <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1 border border-line rounded-lg px-2 py-1">
+              <button onClick={() => setZoom((z) => Math.max(0.5, z - 0.5))} className="px-2 text-sm text-muted">−</button>
+              <span className="text-[10px] font-mono text-muteddim w-10 text-center">{Math.round(zoom * 100)}%</span>
+              <button onClick={() => setZoom((z) => Math.min(4, z + 0.5))} className="px-2 text-sm text-muted">+</button>
+            </div>
+            <button onClick={() => setSelecionarAberto(true)} className="px-4 py-2 rounded-lg border border-cyan text-cyan text-sm font-semibold">
+              🔍 Selecionar PIs ({piIds.length} de {pis.length})
+            </button>
+          </div>
         </div>
 
         {pisSelecionados.length === 0 && <div className="text-sm text-muteddim">Nenhum PI selecionado — clique em "Selecionar PIs" acima.</div>}
 
         <div className="overflow-x-auto">
+          {pisSelecionados.length > 0 && <EixoDatas escala={escala} largura={largura} />}
           {pisSelecionados.map((pi) => {
             const itens = macroEtapas.filter((e) => e.pi_id === pi.id);
             return (

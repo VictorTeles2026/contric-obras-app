@@ -8,13 +8,13 @@ const NAV = [
   { href: "/dashboard", label: "Dashboard" },
   { href: "/cronograma", label: "Cronograma" },
   { href: "/linha-do-tempo", label: "Linha do Tempo" },
+  { href: "/recursos", label: "Recursos" },
+  { href: "/utilizacao-recursos", label: "Utilização" },
   { href: "/rdo", label: "RDO" },
   { href: "/aprovacoes", label: "Aprovações" },
   { href: "/historico", label: "Histórico" },
-  { href: "/recursos", label: "Recursos" },
-  { href: "/utilizacao-recursos", label: "Utilização" },
-  { href: "/usuarios", label: "Usuários" },
   { href: "/auditoria", label: "Auditoria" },
+  { href: "/usuarios", label: "Usuários" },
 ];
 
 export default function PainelShell({ children }) {
