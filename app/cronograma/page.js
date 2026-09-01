@@ -127,12 +127,24 @@ export default function CronogramaPage() {
     recarregarEtapas();
   };
 
+  const tornarSubDe = async (dragId, macroId) => {
+    if (dragId === macroId) return;
+    const filhas = etapasDoPi.filter((e) => e.parent_etapa_id === dragId);
+    for (const filha of filhas) {
+      await supabase.from("etapas").update({ parent_etapa_id: macroId }).eq("id", filha.id);
+    }
+    await supabase.from("etapas").update({ parent_etapa_id: macroId }).eq("id", dragId);
+    recarregarEtapas();
+  };
+
   const containerRef = useRef(null);
   const anchorRefs = useRef({});
   const [lines, setLines] = useState([]);
   const [dragOverId, setDragOverId] = useState(null);
   const [dragOverRowId, setDragOverRowId] = useState(null);
   const [ctxMenu, setCtxMenu] = useState(null);
+
+  const GUTTER_X = 14;
 
   const recalcularLinhas = useCallback(() => {
     const container = containerRef.current;
@@ -218,18 +230,17 @@ export default function CronogramaPage() {
               </button>
             )}
 
-            <svg className="absolute inset-0 w-full h-full pointer-events-none" style={{ zIndex: 1 }}>
+            <svg className="absolute inset-0 w-full h-full pointer-events-none" style={{ zIndex: 5 }}>
               <defs>
                 <marker id="seta" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto">
                   <path d="M0,0 L8,4 L0,8 Z" fill="#0B84A5" />
                 </marker>
               </defs>
               {lines.map((l) => {
-                const midY = (l.y1 + l.y2) / 2;
-                const path = `M ${l.x1} ${l.y1} C ${l.x1} ${midY}, ${l.x2} ${midY}, ${l.x2} ${l.y2}`;
+                const path = `M ${l.x1} ${l.y1} H ${GUTTER_X} V ${l.y2} H ${l.x2}`;
                 return (
                   <g key={l.key}>
-                    <path d={path} stroke="#0B84A5" strokeWidth="1.4" strokeDasharray="4 3" fill="none" opacity="0.65" markerEnd="url(#seta)" pointerEvents="none" />
+                    <path d={path} stroke="#0B84A5" strokeWidth="1.4" strokeDasharray="4 3" fill="none" opacity="0.75" markerEnd="url(#seta)" pointerEvents="none" />
                     <path d={path} stroke="transparent" strokeWidth="12" fill="none" style={{ pointerEvents: "stroke", cursor: "context-menu" }}
                       onContextMenu={(e) => {
                         e.preventDefault();
@@ -248,7 +259,7 @@ export default function CronogramaPage() {
               </div>
             )}
 
-            <div className="flex flex-col gap-2 relative" style={{ zIndex: 2 }}>
+            <div className="flex flex-col gap-2 relative pl-6" style={{ zIndex: 2 }}>
               {macroEtapas.map((macro) => (
                 <div key={macro.id}>
                   <EtapaRow
@@ -258,7 +269,7 @@ export default function CronogramaPage() {
                     onCreateDependency={criarDependencia} dragOverId={dragOverId} setDragOverId={setDragOverId}
                     onReordenar={reordenarEtapa} dragOverRowId={dragOverRowId} setDragOverRowId={setDragOverRowId}
                   />
-                  <div className="ml-5 border-l-2 border-line pl-2 mt-1 flex flex-col gap-1">
+                  <SubEtapasDropzone macroId={macro.id} editavel={editavel} onDropTornarSub={tornarSubDe}>
                     {subDe(macro.id).map((sub) => (
                       <EtapaRow
                         key={sub.id} etapa={sub} editavel={editavel} onChange={atualizarEtapa} onDelete={excluirEtapa}
@@ -273,7 +284,7 @@ export default function CronogramaPage() {
                         + sub-etapa em "{macro.nome}"
                       </button>
                     )}
-                  </div>
+                  </SubEtapasDropzone>
                 </div>
               ))}
             </div>
@@ -282,6 +293,27 @@ export default function CronogramaPage() {
       </div>
     </div>
     </PainelShell>
+  );
+}
+
+function SubEtapasDropzone({ macroId, editavel, onDropTornarSub, children }) {
+  const [emCima, setEmCima] = useState(false);
+  return (
+    <div
+      onDragOver={(e) => { if (editavel && e.dataTransfer.types.includes("text/x-reorder-etapa")) { e.preventDefault(); setEmCima(true); } }}
+      onDragLeave={() => setEmCima(false)}
+      onDrop={(e) => {
+        if (!editavel || !e.dataTransfer.types.includes("text/x-reorder-etapa")) return;
+        e.preventDefault();
+        setEmCima(false);
+        const dragId = e.dataTransfer.getData("text/x-reorder-etapa");
+        if (dragId && dragId !== macroId) onDropTornarSub(dragId, macroId);
+      }}
+      className={`ml-5 border-l-2 pl-2 mt-1 flex flex-col gap-1 rounded-r-lg ${emCima ? "border-cyan bg-cyan/5" : "border-line"}`}
+    >
+      {children}
+      {emCima && <div className="text-[10px] text-cyan font-mono py-0.5">solte para virar sub-etapa aqui</div>}
+    </div>
   );
 }
 
