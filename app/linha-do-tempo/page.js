@@ -10,6 +10,7 @@ const STATUS_COR = {
   concluida: "#2E9E44",
   parada: "#D64545",
 };
+const LABEL_W = 220;
 
 function diffDias(iso) {
   return Math.ceil((new Date(iso + "T00:00:00") - new Date(new Date().toISOString().slice(0, 10) + "T00:00:00")) / 86400000);
@@ -17,22 +18,9 @@ function diffDias(iso) {
 function formatarData(ts) {
   return new Date(ts).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
 }
-
-function EixoDatas({ escala, largura }) {
-  const span = escala.max - escala.min || 1;
+function passoDiasPara(span) {
   const diasTotais = span / 86400000;
-  const passoDias = diasTotais > 120 ? 14 : diasTotais > 45 ? 7 : diasTotais > 20 ? 3 : 1;
-  const marcas = [];
-  for (let t = escala.min; t <= escala.max; t += passoDias * 86400000) marcas.push(t);
-  return (
-    <div className="relative h-5 mb-1" style={{ width: largura }}>
-      {marcas.map((t) => (
-        <div key={t} className="absolute top-0 text-[9px] font-mono text-muteddim border-l border-line pl-1" style={{ left: ((t - escala.min) / span) * largura }}>
-          {formatarData(t)}
-        </div>
-      ))}
-    </div>
-  );
+  return diasTotais > 120 ? 14 : diasTotais > 45 ? 7 : diasTotais > 20 ? 3 : 1;
 }
 
 export default function LinhaDoTempoPage() {
@@ -55,12 +43,19 @@ export default function LinhaDoTempoPage() {
       e.data_prevista_fim ? new Date(e.data_prevista_fim).getTime() : null,
     ]).filter(Boolean);
     const min = Math.min(...tempos), max = Math.max(...tempos);
-    const folga = (max - min) * 0.04;
+    const folga = Math.max((max - min) * 0.04, 2 * 86400000);
     return { min: min - folga, max: max + folga };
   }, [macroEtapas]);
 
   const largura = 640 * zoom;
   const span = escala.max - escala.min || 1;
+  const hojeX = ((Date.now() - escala.min) / span) * largura;
+  const marcas = useMemo(() => {
+    const passo = passoDiasPara(span);
+    const arr = [];
+    for (let t = escala.min; t <= escala.max; t += passo * 86400000) arr.push(t);
+    return arr;
+  }, [escala, span]);
 
   return (
     <PainelShell>
@@ -72,9 +67,9 @@ export default function LinhaDoTempoPage() {
           </div>
           <div className="flex items-center gap-2">
             <div className="flex items-center gap-1 border border-line rounded-lg px-2 py-1">
-              <button onClick={() => setZoom((z) => Math.max(0.5, z - 0.5))} className="px-2 text-sm text-muted">−</button>
+              <button onClick={() => setZoom((z) => Math.max(0.5, Number((z - 0.5).toFixed(1))))} className="px-2 text-sm text-muted">−</button>
               <span className="text-[10px] font-mono text-muteddim w-10 text-center">{Math.round(zoom * 100)}%</span>
-              <button onClick={() => setZoom((z) => Math.min(4, z + 0.5))} className="px-2 text-sm text-muted">+</button>
+              <button onClick={() => setZoom((z) => Math.min(4, Number((z + 0.5).toFixed(1))))} className="px-2 text-sm text-muted">+</button>
             </div>
             <button onClick={() => setSelecionarAberto(true)} className="px-4 py-2 rounded-lg border border-cyan text-cyan text-sm font-semibold">
               🔍 Selecionar PIs ({piIds.length} de {pis.length})
@@ -84,49 +79,79 @@ export default function LinhaDoTempoPage() {
 
         {pisSelecionados.length === 0 && <div className="text-sm text-muteddim">Nenhum PI selecionado — clique em "Selecionar PIs" acima.</div>}
 
-        <div className="overflow-x-auto">
-          {pisSelecionados.length > 0 && <EixoDatas escala={escala} largura={largura} />}
-          {pisSelecionados.map((pi) => {
-            const itens = macroEtapas.filter((e) => e.pi_id === pi.id);
-            return (
-              <div key={pi.id} className="mb-5">
-                <div className="text-xs font-mono text-cyan font-bold mb-1">{pi.codigo} — {pi.cliente}</div>
-                <div className="flex flex-col gap-1">
-                  {itens.map((e) => {
-                    const inicio = e.data_prevista_inicio ? new Date(e.data_prevista_inicio).getTime() : escala.min;
-                    const fim = e.data_prevista_fim ? new Date(e.data_prevista_fim).getTime() : inicio;
-                    const left = ((inicio - escala.min) / span) * largura;
-                    const width = Math.max(4, ((fim - inicio) / span) * largura);
-                    const dias = e.data_prevista_fim ? diffDias(e.data_prevista_fim) : null;
-                    const vencido = e.status !== "concluida" && dias !== null && dias < 0;
-                    const urgente = e.status !== "concluida" && dias !== null && dias >= 0 && dias <= 1;
-                    const atencao = e.status !== "concluida" && dias !== null && dias > 1 && dias <= 3;
-                    return (
-                      <div key={e.id} className="flex items-center gap-2" style={{ minWidth: largura + 220 }}>
-                        <span className="text-xs w-52 shrink-0 truncate">{e.nome}</span>
-                        <div className="relative h-4" style={{ width: largura }}>
-                          <div
-                            className="absolute top-1 h-2.5 rounded"
-                            style={{
-                              left, width,
-                              background: vencido ? "#D64545" : STATUS_COR[e.status],
-                              outline: urgente ? "2px solid #D64545" : atencao ? "2px solid #C97A21" : "none",
-                              opacity: vencido ? 1 : 0.85,
-                            }}
-                          />
-                        </div>
-                        <span className="text-[10px] font-mono text-muteddim w-16 shrink-0">
-                          {vencido ? "VENCIDO" : e.status === "em_andamento" ? `${e.percentual || 0}%` : ""}
-                        </span>
-                      </div>
-                    );
-                  })}
-                  {itens.length === 0 && <div className="text-xs text-muteddim ml-2">Sem macro-etapas.</div>}
+        {pisSelecionados.length > 0 && (
+          <div className="border border-line rounded-lg overflow-x-auto">
+            <div style={{ minWidth: LABEL_W + largura }}>
+              {/* cabeçalho: rótulo vazio (fixo) + régua de datas */}
+              <div className="flex sticky top-0 bg-white z-20 border-b border-line">
+                <div className="shrink-0 sticky left-0 bg-white z-30" style={{ width: LABEL_W }} />
+                <div className="relative h-6" style={{ width: largura }}>
+                  {marcas.map((t) => (
+                    <div key={t} className="absolute top-0 h-full text-[9px] font-mono text-muteddim border-l border-line pl-1 pt-1" style={{ left: ((t - escala.min) / span) * largura }}>
+                      {formatarData(t)}
+                    </div>
+                  ))}
                 </div>
               </div>
-            );
-          })}
-        </div>
+
+              {pisSelecionados.map((pi) => {
+                const itens = macroEtapas.filter((e) => e.pi_id === pi.id);
+                return (
+                  <div key={pi.id}>
+                    <div className="flex bg-panel">
+                      <div className="shrink-0 sticky left-0 bg-panel z-10 px-2 py-1 text-xs font-mono text-cyan font-bold border-r border-line" style={{ width: LABEL_W }}>
+                        {pi.codigo} — {pi.cliente}
+                      </div>
+                      <div style={{ width: largura }} />
+                    </div>
+
+                    {itens.map((e) => {
+                      const inicio = e.data_prevista_inicio ? new Date(e.data_prevista_inicio).getTime() : escala.min;
+                      const fim = e.data_prevista_fim ? new Date(e.data_prevista_fim).getTime() : inicio;
+                      const left = ((inicio - escala.min) / span) * largura;
+                      const width = Math.max(4, ((fim - inicio) / span) * largura);
+                      const dias = e.data_prevista_fim ? diffDias(e.data_prevista_fim) : null;
+                      const vencido = e.status !== "concluida" && dias !== null && dias < 0;
+                      const urgente = e.status !== "concluida" && dias !== null && dias >= 0 && dias <= 1;
+                      const atencao = e.status !== "concluida" && dias !== null && dias > 1 && dias <= 3;
+                      return (
+                        <div key={e.id} className="flex items-center border-b border-line/60">
+                          <div className="shrink-0 sticky left-0 bg-white z-10 px-2 py-1.5 text-xs truncate border-r border-line" style={{ width: LABEL_W }} title={e.nome}>
+                            {e.nome}
+                          </div>
+                          <div className="relative h-7" style={{ width: largura }}>
+                            <div className="absolute inset-0" style={{ left: hojeX, width: 1, background: "#D64545", opacity: 0.5 }} />
+                            <div
+                              className="absolute top-2 h-3 rounded"
+                              style={{
+                                left, width,
+                                background: vencido ? "#D64545" : STATUS_COR[e.status],
+                                outline: urgente ? "2px solid #D64545" : atencao ? "2px solid #C97A21" : "none",
+                                opacity: vencido ? 1 : 0.85,
+                              }}
+                              title={`${e.nome} · ${e.status}${e.status === "em_andamento" ? ` · ${e.percentual || 0}%` : ""}`}
+                            />
+                            {(vencido || e.status === "em_andamento") && (
+                              <span className="absolute top-2 text-[9px] font-mono text-muteddim" style={{ left: left + width + 4 }}>
+                                {vencido ? "VENCIDO" : `${e.percentual || 0}%`}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                    {itens.length === 0 && (
+                      <div className="flex">
+                        <div className="shrink-0 sticky left-0 bg-white z-10 px-2 py-1.5 text-xs text-muteddim border-r border-line" style={{ width: LABEL_W }}>Sem macro-etapas</div>
+                        <div style={{ width: largura }} />
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
       </div>
 
       {selecionarAberto && (
