@@ -3,17 +3,18 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "../../lib/AuthContext";
+import { rotaInicialPara } from "../../lib/rotas";
 
 export default function LoginPage() {
-  const { entrar, sessao } = useAuth();
+  const { entrar, sessao, usuario } = useAuth();
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [senha, setSenha] = useState("");
   const [erro, setErro] = useState("");
   const [carregando, setCarregando] = useState(false);
 
-  if (sessao) {
-    router.replace("/dashboard");
+  if (sessao && usuario) {
+    router.replace(rotaInicialPara(usuario));
   }
 
   const onSubmit = async (e) => {
@@ -26,7 +27,7 @@ export default function LoginPage() {
       setErro(error.message === "Invalid login credentials" ? "E-mail ou senha incorretos." : error.message);
       return;
     }
-    router.replace("/dashboard");
+    // o redirecionamento certo (por perfil) acontece assim que "usuario" carregar, acima
   };
 
   return (
