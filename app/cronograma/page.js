@@ -168,9 +168,8 @@ export default function CronogramaPage() {
       await registrarLog(usuario, "Alterou status de etapa", `"${atual.nome}" → ${patch.status}`);
     }
     await supabase.from("etapas").update(patch).eq("id", id);
-    recarregarEtapas();
   };
-  const excluirEtapa = async (id) => { await supabase.from("etapas").delete().eq("id", id); recarregarEtapas(); };
+  const excluirEtapa = async (id) => { await supabase.from("etapas").delete().eq("id", id); };
 
   const criarDependencia = async (origemId, destinoId) => {
     if (origemId === destinoId) return;
@@ -179,11 +178,9 @@ export default function CronogramaPage() {
     const origem = etapasDoPi.find((e) => e.id === origemId);
     await supabase.from("etapa_dependencias").insert({ etapa_id: destinoId, depende_de_etapa_id: origemId });
     await registrarLog(usuario, "Criou dependência", `"${destino?.nome}" passa a depender de "${origem?.nome}"`);
-    recarregarDependencias();
   };
   const removerDependencia = async (origemId, destinoId) => {
     await supabase.from("etapa_dependencias").delete().eq("etapa_id", destinoId).eq("depende_de_etapa_id", origemId);
-    recarregarDependencias();
   };
 
   const reordenarEtapa = async (dragId, targetId) => {
@@ -197,14 +194,12 @@ export default function CronogramaPage() {
       for (const filha of filhas) await supabase.from("etapas").update({ parent_etapa_id: novoParentId }).eq("id", filha.id);
     }
     await supabase.from("etapas").update({ parent_etapa_id: novoParentId }).eq("id", dragId);
-    recarregarEtapas();
   };
   const tornarSubDe = async (dragId, macroId) => {
     if (dragId === macroId) return;
     const filhas = etapasDoPi.filter((e) => e.parent_etapa_id === dragId);
     for (const filha of filhas) await supabase.from("etapas").update({ parent_etapa_id: macroId }).eq("id", filha.id);
     await supabase.from("etapas").update({ parent_etapa_id: macroId }).eq("id", dragId);
-    recarregarEtapas();
   };
 
   // ---- Equipe (áreas) ----
@@ -212,7 +207,6 @@ export default function CronogramaPage() {
     const atuais = etapa.areas || [];
     const novas = atuais.includes(area) ? atuais.filter((a) => a !== area) : [...atuais, area];
     await supabase.from("etapas").update({ areas: novas }).eq("id", etapa.id);
-    recarregarEtapas();
   };
 
   // ---- Alocação de recursos na etapa ----
@@ -227,7 +221,6 @@ export default function CronogramaPage() {
         periodo_fim: etapa.data_prevista_fim || todayISO(), percentual: 100,
       });
     }
-    recarregarAlocacoesRecurso();
   };
 
   const containerRef = useRef(null);
@@ -411,6 +404,30 @@ function SubEtapasDropzone({ macroId, editavel, onDropTornarSub, children }) {
   );
 }
 
+function useCampoDebounced(valorExterno, aoSalvar, atraso = 500) {
+  const [valor, setValor] = useState(valorExterno);
+  const sujoRef = useRef(false);
+  const timeoutRef = useRef(null);
+
+  useEffect(() => {
+    if (!sujoRef.current) setValor(valorExterno);
+  }, [valorExterno]);
+
+  useEffect(() => () => clearTimeout(timeoutRef.current), []);
+
+  const onChangeLocal = (novoValor) => {
+    setValor(novoValor);
+    sujoRef.current = true;
+    clearTimeout(timeoutRef.current);
+    timeoutRef.current = setTimeout(() => {
+      aoSalvar(novoValor);
+      sujoRef.current = false;
+    }, atraso);
+  };
+
+  return [valor, onChangeLocal];
+}
+
 function EtapaRow({ etapa, editavel, onChange, onDelete, deps, onRemoverDep, anchorRef, onCreateDependency, dragOverId, setDragOverId, onReordenar, dragOverRowId, setDragOverRowId, onToggleArea, recursos, alocs, onToggleRecurso }) {
   const [confirmarExclusao, setConfirmarExclusao] = useState(false);
   const [equipeAberta, setEquipeAberta] = useState(false);
@@ -419,6 +436,10 @@ function EtapaRow({ etapa, editavel, onChange, onDelete, deps, onRemoverDep, anc
   const isDragOverRow = dragOverRowId === etapa.id;
   const depsComSobreposicao = deps.filter((d) => d.data_prevista_fim && etapa.data_prevista_inicio && d.data_prevista_fim > etapa.data_prevista_inicio);
   const areas = etapa.areas || [];
+  const [nomeLocal, setNomeLocal] = useCampoDebounced(etapa.nome, (v) => onChange(etapa.id, { nome: v }));
+  const [inicioLocal, setInicioLocal] = useCampoDebounced(etapa.data_prevista_inicio || "", (v) => onChange(etapa.id, { data_prevista_inicio: v }), 300);
+  const [fimLocal, setFimLocal] = useCampoDebounced(etapa.data_prevista_fim || "", (v) => onChange(etapa.id, { data_prevista_fim: v }), 300);
+  const [percLocal, setPercLocal] = useCampoDebounced(etapa.percentual || 0, (v) => onChange(etapa.id, { percentual: Number(v) }));
 
   return (
     <div
@@ -453,19 +474,19 @@ function EtapaRow({ etapa, editavel, onChange, onDelete, deps, onRemoverDep, anc
         style={{ width: isDragOver ? 14 : 10, height: isDragOver ? 14 : 10, transition: "width .1s, height .1s" }}
         className={`rounded-full shrink-0 cursor-grab ${isDragOver ? "bg-green" : "bg-cyan"}`}
       />
-      <input value={etapa.nome} disabled={!editavel} onChange={(e) => onChange(etapa.id, { nome: e.target.value })}
+      <input value={nomeLocal} disabled={!editavel} onChange={(e) => setNomeLocal(e.target.value)}
         className="flex-1 min-w-[140px] px-2 py-1.5 rounded-lg border border-line text-sm font-head font-semibold bg-white disabled:bg-transparent disabled:border-transparent" />
 
       <div className="flex flex-col gap-0.5">
         <div className="flex gap-1">
-          <input type="date" value={etapa.data_prevista_inicio || ""} disabled={!editavel}
-            onChange={(e) => onChange(etapa.id, { data_prevista_inicio: e.target.value })}
+          <input type="date" value={inicioLocal} disabled={!editavel}
+            onChange={(e) => setInicioLocal(e.target.value)}
             className="px-2 py-1.5 rounded-lg border border-line text-xs bg-white" />
-          <input type="date" value={etapa.data_prevista_fim || ""} disabled={!editavel}
-            onChange={(e) => onChange(etapa.id, { data_prevista_fim: e.target.value })}
+          <input type="date" value={fimLocal} disabled={!editavel}
+            onChange={(e) => setFimLocal(e.target.value)}
             className="px-2 py-1.5 rounded-lg border border-line text-xs bg-white" />
         </div>
-        <ResumoDiasPeriodo dataInicio={etapa.data_prevista_inicio} dataFim={etapa.data_prevista_fim} />
+        <ResumoDiasPeriodo dataInicio={inicioLocal} dataFim={fimLocal} />
         {depsComSobreposicao.length > 0 && <div className="text-[10px] text-red">⚠ sobreposição de datas com dependência</div>}
       </div>
 
@@ -474,8 +495,8 @@ function EtapaRow({ etapa, editavel, onChange, onDelete, deps, onRemoverDep, anc
         {STATUS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
       </select>
       {etapa.status === "em_andamento" && (
-        <input type="number" min="0" max="100" value={etapa.percentual || 0} disabled={!editavel}
-          onChange={(e) => onChange(etapa.id, { percentual: Number(e.target.value) })}
+        <input type="number" min="0" max="100" value={percLocal} disabled={!editavel}
+          onChange={(e) => setPercLocal(e.target.value)}
           className="w-16 px-2 py-1.5 rounded-lg border border-line text-xs bg-white" />
       )}
 
