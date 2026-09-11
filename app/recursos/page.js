@@ -24,7 +24,6 @@ function rotuloUnidade(u) { return UNIDADES.find((x) => x[0] === u)?.[1] || u; }
 function rotuloTipo(t) { return TIPOS_RECURSO.find((x) => x[0] === t)?.[1] || t; }
 function tipoParaPerfil(perfil) {
   if (perfil === "terceiro") return "mao_obra_terceira";
-  if (perfil === "lider" || perfil === "funcionario") return "mao_obra_propria";
   return "mao_obra_propria";
 }
 
@@ -42,14 +41,22 @@ export default function RecursosPage() {
 
   const [novoOpen, setNovoOpen] = useState(false);
   const [editarOpen, setEditarOpen] = useState(false);
+  const [alocarOpen, setAlocarOpen] = useState(false);
   const [massaOpen, setMassaOpen] = useState(false);
   const [busca, setBusca] = useState("");
+  const [buscaAplicada, setBuscaAplicada] = useState("");
   const [gruposFechados, setGruposFechados] = useState([]);
 
   const usuariosElegiveis = usuarios.filter((u) => PERFIS_COM_ALOCACAO.includes(u.perfil));
 
+  const fecharTudoMenos = (aberto) => {
+    setNovoOpen(aberto === "novo");
+    setEditarOpen(aberto === "editar");
+    setAlocarOpen(aberto === "alocar");
+  };
+
   const recursosFiltrados = useMemo(() => {
-    const termo = busca.trim().toLowerCase();
+    const termo = buscaAplicada.trim().toLowerCase();
     if (!termo) return recursos;
     return recursos.filter((r) =>
       r.nome.toLowerCase().includes(termo) ||
@@ -57,7 +64,7 @@ export default function RecursosPage() {
       (r.atributos?.funcao || "").toLowerCase().includes(termo) ||
       (usuarios.find((u) => u.id === r.usuario_id)?.nome || "").toLowerCase().includes(termo)
     );
-  }, [recursos, busca, usuarios]);
+  }, [recursos, buscaAplicada, usuarios]);
 
   const grupos = useMemo(() => {
     const porTipo = {};
@@ -140,36 +147,31 @@ export default function RecursosPage() {
     <PainelShell>
     <div className="flex flex-col md:flex-row h-full">
       <div className="w-full md:w-80 border-b md:border-b-0 md:border-r border-line p-4 overflow-auto">
-        <div className="flex items-center justify-between mb-3">
-          <div className="font-head font-bold text-sm">RECURSO</div>
-          {editavel && (
-            <div className="flex gap-1">
-              <button onClick={() => setMassaOpen(true)} className="px-2 py-1 rounded-lg border border-amber text-amber text-xs font-semibold">⚡ Em massa</button>
-              <button onClick={() => { setNovoOpen((o) => !o); setEditarOpen(false); }} className="px-2 py-1 rounded-lg bg-cyan text-white text-xs font-semibold">+ Novo</button>
-            </div>
-          )}
-        </div>
-
-        {novoOpen && (
-          <RecursoForm usuarios={usuariosElegiveis} onSalvar={criarRecurso} rotuloBotao="Criar" />
-        )}
-
-        <div className="flex gap-2 mb-2">
-          <input value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Buscar por nome, tipo, função..." className="input flex-1" />
-          <button onClick={() => {}} className="px-3 py-1.5 rounded-lg border border-line text-muted text-xs whitespace-nowrap">Buscar</button>
-        </div>
+        <div className="font-head font-bold text-sm mb-3">RECURSO</div>
 
         {editavel && (
-          <button onClick={() => { if (selecionado) { setEditarOpen((o) => !o); setNovoOpen(false); } }} disabled={!selecionado}
-            className="w-full mb-3 px-2 py-1.5 rounded-lg border border-line text-muted text-xs font-semibold disabled:opacity-40">
-            {selecionado ? `Editar Recurso — ${selecionado.nome}` : "Selecione um recurso para editar"}
-          </button>
+          <div className="flex flex-col gap-2 mb-3">
+            <button onClick={() => fecharTudoMenos(novoOpen ? null : "novo")}
+              className="w-full py-2 rounded-lg bg-cyan text-white text-xs font-semibold">
+              + Adicionar Novo Recurso
+            </button>
+            {novoOpen && <RecursoForm usuarios={usuariosElegiveis} onSalvar={criarRecurso} rotuloBotao="Criar" onCancelar={() => setNovoOpen(false)} />}
+
+            <button onClick={() => selecionado && fecharTudoMenos(alocarOpen ? null : "alocar")} disabled={!selecionado}
+              className="w-full py-2 rounded-lg border border-line text-muted text-xs font-semibold disabled:opacity-40">
+              Alocar Recurso
+            </button>
+            <button onClick={() => setMassaOpen(true)} className="w-full text-[11px] text-amber underline">
+              ⚡ ou alocar vários recursos de uma vez
+            </button>
+          </div>
         )}
 
-        {editarOpen && selecionado && (
-          <RecursoForm usuarios={usuariosElegiveis} onSalvar={salvarEdicao} rotuloBotao="Salvar alterações" onCancelar={() => setEditarOpen(false)}
-            valoresIniciais={{ nome: selecionado.nome, tipo: selecionado.tipo, unidade: selecionado.custo_unidade, usuarioId: selecionado.usuario_id || "", funcao: selecionado.atributos?.funcao || "" }} />
-        )}
+        <div className="flex gap-2 mb-3">
+          <input value={busca} onChange={(e) => setBusca(e.target.value)} onKeyDown={(e) => e.key === "Enter" && setBuscaAplicada(busca)}
+            placeholder="Buscar por nome, tipo, função..." className="input flex-1" />
+          <button onClick={() => setBuscaAplicada(busca)} className="px-3 py-1.5 rounded-lg border border-line text-muted text-xs whitespace-nowrap">Buscar</button>
+        </div>
 
         <div className="flex flex-col gap-2">
           {grupos.map((g) => (
@@ -181,7 +183,7 @@ export default function RecursosPage() {
               {!gruposFechados.includes(g.tipo) && (
                 <div className="flex flex-col gap-1">
                   {g.itens.map((r) => (
-                    <button key={r.id} onClick={() => { setSelecionadoId(r.id); setAvisoOverlap(false); setEditandoAlocId(null); setEditarOpen(false); }}
+                    <button key={r.id} onClick={() => { setSelecionadoId(r.id); setAvisoOverlap(false); setEditandoAlocId(null); fecharTudoMenos(null); }}
                       className={`text-left p-2 rounded-lg border text-xs ${selecionadoId === r.id ? "border-cyan bg-cyan/5" : "border-line"}`}>
                       <div className="font-semibold">{r.nome}</div>
                       <div className="text-muteddim font-mono text-[10px]">
@@ -201,19 +203,36 @@ export default function RecursosPage() {
         {!selecionado && <div className="text-sm text-muteddim">Selecione um recurso à esquerda.</div>}
         {selecionado && (
           <>
-            <div className="mb-4">
-              <div className="font-head font-bold text-lg">{selecionado.nome}</div>
-              <div className="text-xs text-muted">
-                {rotuloTipo(selecionado.tipo)} · apropriação por {rotuloUnidade(selecionado.custo_unidade)}
-                {selecionado.atributos?.funcao && <> · {selecionado.atributos.funcao}</>}
+            <div className="mb-4 flex items-start justify-between gap-3">
+              <div>
+                <div className="font-head font-bold text-lg">{selecionado.nome}</div>
+                <div className="text-xs text-muted">
+                  {rotuloTipo(selecionado.tipo)} · apropriação por {rotuloUnidade(selecionado.custo_unidade)}
+                  {selecionado.atributos?.funcao && <> · {selecionado.atributos.funcao}</>}
+                </div>
+                {selecionado.usuario_id && (
+                  <div className="text-xs text-cyan font-mono">Vinculado a: {usuarios.find((u) => u.id === selecionado.usuario_id)?.nome}</div>
+                )}
               </div>
-              {selecionado.usuario_id && (
-                <div className="text-xs text-cyan font-mono">Vinculado a: {usuarios.find((u) => u.id === selecionado.usuario_id)?.nome}</div>
+              {editavel && (
+                <button onClick={() => fecharTudoMenos(editarOpen ? null : "editar")} className="shrink-0 text-xs border border-line rounded-full px-3 py-1 text-muted">
+                  Editar Recurso
+                </button>
               )}
             </div>
 
-            {editavel && (
+            {editarOpen && editavel && (
+              <div className="mb-4 max-w-sm">
+                <RecursoForm usuarios={usuariosElegiveis} onSalvar={salvarEdicao} rotuloBotao="Salvar alterações" onCancelar={() => setEditarOpen(false)}
+                  valoresIniciais={{ nome: selecionado.nome, tipo: selecionado.tipo, unidade: selecionado.custo_unidade, usuarioId: selecionado.usuario_id || "", funcao: selecionado.atributos?.funcao || "" }} />
+              </div>
+            )}
+
+            {alocarOpen && editavel && (
               <div className="bg-panel rounded-lg p-3 mb-4 flex flex-col gap-2">
+                <div className="font-head font-bold text-xs text-muted mb-1">
+                  {editandoAlocId ? "Editar alocação" : "Nova alocação"}
+                </div>
                 <div className="flex gap-2 items-center flex-wrap">
                   <select value={piEscolhido} onChange={(e) => setPiEscolhido(e.target.value)} className="input flex-1 min-w-[160px]">
                     <option value="">Selecione o PI...</option>
@@ -232,9 +251,12 @@ export default function RecursosPage() {
                 {avisoOverlap && (
                   <div className="text-xs text-amber bg-amber/10 rounded px-2 py-1">⚠ Ultrapassa 100% de uso sobreposto — revise antes de confirmar.</div>
                 )}
-                <button onClick={salvarAlocacao} disabled={!piEscolhido} className="py-1.5 rounded-lg bg-cyan text-white text-xs font-semibold disabled:opacity-50">
-                  {editandoAlocId ? "Salvar alterações" : "+ Adicionar alocação"}
-                </button>
+                <div className="flex gap-2">
+                  <button onClick={salvarAlocacao} disabled={!piEscolhido} className="flex-1 py-1.5 rounded-lg bg-cyan text-white text-xs font-semibold disabled:opacity-50">
+                    {editandoAlocId ? "Salvar alterações" : "+ Adicionar alocação"}
+                  </button>
+                  <button onClick={() => setAlocarOpen(false)} className="px-3 py-1.5 text-xs text-muted">Fechar</button>
+                </div>
               </div>
             )}
 
@@ -251,6 +273,7 @@ export default function RecursosPage() {
                       <button onClick={() => {
                         setEditandoAlocId(a.id); setPiEscolhido(a.pi_id); setModo(a.modo);
                         setPeriodoInicio(a.periodo_inicio); setPeriodoFim(a.periodo_fim); setPercentual(a.percentual || 100);
+                        fecharTudoMenos("alocar");
                       }} className="text-muted underline">Editar</button>
                       <button onClick={() => removerAlocacao(a.id)} className="text-muteddim hover:text-red">✕</button>
                     </>
@@ -295,7 +318,7 @@ function RecursoForm({ usuarios, onSalvar, rotuloBotao, onCancelar, valoresInici
   };
 
   return (
-    <div className="bg-panel rounded-lg p-3 mb-3 flex flex-col gap-2">
+    <div className="bg-panel rounded-lg p-3 flex flex-col gap-2">
       <input placeholder="Nome" value={nome} onChange={(e) => setNome(e.target.value)} className="input" />
 
       <select value={usuarioId} onChange={(e) => onSelecionarUsuario(e.target.value)} className="input">
