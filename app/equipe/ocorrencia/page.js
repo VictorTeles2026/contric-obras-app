@@ -17,7 +17,7 @@ export default function EquipeOcorrenciaPage() {
   const { usuario } = useAuth();
   const meusPis = useMinhasPis(usuario);
   const { dados: minhasOcorrencias, recarregar } = useTabela("ocorrencias", {
-    order: { coluna: "created_at" }, filtro: (q) => q.eq("registrado_por", usuario?.id),
+    order: { coluna: "created_at" }, filtro: [["registrado_por", usuario?.id]],
   });
 
   const [piId, setPiId] = useState("");

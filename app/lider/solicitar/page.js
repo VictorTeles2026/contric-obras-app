@@ -25,7 +25,7 @@ export default function LiderSolicitarPage() {
   const meusPis = useMinhasPis(usuario);
   const { dados: etapas } = useTabela("etapas");
   const { dados: minhasSolicitacoes, recarregar } = useTabela("solicitacoes_alteracao_cronograma", {
-    order: { coluna: "id" }, filtro: (q) => q.eq("solicitado_por", usuario?.id),
+    order: { coluna: "id" }, filtro: [["solicitado_por", usuario?.id]],
   });
 
   const [etapaId, setEtapaId] = useState("");
