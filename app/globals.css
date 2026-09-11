@@ -6,6 +6,12 @@ html, body {
   height: 100%;
 }
 
+/* Evita o zoom automático do Safari/iOS ao tocar em campos com fonte < 16px,
+   que "quebra" o layout na hora (parece caixa em cima de caixa) até soltar o dedo. */
+input, select, textarea {
+  font-size: 16px !important;
+}
+
 input[type="date"]::-webkit-calendar-picker-indicator {
   filter: none;
 }

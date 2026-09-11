@@ -39,17 +39,17 @@ export default function EquipeHorasPage() {
   };
 
   if (meusPis.length === 0) {
-    return <MobileShell nav={NAV}><div className="p-4 text-sm text-muteddim">Você ainda não está alocado em nenhuma obra. Fale com seu líder.</div></MobileShell>;
+    return <MobileShell nav={NAV}><div className="p-5 text-base text-muteddim leading-relaxed">Você ainda não está alocado em nenhuma obra. Fale com seu líder.</div></MobileShell>;
   }
 
   if (enviado) {
     return (
       <MobileShell nav={NAV}>
         <div className="p-6 flex flex-col items-center text-center gap-3 mt-10">
-          <div className="text-4xl">✓</div>
-          <div className="font-head font-bold text-lg">Horas enviadas</div>
-          <p className="text-sm text-muted">Seu líder vai validar em breve.</p>
-          <button onClick={() => setEnviado(false)} className="mt-4 px-5 py-2.5 rounded-lg bg-cyan text-white text-sm font-semibold">Lançar de novo</button>
+          <div className="text-5xl">✓</div>
+          <div className="font-head font-bold text-xl">Horas enviadas</div>
+          <p className="text-base text-muted">Seu líder vai validar em breve.</p>
+          <button onClick={() => setEnviado(false)} className="mt-4 px-6 py-3 rounded-lg bg-cyan text-white text-base font-semibold">Lançar de novo</button>
         </div>
       </MobileShell>
     );
@@ -57,40 +57,42 @@ export default function EquipeHorasPage() {
 
   return (
     <MobileShell nav={NAV}>
-      <div className="p-4 flex flex-col gap-4">
-        <div className="font-head font-bold text-lg">Minhas horas de hoje</div>
+      <div className="p-5 flex flex-col gap-5">
+        <div className="font-head font-bold text-xl">Minhas horas de hoje</div>
 
         <div>
-          <div className="text-xs text-muteddim mb-2">Em quais obras você trabalhou hoje?</div>
+          <div className="text-sm text-muteddim mb-2">Em quais obras você trabalhou hoje?</div>
           <div className="flex flex-wrap gap-2">
             {meusPis.map((p) => (
               <button key={p.id} type="button" onClick={() => togglePi(p.id)}
-                className={`px-3 py-2 rounded-full text-sm border ${pisSelecionados.includes(p.id) ? "bg-cyan text-white border-cyan" : "border-line text-muted bg-white"}`}>
+                className={`px-4 py-2.5 rounded-full text-base border ${pisSelecionados.includes(p.id) ? "bg-cyan text-white border-cyan" : "border-line text-muted bg-white"}`}>
                 {p.codigo}
               </button>
             ))}
           </div>
         </div>
 
-        <div className="flex gap-3">
-          <div className="flex-1">
-            <div className="text-xs text-muteddim mb-1">Início</div>
-            <input type="time" value={horaInicio} onChange={(e) => setHoraInicio(e.target.value)} className="w-full px-3 py-2.5 rounded-lg border border-line text-sm bg-white" />
+        <div className="flex flex-col gap-3">
+          <div>
+            <div className="text-sm text-muteddim mb-1.5">Horário de início</div>
+            <input type="time" value={horaInicio} onChange={(e) => setHoraInicio(e.target.value)}
+              className="w-full px-4 py-3 rounded-lg border border-line text-base bg-white" />
           </div>
-          <div className="flex-1">
-            <div className="text-xs text-muteddim mb-1">Fim</div>
-            <input type="time" value={horaFim} onChange={(e) => setHoraFim(e.target.value)} className="w-full px-3 py-2.5 rounded-lg border border-line text-sm bg-white" />
+          <div>
+            <div className="text-sm text-muteddim mb-1.5">Horário de término</div>
+            <input type="time" value={horaFim} onChange={(e) => setHoraFim(e.target.value)}
+              className="w-full px-4 py-3 rounded-lg border border-line text-base bg-white" />
           </div>
         </div>
 
         {horasTotais > 0 && pisSelecionados.length > 0 && (
-          <div className="text-sm text-muted bg-white rounded-lg border border-line p-3">
-            {horasTotais.toFixed(1)}h ÷ {pisSelecionados.length} obra(s) = {(horasTotais / pisSelecionados.length).toFixed(1)}h cada
+          <div className="text-base text-muted bg-white rounded-lg border border-line p-4 leading-relaxed">
+            {horasTotais.toFixed(1)}h ÷ {pisSelecionados.length} obra(s) = <strong>{(horasTotais / pisSelecionados.length).toFixed(1)}h</strong> cada
           </div>
         )}
 
         <button onClick={enviar} disabled={pisSelecionados.length === 0 || horasTotais <= 0 || enviando}
-          className="py-3 rounded-xl bg-amber text-white font-semibold text-sm disabled:opacity-50">
+          className="py-4 rounded-xl bg-amber text-white font-semibold text-base disabled:opacity-50">
           {enviando ? "Enviando..." : "Enviar horas do dia"}
         </button>
       </div>

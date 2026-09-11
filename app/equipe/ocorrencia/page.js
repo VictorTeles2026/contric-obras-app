@@ -39,49 +39,49 @@ export default function EquipeOcorrenciaPage() {
   };
 
   if (meusPis.length === 0) {
-    return <MobileShell nav={NAV}><div className="p-4 text-sm text-muteddim">Você ainda não está alocado em nenhuma obra.</div></MobileShell>;
+    return <MobileShell nav={NAV}><div className="p-5 text-base text-muteddim leading-relaxed">Você ainda não está alocado em nenhuma obra.</div></MobileShell>;
   }
 
   return (
     <MobileShell nav={NAV}>
-      <div className="p-4 flex flex-col gap-4">
-        <div className="font-head font-bold text-lg">Registrar ocorrência</div>
-        {ok && <div className="text-xs text-green bg-green/10 rounded-lg px-3 py-2 font-semibold">✓ Ocorrência registrada.</div>}
+      <div className="p-5 flex flex-col gap-5">
+        <div className="font-head font-bold text-xl">Registrar ocorrência</div>
+        {ok && <div className="text-sm text-green bg-green/10 rounded-lg px-4 py-3 font-semibold leading-relaxed">✓ Ocorrência registrada.</div>}
 
-        <div className="bg-white rounded-xl border border-line p-3 flex flex-col gap-3">
+        <div className="bg-white rounded-xl border border-line p-4 flex flex-col gap-4">
           <div>
-            <div className="text-xs text-muteddim mb-1">Obra</div>
-            <select value={piId} onChange={(e) => setPiId(e.target.value)} className="w-full px-2 py-2 rounded-lg border border-line text-sm">
+            <div className="text-sm text-muteddim mb-1.5">Obra</div>
+            <select value={piId} onChange={(e) => setPiId(e.target.value)} className="w-full px-3 py-2.5 rounded-lg border border-line text-base">
               <option value="">Selecione...</option>
               {meusPis.map((p) => <option key={p.id} value={p.id}>{p.codigo}</option>)}
             </select>
           </div>
           <div>
-            <div className="text-xs text-muteddim mb-1">Categoria</div>
+            <div className="text-sm text-muteddim mb-2">Categoria</div>
             <div className="flex flex-wrap gap-2">
               {CATEGORIAS.map((c) => (
                 <button key={c} type="button" onClick={() => setCategoria(c)}
-                  className={`px-3 py-1.5 rounded-full text-xs border ${categoria === c ? "bg-amber text-white border-amber" : "border-line text-muted"}`}>{c}</button>
+                  className={`px-4 py-2 rounded-full text-sm border ${categoria === c ? "bg-amber text-white border-amber" : "border-line text-muted"}`}>{c}</button>
               ))}
             </div>
           </div>
           <div>
-            <div className="text-xs text-muteddim mb-1">Descrição (opcional)</div>
-            <textarea value={descricao} onChange={(e) => setDescricao(e.target.value)} rows={3} className="w-full px-2 py-2 rounded-lg border border-line text-sm" />
+            <div className="text-sm text-muteddim mb-1.5">Descrição (opcional)</div>
+            <textarea value={descricao} onChange={(e) => setDescricao(e.target.value)} rows={3} className="w-full px-3 py-2.5 rounded-lg border border-line text-base" />
           </div>
-          <button onClick={enviar} disabled={!podeEnviar || enviando} className="py-2.5 rounded-lg bg-amber text-white text-sm font-semibold disabled:opacity-50">
+          <button onClick={enviar} disabled={!podeEnviar || enviando} className="py-3.5 rounded-lg bg-amber text-white text-base font-semibold disabled:opacity-50">
             {enviando ? "Enviando..." : "Registrar ocorrência"}
           </button>
         </div>
 
-        <div className="text-xs font-mono text-muteddim mt-2">MINHAS OCORRÊNCIAS DE HOJE</div>
-        <div className="flex flex-col gap-2">
+        <div className="text-sm font-mono text-muteddim tracking-wide mt-1">MINHAS OCORRÊNCIAS DE HOJE</div>
+        <div className="flex flex-col gap-2.5">
           {minhasOcorrencias.map((o) => (
-            <div key={o.id} className="bg-white rounded-xl border border-line p-3 text-xs">
+            <div key={o.id} className="bg-white rounded-xl border border-line p-4 text-base">
               <span className="text-amber font-semibold">{o.categoria}</span>{o.descricao ? ` — ${o.descricao}` : ""}
             </div>
           ))}
-          {minhasOcorrencias.length === 0 && <div className="text-xs text-muteddim">Nenhuma ocorrência ainda.</div>}
+          {minhasOcorrencias.length === 0 && <div className="text-sm text-muteddim">Nenhuma ocorrência ainda.</div>}
         </div>
       </div>
     </MobileShell>

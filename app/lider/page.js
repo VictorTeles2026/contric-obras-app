@@ -39,39 +39,41 @@ export default function LiderHomePage() {
 
   return (
     <MobileShell nav={NAV}>
-      <div className="p-4 flex flex-col gap-4">
+      <div className="p-5 flex flex-col gap-4">
         {!piAtivo && (
-          <div className="bg-white rounded-xl border border-line p-4 text-sm text-muteddim">
+          <div className="bg-white rounded-xl border border-line p-5 text-base text-muteddim leading-relaxed">
             Você ainda não está alocado em nenhuma obra. Fale com o Coordenador ou Gerente.
           </div>
         )}
 
         {piAtivo && (
           <>
-            <div className="bg-white rounded-xl border border-line p-4">
-              <div className="text-[10px] font-mono text-cyan font-bold">{piAtivo.codigo}</div>
-              <div className="font-head font-bold text-lg">{piAtivo.cliente}</div>
-              <div className="text-xs text-muted">{piAtivo.projeto}</div>
-              <div className="text-xs text-muteddim mt-1">{pendentes} atividade(s) em aberto</div>
+            <div className="bg-white rounded-xl border border-line p-5">
+              <div className="text-xs font-mono text-cyan font-bold tracking-wide">{piAtivo.codigo}</div>
+              <div className="font-head font-bold text-xl mt-0.5">{piAtivo.cliente}</div>
+              <div className="text-sm text-muted mt-0.5">{piAtivo.projeto}</div>
+              <div className="text-sm text-muteddim mt-2">{pendentes} atividade(s) em aberto</div>
             </div>
 
             {!jaEnviouRdoHoje && (
-              <div className="bg-amber/10 border border-amber/30 rounded-xl p-3 text-xs text-amber font-semibold">
+              <div className="bg-amber/10 border border-amber/30 rounded-xl p-4 text-sm text-amber font-semibold leading-relaxed">
                 ⚠ Você ainda não enviou o RDO de hoje.
               </div>
             )}
 
-            <a href="/lider/rdo" className="bg-cyan text-white rounded-xl p-4 font-head font-bold flex items-center gap-3">
-              📋 Fazer RDO de hoje
+            <a href="/lider/rdo" className="bg-cyan text-white rounded-xl p-5 font-head font-bold text-base flex items-center gap-4 active:opacity-80">
+              <span className="text-2xl">📋</span> Fazer RDO de hoje
             </a>
-            <a href="/lider/horas" className="bg-white border border-line rounded-xl p-4 font-head font-bold flex items-center gap-3">
-              ⏱ Lançar minhas horas
+            <a href="/lider/horas" className="bg-white border border-line rounded-xl p-5 font-head font-bold text-base flex items-center gap-4 active:opacity-70">
+              <span className="text-2xl">⏱</span> Lançar minhas horas
             </a>
-            <a href="/lider/cronograma" className="bg-white border border-line rounded-xl p-4 font-head font-bold flex items-center gap-3">
-              📅 Ver cronograma
+            <a href="/lider/cronograma" className="bg-white border border-line rounded-xl p-5 font-head font-bold text-base flex items-center gap-4 active:opacity-70">
+              <span className="text-2xl">📅</span> Ver cronograma
             </a>
-            <a href="/lider/solicitar" className="bg-white border border-line rounded-xl p-4 font-head font-bold flex items-center gap-3">
-              ✎ Solicitar alteração {minhasSolicitacoesAbertas > 0 && <span className="text-[10px] font-mono text-amber ml-auto">{minhasSolicitacoesAbertas} em análise</span>}
+            <a href="/lider/solicitar" className="bg-white border border-line rounded-xl p-5 font-head font-bold text-base flex items-center gap-4 active:opacity-70">
+              <span className="text-2xl">✎</span>
+              <span className="flex-1">Solicitar alteração</span>
+              {minhasSolicitacoesAbertas > 0 && <span className="text-xs font-mono text-amber shrink-0">{minhasSolicitacoesAbertas} em análise</span>}
             </a>
           </>
         )}
