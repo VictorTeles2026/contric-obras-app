@@ -168,8 +168,9 @@ export default function CronogramaPage() {
       await registrarLog(usuario, "Alterou status de etapa", `"${atual.nome}" → ${patch.status}`);
     }
     await supabase.from("etapas").update(patch).eq("id", id);
+    recarregarEtapas();
   };
-  const excluirEtapa = async (id) => { await supabase.from("etapas").delete().eq("id", id); };
+  const excluirEtapa = async (id) => { await supabase.from("etapas").delete().eq("id", id); recarregarEtapas(); };
 
   const criarDependencia = async (origemId, destinoId) => {
     if (origemId === destinoId) return;
@@ -178,9 +179,11 @@ export default function CronogramaPage() {
     const origem = etapasDoPi.find((e) => e.id === origemId);
     await supabase.from("etapa_dependencias").insert({ etapa_id: destinoId, depende_de_etapa_id: origemId });
     await registrarLog(usuario, "Criou dependência", `"${destino?.nome}" passa a depender de "${origem?.nome}"`);
+    recarregarDependencias();
   };
   const removerDependencia = async (origemId, destinoId) => {
     await supabase.from("etapa_dependencias").delete().eq("etapa_id", destinoId).eq("depende_de_etapa_id", origemId);
+    recarregarDependencias();
   };
 
   const reordenarEtapa = async (dragId, targetId) => {
@@ -194,12 +197,14 @@ export default function CronogramaPage() {
       for (const filha of filhas) await supabase.from("etapas").update({ parent_etapa_id: novoParentId }).eq("id", filha.id);
     }
     await supabase.from("etapas").update({ parent_etapa_id: novoParentId }).eq("id", dragId);
+    recarregarEtapas();
   };
   const tornarSubDe = async (dragId, macroId) => {
     if (dragId === macroId) return;
     const filhas = etapasDoPi.filter((e) => e.parent_etapa_id === dragId);
     for (const filha of filhas) await supabase.from("etapas").update({ parent_etapa_id: macroId }).eq("id", filha.id);
     await supabase.from("etapas").update({ parent_etapa_id: macroId }).eq("id", dragId);
+    recarregarEtapas();
   };
 
   // ---- Equipe (áreas) ----
@@ -207,6 +212,7 @@ export default function CronogramaPage() {
     const atuais = etapa.areas || [];
     const novas = atuais.includes(area) ? atuais.filter((a) => a !== area) : [...atuais, area];
     await supabase.from("etapas").update({ areas: novas }).eq("id", etapa.id);
+    recarregarEtapas();
   };
 
   // ---- Alocação de recursos na etapa ----
@@ -221,6 +227,7 @@ export default function CronogramaPage() {
         periodo_fim: etapa.data_prevista_fim || todayISO(), percentual: 100,
       });
     }
+    recarregarAlocacoesRecurso();
   };
 
   const containerRef = useRef(null);
