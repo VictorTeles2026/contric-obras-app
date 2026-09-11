@@ -35,7 +35,9 @@ export default function RecursosPage() {
   const { dados: recursos, recarregar: recarregarRecursos } = useTabela("recursos", { order: { coluna: "created_at" } });
   const { dados: alocacoes, recarregar: recarregarAlocacoes } = useTabela("alocacoes_recurso");
 
-  const [selecionadoId, setSelecionadoId] = useState(null);
+  const [selecionadosIds, setSelecionadosIds] = useState([]);
+  const [ancoraId, setAncoraId] = useState(null);
+  const selecionadoId = selecionadosIds.length === 1 ? selecionadosIds[0] : null;
   const selecionado = recursos.find((r) => r.id === selecionadoId);
   const alocsDoSelecionado = alocacoes.filter((a) => a.recurso_id === selecionadoId);
 
@@ -73,6 +75,29 @@ export default function RecursosPage() {
   }, [recursosFiltrados]);
   const toggleGrupo = (tipo) => setGruposFechados((p) => p.includes(tipo) ? p.filter((x) => x !== tipo) : [...p, tipo]);
 
+  const ordemVisivel = useMemo(
+    () => grupos.flatMap((g) => gruposFechados.includes(g.tipo) ? [] : g.itens.map((r) => r.id)),
+    [grupos, gruposFechados]
+  );
+
+  const clicarRecurso = (id, evento) => {
+    if (evento.shiftKey && ancoraId) {
+      const iA = ordemVisivel.indexOf(ancoraId);
+      const iB = ordemVisivel.indexOf(id);
+      if (iA !== -1 && iB !== -1) {
+        const [ini, fim] = iA < iB ? [iA, iB] : [iB, iA];
+        setSelecionadosIds(ordemVisivel.slice(ini, fim + 1));
+        fecharTudoMenos(null);
+        return;
+      }
+    }
+    setSelecionadosIds([id]);
+    setAncoraId(id);
+    setAvisoOverlap(false);
+    setEditandoAlocId(null);
+    fecharTudoMenos(null);
+  };
+
   const criarRecurso = async (dados) => {
     const { data, error } = await supabase.from("recursos").insert({
       nome: dados.nome, tipo: dados.tipo, custo_unidade: dados.unidade,
@@ -81,7 +106,8 @@ export default function RecursosPage() {
     if (!error) {
       await registrarLog(usuario, "Criou recurso", dados.nome);
       setNovoOpen(false);
-      setSelecionadoId(data.id);
+      setSelecionadosIds([data.id]);
+      setAncoraId(data.id);
       recarregarRecursos();
     }
   };
@@ -173,6 +199,7 @@ export default function RecursosPage() {
           <button onClick={() => setBuscaAplicada(busca)} className="px-3 py-1.5 rounded-lg border border-line text-muted text-xs whitespace-nowrap">Buscar</button>
         </div>
 
+        <div className="text-[10px] text-muteddim mb-2">Clique num recurso pra ver detalhes · segure Shift e clique em outro pra selecionar vários</div>
         <div className="flex flex-col gap-2">
           {grupos.map((g) => (
             <div key={g.tipo}>
@@ -183,8 +210,8 @@ export default function RecursosPage() {
               {!gruposFechados.includes(g.tipo) && (
                 <div className="flex flex-col gap-1">
                   {g.itens.map((r) => (
-                    <button key={r.id} onClick={() => { setSelecionadoId(r.id); setAvisoOverlap(false); setEditandoAlocId(null); fecharTudoMenos(null); }}
-                      className={`text-left p-2 rounded-lg border text-xs ${selecionadoId === r.id ? "border-cyan bg-cyan/5" : "border-line"}`}>
+                    <button key={r.id} onClick={(e) => clicarRecurso(r.id, e)}
+                      className={`text-left p-2 rounded-lg border text-xs ${selecionadosIds.includes(r.id) ? "border-cyan bg-cyan/5" : "border-line"}`}>
                       <div className="font-semibold">{r.nome}</div>
                       <div className="text-muteddim font-mono text-[10px]">
                         {r.atributos?.funcao ? `${r.atributos.funcao} · ` : ""}apropriação por {rotuloUnidade(r.custo_unidade)}
@@ -200,7 +227,24 @@ export default function RecursosPage() {
       </div>
 
       <div className="flex-1 p-4 overflow-auto">
-        {!selecionado && <div className="text-sm text-muteddim">Selecione um recurso à esquerda.</div>}
+        {selecionadosIds.length === 0 && <div className="text-sm text-muteddim">Selecione um recurso à esquerda.</div>}
+
+        {selecionadosIds.length > 1 && (
+          <div>
+            <div className="font-head font-bold text-lg mb-1">{selecionadosIds.length} recursos selecionados</div>
+            <div className="flex flex-col gap-1 mb-4 max-h-64 overflow-auto">
+              {recursos.filter((r) => selecionadosIds.includes(r.id)).map((r) => (
+                <div key={r.id} className="text-xs bg-panel rounded-lg px-3 py-2">{r.nome}</div>
+              ))}
+            </div>
+            {editavel && (
+              <button onClick={() => setMassaOpen(true)} className="px-4 py-2 rounded-lg bg-amber text-white text-sm font-semibold">
+                ⚡ Alocar estes {selecionadosIds.length} recursos
+              </button>
+            )}
+          </div>
+        )}
+
         {selecionado && (
           <>
             <div className="mb-4 flex items-start justify-between gap-3">
@@ -287,7 +331,8 @@ export default function RecursosPage() {
       </div>
 
       {massaOpen && (
-        <AlocacaoEmMassaModal pis={pis} recursos={recursos} usuarios={usuarios} onAplicar={aplicarAlocacaoMassa} onCancelar={() => setMassaOpen(false)} />
+        <AlocacaoEmMassaModal pis={pis} recursos={recursos} usuarios={usuarios} onAplicar={aplicarAlocacaoMassa} onCancelar={() => setMassaOpen(false)}
+          preSelecionados={selecionadosIds.length > 1 ? selecionadosIds : []} />
       )}
 
       <style jsx global>{`
@@ -314,6 +359,7 @@ function RecursoForm({ usuarios, onSalvar, rotuloBotao, onCancelar, valoresInici
     if (u) {
       setTipo(tipoParaPerfil(u.perfil));
       setFuncao(u.funcao || "");
+      setNome(u.nome);
     }
   };
 
@@ -354,7 +400,7 @@ function RecursoForm({ usuarios, onSalvar, rotuloBotao, onCancelar, valoresInici
   );
 }
 
-function AlocacaoEmMassaModal({ pis, recursos, usuarios, onAplicar, onCancelar }) {
+function AlocacaoEmMassaModal({ pis, recursos, usuarios, onAplicar, onCancelar, preSelecionados }) {
   const [piId, setPiId] = useState("");
   const [modoM, setModoM] = useState("periodo_percentual");
   const [inicio, setInicio] = useState(hojeISO());
@@ -362,7 +408,7 @@ function AlocacaoEmMassaModal({ pis, recursos, usuarios, onAplicar, onCancelar }
   const [perc, setPerc] = useState(100);
   const [busca, setBusca] = useState("");
   const [filtroTipo, setFiltroTipo] = useState("");
-  const [selecionados, setSelecionados] = useState([]);
+  const [selecionados, setSelecionados] = useState(preSelecionados || []);
 
   const filtrados = recursos.filter((r) =>
     (!filtroTipo || r.tipo === filtroTipo) &&
