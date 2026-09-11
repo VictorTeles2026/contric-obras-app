@@ -137,14 +137,20 @@ function ModalUsuario({ usuarioInicial, onClose, onSalvo, onPinGerado }) {
   const [erro, setErro] = useState("");
 
   const mostraFuncao = PERFIS_COM_FUNCAO.includes(perfil);
-  const podeSalvar = nome.trim() && (editando || perfil !== "terceiro" || tipoTerceiro === "avulso" || (email && senha));
+  const ehTerceiroAvulso = perfil === "terceiro" && tipoTerceiro === "avulso";
+  const precisaLoginNovo = !ehTerceiroAvulso && (!editando || !usuarioInicial?.auth_user_id);
+  const podeSalvar = nome.trim() && (!precisaLoginNovo || (email && (editando || senha)));
 
   const salvar = async () => {
     setSalvando(true); setErro("");
     if (editando) {
       const res = await fetch("/api/atualizar-usuario", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: usuarioInicial.id, nome, funcao: mostraFuncao ? funcao : null }),
+        body: JSON.stringify({
+          id: usuarioInicial.id, nome, perfil, funcao: mostraFuncao ? funcao : null,
+          email: ehTerceiroAvulso ? null : email, novaSenha: senha || undefined,
+          tipoTerceiro, empresaTerceira,
+        }),
       });
       const json = await res.json();
       setSalvando(false);
@@ -173,13 +179,11 @@ function ModalUsuario({ usuarioInicial, onClose, onSalvo, onPinGerado }) {
         <div className="flex flex-col gap-3">
           <Campo label="NOME"><input value={nome} onChange={(e) => setNome(e.target.value)} className="input" /></Campo>
 
-          {!editando && (
-            <Campo label="PERFIL">
-              <select value={perfil} onChange={(e) => setPerfil(e.target.value)} className="input">
-                {PERFIS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-              </select>
-            </Campo>
-          )}
+          <Campo label="PERFIL">
+            <select value={perfil} onChange={(e) => setPerfil(e.target.value)} className="input">
+              {PERFIS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+            </select>
+          </Campo>
 
           {mostraFuncao && (
             <Campo label="FUNÇÃO">
@@ -190,22 +194,27 @@ function ModalUsuario({ usuarioInicial, onClose, onSalvo, onPinGerado }) {
             </Campo>
           )}
 
-          {!editando && perfil === "terceiro" && (
+          {perfil === "terceiro" && (
             <>
               <Campo label="TIPO DE TERCEIRO">
                 <div className="flex gap-2">
                   <button type="button" onClick={() => setTipoTerceiro("fixo")} className={`px-3 py-1.5 rounded-full text-xs border ${tipoTerceiro === "fixo" ? "bg-cyan text-white border-cyan" : "border-line text-muted"}`}>Fixo (login)</button>
                   <button type="button" onClick={() => setTipoTerceiro("avulso")} className={`px-3 py-1.5 rounded-full text-xs border ${tipoTerceiro === "avulso" ? "bg-amber text-white border-amber" : "border-line text-muted"}`}>Avulso (PIN)</button>
                 </div>
+                {editando && usuarioInicial?.pin && ehTerceiroAvulso && (
+                  <div className="text-[11px] font-mono text-muteddim mt-1">PIN atual: {usuarioInicial.pin}</div>
+                )}
               </Campo>
               <Campo label="EMPRESA TERCEIRA"><input value={empresaTerceira} onChange={(e) => setEmpresaTerceira(e.target.value)} className="input" /></Campo>
             </>
           )}
 
-          {!editando && (perfil !== "terceiro" || tipoTerceiro === "fixo") && (
+          {!ehTerceiroAvulso && (
             <>
               <Campo label="E-MAIL (login)"><input type="email" value={email} onChange={(e) => setEmail(e.target.value)} className="input" /></Campo>
-              <Campo label="SENHA INICIAL"><input type="password" value={senha} onChange={(e) => setSenha(e.target.value)} className="input" /></Campo>
+              <Campo label={editando ? "NOVA SENHA (deixe em branco para não alterar)" : "SENHA INICIAL"}>
+                <input type="password" value={senha} onChange={(e) => setSenha(e.target.value)} className="input" />
+              </Campo>
             </>
           )}
 
