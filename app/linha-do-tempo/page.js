@@ -25,27 +25,37 @@ function passoDiasPara(span) {
 
 export default function LinhaDoTempoPage() {
   const { dados: pis } = useTabela("pis", { order: { coluna: "codigo" } });
-  const { dados: etapas } = useTabela("etapas");
+  const { dados: etapas } = useTabela("etapas", { order: { coluna: "created_at" } });
   const [selecionarAberto, setSelecionarAberto] = useState(false);
   const [piIds, setPiIds] = useState([]);
   const [zoom, setZoom] = useState(1);
 
   const pisSelecionados = pis.filter((p) => piIds.includes(p.id));
-  const macroEtapas = etapas.filter((e) => !e.parent_etapa_id && piIds.includes(e.pi_id));
+  const etapasDosPis = etapas.filter((e) => piIds.includes(e.pi_id));
+  // monta a lista na mesma ordem de criação do Cronograma: cada macro-etapa
+  // seguida imediatamente das suas sub-etapas (também na ordem em que foram criadas)
+  const itensOrdenados = (piId) => {
+    const doPi = etapasDosPis.filter((e) => e.pi_id === piId);
+    const macros = doPi.filter((e) => !e.parent_etapa_id);
+    return macros.flatMap((m) => [
+      { ...m, nivel: 0 },
+      ...doPi.filter((e) => e.parent_etapa_id === m.id).map((s) => ({ ...s, nivel: 1 })),
+    ]);
+  };
 
   const escala = useMemo(() => {
-    if (macroEtapas.length === 0) {
+    if (etapasDosPis.length === 0) {
       const hoje = new Date();
       return { min: hoje.getTime(), max: hoje.getTime() + 14 * 86400000 };
     }
-    const tempos = macroEtapas.flatMap((e) => [
+    const tempos = etapasDosPis.flatMap((e) => [
       e.data_prevista_inicio ? new Date(e.data_prevista_inicio).getTime() : null,
       e.data_prevista_fim ? new Date(e.data_prevista_fim).getTime() : null,
     ]).filter(Boolean);
     const min = Math.min(...tempos), max = Math.max(...tempos);
     const folga = Math.max((max - min) * 0.04, 2 * 86400000);
     return { min: min - folga, max: max + folga };
-  }, [macroEtapas]);
+  }, [etapasDosPis]);
 
   const largura = 640 * zoom;
   const span = escala.max - escala.min || 1;
@@ -95,7 +105,7 @@ export default function LinhaDoTempoPage() {
               </div>
 
               {pisSelecionados.map((pi) => {
-                const itens = macroEtapas.filter((e) => e.pi_id === pi.id);
+                const itens = itensOrdenados(pi.id);
                 return (
                   <div key={pi.id}>
                     <div className="flex bg-panel">
@@ -116,18 +126,18 @@ export default function LinhaDoTempoPage() {
                       const atencao = e.status !== "concluida" && dias !== null && dias > 1 && dias <= 3;
                       return (
                         <div key={e.id} className="flex items-center border-b border-line/60">
-                          <div className="shrink-0 sticky left-0 bg-white z-10 px-2 py-1.5 text-xs truncate border-r border-line" style={{ width: LABEL_W }} title={e.nome}>
-                            {e.nome}
+                          <div className={`shrink-0 sticky left-0 bg-white z-10 py-1.5 text-xs truncate border-r border-line ${e.nivel ? "pl-6 pr-2 text-muted" : "px-2"}`} style={{ width: LABEL_W }} title={e.nome}>
+                            {e.nivel ? "· " : ""}{e.nome}
                           </div>
-                          <div className="relative h-7" style={{ width: largura }}>
+                          <div className={e.nivel ? "relative h-6" : "relative h-7"} style={{ width: largura }}>
                             <div className="absolute inset-0" style={{ left: hojeX, width: 1, background: "#D64545", opacity: 0.5 }} />
                             <div
-                              className="absolute top-2 h-3 rounded"
+                              className={e.nivel ? "absolute top-1.5 h-2 rounded" : "absolute top-2 h-3 rounded"}
                               style={{
                                 left, width,
                                 background: vencido ? "#D64545" : STATUS_COR[e.status],
                                 outline: urgente ? "2px solid #D64545" : atencao ? "2px solid #C97A21" : "none",
-                                opacity: vencido ? 1 : 0.85,
+                                opacity: e.nivel ? 0.6 : (vencido ? 1 : 0.85),
                               }}
                               title={`${e.nome} · ${e.status}${e.status === "em_andamento" ? ` · ${e.percentual || 0}%` : ""}`}
                             />

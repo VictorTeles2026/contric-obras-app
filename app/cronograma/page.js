@@ -119,17 +119,16 @@ export default function CronogramaPage() {
       const { data, error } = await supabase.from("pis").insert(dadosPi).select().single();
       if (error) return;
       piId = data.id;
-      await registrarLog(usuario, "Criou PI", data.codigo);
+      registrarLog(usuario, "Criou PI", data.codigo);
     } else {
       await supabase.from("pis").update(dadosPi).eq("id", piId);
-      await registrarLog(usuario, "Editou PI", dadosPi.codigo);
+      registrarLog(usuario, "Editou PI", dadosPi.codigo);
     }
-    for (const [categoriaId, valor] of Object.entries(valoresOrcamento)) {
-      if (valor === "" || valor === undefined) continue;
-      await supabase.from("orcamento_pi_item").upsert(
-        { pi_id: piId, categoria_id: categoriaId, valor_orcado: Number(valor) },
-        { onConflict: "pi_id,categoria_id" }
-      );
+    const linhas = Object.entries(valoresOrcamento)
+      .filter(([, valor]) => valor !== "" && valor !== undefined)
+      .map(([categoriaId, valor]) => ({ pi_id: piId, categoria_id: categoriaId, valor_orcado: Number(valor) }));
+    if (linhas.length > 0) {
+      await supabase.from("orcamento_pi_item").upsert(linhas, { onConflict: "pi_id,categoria_id" });
     }
     setPisModalAberto(false);
     setPiSelecionadoId(piId);
@@ -139,7 +138,7 @@ export default function CronogramaPage() {
   const salvarCronogramaBase = async () => {
     if (!piAtual) return;
     await supabase.from("pis").update({ baseline_definida_em: new Date().toISOString(), baseline_definida_por: usuario.id }).eq("id", piAtual.id);
-    await registrarLog(usuario, "Salvou Cronograma Base", piAtual.codigo);
+    registrarLog(usuario, "Salvou Cronograma Base", piAtual.codigo);
     recarregarPis();
   };
 
@@ -150,7 +149,7 @@ export default function CronogramaPage() {
       pi_id: piAtual.id, nome: "Nova macro-etapa", tipo: "campo",
       data_prevista_inicio: t0, data_prevista_fim: addDias(t0, 7), status: "nao_iniciada", percentual: 0,
     });
-    await registrarLog(usuario, "Criou macro-etapa", piAtual.codigo);
+    registrarLog(usuario, "Criou macro-etapa", piAtual.codigo);
     recarregarEtapas();
   };
   const addSubEtapa = async (macroId) => {
@@ -165,7 +164,7 @@ export default function CronogramaPage() {
   const atualizarEtapa = async (id, patch) => {
     const atual = etapasDoPi.find((e) => e.id === id);
     if (atual && patch.status && patch.status !== atual.status) {
-      await registrarLog(usuario, "Alterou status de etapa", `"${atual.nome}" → ${patch.status}`);
+      registrarLog(usuario, "Alterou status de etapa", `"${atual.nome}" → ${patch.status}`);
     }
     await supabase.from("etapas").update(patch).eq("id", id);
     recarregarEtapas();
@@ -178,7 +177,7 @@ export default function CronogramaPage() {
     const destino = etapasDoPi.find((e) => e.id === destinoId);
     const origem = etapasDoPi.find((e) => e.id === origemId);
     await supabase.from("etapa_dependencias").insert({ etapa_id: destinoId, depende_de_etapa_id: origemId });
-    await registrarLog(usuario, "Criou dependência", `"${destino?.nome}" passa a depender de "${origem?.nome}"`);
+    registrarLog(usuario, "Criou dependência", `"${destino?.nome}" passa a depender de "${origem?.nome}"`);
     recarregarDependencias();
   };
   const removerDependencia = async (origemId, destinoId) => {
