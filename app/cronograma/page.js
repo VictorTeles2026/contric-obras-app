@@ -94,7 +94,7 @@ export default function CronogramaPage() {
   const { usuario } = useAuth();
   const editavel = podeEditar(usuario);
   const { dados: pis, recarregar: recarregarPis } = useTabela("pis", { order: { coluna: "created_at" } });
-  const { dados: categorias } = useTabela("categorias_orcamento");
+  const { dados: categorias } = useTabela("categorias_orcamento", { order: { coluna: "ordem" } });
   const { dados: orcamentos, recarregar: recarregarOrcamentos } = useTabela("orcamento_pi_item");
   const { dados: recursos } = useTabela("recursos");
   const [piSelecionadoId, setPiSelecionadoId] = useState(null);
@@ -604,7 +604,7 @@ function PiModal({ modo, piInicial, categorias, valoresIniciais, onSalvar, onCan
           <div className="grid grid-cols-[70px_1fr_130px] gap-2 text-[10px] font-mono text-muteddim mb-1">
             <span>CÓD.</span><span>DESCRIÇÃO</span><span className="text-right">VALOR (R$)</span>
           </div>
-          <div className="flex flex-col max-h-40 overflow-auto">
+          <div className="flex flex-col">
             {compraCats.map((c) => (
               <div key={c.id} className="grid grid-cols-[70px_1fr_130px] gap-2 items-center py-1">
                 <span className="font-mono text-xs text-muted">{c.codigo}</span>
@@ -617,11 +617,11 @@ function PiModal({ modo, piInicial, categorias, valoresIniciais, onSalvar, onCan
         </div>
 
         <div className="mb-5">
-          <div className="font-head font-bold text-xs text-cyan uppercase tracking-wide mb-2">Mão de obra interna (horas)</div>
+          <div className="font-head font-bold text-xs text-cyan uppercase tracking-wide mb-2">MOI + Contric (horas)</div>
           <div className="grid grid-cols-[70px_1fr_130px] gap-2 text-[10px] font-mono text-muteddim mb-1">
             <span>CÓD.</span><span>DESCRIÇÃO</span><span className="text-right">HORAS</span>
           </div>
-          <div className="flex flex-col max-h-40 overflow-auto">
+          <div className="flex flex-col">
             {moiCats.map((c) => (
               <div key={c.id} className="grid grid-cols-[70px_1fr_130px] gap-2 items-center py-1">
                 <span className="font-mono text-xs text-muted">{c.codigo}</span>
