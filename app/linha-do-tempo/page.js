@@ -29,6 +29,10 @@ export default function LinhaDoTempoPage() {
   const [selecionarAberto, setSelecionarAberto] = useState(false);
   const [piIds, setPiIds] = useState([]);
   const [zoom, setZoom] = useState(1);
+  const [nivelPorPi, setNivelPorPi] = useState({}); // "tudo" (padrão) | "macro" | "pi"
+  const nivelDe = (piId) => nivelPorPi[piId] || "tudo";
+  const proximoNivel = { tudo: "macro", macro: "pi", pi: "tudo" };
+  const ciclarNivel = (piId) => setNivelPorPi((p) => ({ ...p, [piId]: proximoNivel[nivelDe(piId)] }));
 
   const pisSelecionados = pis.filter((p) => piIds.includes(p.id));
   const etapasDosPis = etapas.filter((e) => piIds.includes(e.pi_id));
@@ -42,6 +46,16 @@ export default function LinhaDoTempoPage() {
       { ...m, nivel: 0 },
       ...doPi.filter((e) => e.parent_etapa_id === m.id).sort(porOrdem).map((s) => ({ ...s, nivel: 1 })),
     ]);
+  };
+
+  const periodoTotalDoPi = (piId) => {
+    const doPi = etapasDosPis.filter((e) => e.pi_id === piId);
+    const tempos = doPi.flatMap((e) => [
+      e.data_prevista_inicio ? new Date(e.data_prevista_inicio).getTime() : null,
+      e.data_prevista_fim ? new Date(e.data_prevista_fim).getTime() : null,
+    ]).filter(Boolean);
+    if (tempos.length === 0) return null;
+    return { inicio: Math.min(...tempos), fim: Math.max(...tempos) };
   };
 
   const escala = useMemo(() => {
@@ -89,6 +103,9 @@ export default function LinhaDoTempoPage() {
         </div>
 
         {pisSelecionados.length === 0 && <div className="text-sm text-muteddim">Nenhum PI selecionado — clique em "Selecionar PIs" acima.</div>}
+        {pisSelecionados.length > 0 && (
+          <div className="text-[11px] text-muteddim mb-2">Clique no nome de um PI para alternar entre: tudo (macro + sub-etapas) → só macro-etapas → contraído.</div>
+        )}
 
         {pisSelecionados.length > 0 && (
           <div className="border border-line rounded-lg overflow-x-auto">
@@ -107,16 +124,36 @@ export default function LinhaDoTempoPage() {
 
               {pisSelecionados.map((pi) => {
                 const itens = itensOrdenados(pi.id);
+                const nivel = nivelDe(pi.id);
+                const periodo = periodoTotalDoPi(pi.id);
+                const icone = { tudo: "▾▾", macro: "▾", pi: "▸" }[nivel];
+                const dicaProximo = { tudo: "mostrar só macro-etapas", macro: "contrair para o PI inteiro", pi: "expandir tudo" }[nivel];
+                const itensVisiveis = nivel === "macro" ? itens.filter((e) => !e.nivel) : itens;
                 return (
                   <div key={pi.id}>
                     <div className="flex bg-panel">
-                      <div className="shrink-0 sticky left-0 bg-panel z-10 px-2 py-1 text-xs font-mono text-cyan font-bold border-r border-line" style={{ width: LABEL_W }}>
-                        {pi.codigo} — {pi.cliente}
+                      <button onClick={() => ciclarNivel(pi.id)} title={`Clique para ${dicaProximo}`}
+                        className="shrink-0 sticky left-0 bg-panel z-10 px-2 py-1 text-xs font-mono text-cyan font-bold border-r border-line flex items-center gap-1.5 text-left"
+                        style={{ width: LABEL_W }}>
+                        <span className="text-[9px] w-3 shrink-0">{icone}</span>
+                        <span className="truncate">{pi.codigo} — {pi.cliente}</span>
+                      </button>
+                      <div className="relative" style={{ width: largura }}>
+                        {nivel === "pi" && (
+                          <div className="absolute top-0 bottom-0" style={{ left: hojeX, width: 1, background: "#D64545", opacity: 0.5 }} />
+                        )}
+                        {nivel === "pi" && periodo && (() => {
+                          const left = ((periodo.inicio - escala.min) / span) * largura;
+                          const width = Math.max(4, ((periodo.fim - periodo.inicio) / span) * largura);
+                          return (
+                            <div className="absolute top-1.5 h-3 rounded" style={{ left, width, background: "#0B84A5" }}
+                              title={`${pi.codigo} — do início até a última etapa planejada`} />
+                          );
+                        })()}
                       </div>
-                      <div style={{ width: largura }} />
                     </div>
 
-                    {itens.map((e) => {
+                    {nivel !== "pi" && itensVisiveis.map((e) => {
                       const inicio = e.data_prevista_inicio ? new Date(e.data_prevista_inicio).getTime() : escala.min;
                       const fim = e.data_prevista_fim ? new Date(e.data_prevista_fim).getTime() : inicio;
                       const left = ((inicio - escala.min) / span) * largura;
@@ -151,7 +188,7 @@ export default function LinhaDoTempoPage() {
                         </div>
                       );
                     })}
-                    {itens.length === 0 && (
+                    {nivel !== "pi" && itensVisiveis.length === 0 && (
                       <div className="flex">
                         <div className="shrink-0 sticky left-0 bg-white z-10 px-2 py-1.5 text-xs text-muteddim border-r border-line" style={{ width: LABEL_W }}>Sem macro-etapas</div>
                         <div style={{ width: largura }} />
