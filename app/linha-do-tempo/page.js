@@ -25,7 +25,7 @@ function passoDiasPara(span) {
 
 export default function LinhaDoTempoPage() {
   const { dados: pis } = useTabela("pis", { order: { coluna: "codigo" } });
-  const { dados: etapas } = useTabela("etapas", { order: { coluna: "created_at" } });
+  const { dados: etapas } = useTabela("etapas");
   const [selecionarAberto, setSelecionarAberto] = useState(false);
   const [piIds, setPiIds] = useState([]);
   const [zoom, setZoom] = useState(1);
@@ -34,12 +34,13 @@ export default function LinhaDoTempoPage() {
   const etapasDosPis = etapas.filter((e) => piIds.includes(e.pi_id));
   // monta a lista na mesma ordem de criação do Cronograma: cada macro-etapa
   // seguida imediatamente das suas sub-etapas (também na ordem em que foram criadas)
+  const porOrdem = (a, b) => (a.ordem ?? 999999) - (b.ordem ?? 999999);
   const itensOrdenados = (piId) => {
     const doPi = etapasDosPis.filter((e) => e.pi_id === piId);
-    const macros = doPi.filter((e) => !e.parent_etapa_id);
+    const macros = doPi.filter((e) => !e.parent_etapa_id).sort(porOrdem);
     return macros.flatMap((m) => [
       { ...m, nivel: 0 },
-      ...doPi.filter((e) => e.parent_etapa_id === m.id).map((s) => ({ ...s, nivel: 1 })),
+      ...doPi.filter((e) => e.parent_etapa_id === m.id).sort(porOrdem).map((s) => ({ ...s, nivel: 1 })),
     ]);
   };
 

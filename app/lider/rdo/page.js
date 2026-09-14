@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useTabela, registrarLog } from "../../../lib/dados";
 import { useAuth } from "../../../lib/AuthContext";
 import { supabase } from "../../../lib/supabase";
@@ -16,13 +16,22 @@ const NAV = [
 ];
 const STATUS = [["nao_iniciada", "Não iniciada"], ["em_andamento", "Em andamento"], ["concluida", "Concluída"], ["parada", "Parada"]];
 const CATEGORIAS = ["Atraso", "Retrabalho", "Reclamação do cliente", "Prejuízo", "Outro"];
+const porOrdem = (a, b) => (a.ordem ?? 999999) - (b.ordem ?? 999999);
 
 export default function LiderRdoPage() {
   const { usuario } = useAuth();
   const meusPis = useMinhasPis(usuario);
   const piAtivo = meusPis[0];
   const { dados: etapas } = useTabela("etapas");
-  const etapasDoPi = piAtivo ? etapas.filter((e) => e.pi_id === piAtivo.id && !e.parent_etapa_id) : [];
+  const etapasDoPi = useMemo(() => {
+    if (!piAtivo) return [];
+    const doPi = etapas.filter((e) => e.pi_id === piAtivo.id);
+    const macros = doPi.filter((e) => !e.parent_etapa_id).sort(porOrdem);
+    return macros.flatMap((m) => [
+      { ...m, nivel: 0 },
+      ...doPi.filter((e) => e.parent_etapa_id === m.id).sort(porOrdem).map((s) => ({ ...s, nivel: 1 })),
+    ]);
+  }, [etapas, piAtivo]);
 
   const [passo, setPasso] = useState(1);
   const [statusPorEtapa, setStatusPorEtapa] = useState({});
@@ -90,8 +99,8 @@ export default function LiderRdoPage() {
           <div className="flex flex-col gap-3">
             <div className="text-sm font-mono text-muteddim tracking-wide">PASSO 1 — ATIVIDADES</div>
             {etapasDoPi.map((e) => (
-              <div key={e.id} className="bg-white rounded-xl border border-line p-4">
-                <div className="font-semibold text-base mb-3">{e.nome}</div>
+              <div key={e.id} className={`bg-white rounded-xl border border-line p-4 ${e.nivel ? "ml-5" : ""}`}>
+                <div className={`font-semibold text-base mb-3 ${e.nivel ? "text-muted" : ""}`}>{e.nivel ? "· " : ""}{e.nome}</div>
                 <select value={statusPorEtapa[e.id]?.status ?? e.status}
                   onChange={(ev) => setStatusPorEtapa((p) => ({ ...p, [e.id]: { ...p[e.id], status: ev.target.value } }))}
                   className="w-full px-3 py-2.5 rounded-lg border border-line text-base mb-2">
@@ -104,7 +113,7 @@ export default function LiderRdoPage() {
                 )}
               </div>
             ))}
-            {etapasDoPi.length === 0 && <div className="text-sm text-muteddim">Nenhuma macro-etapa cadastrada neste PI.</div>}
+            {etapasDoPi.length === 0 && <div className="text-sm text-muteddim">Nenhuma etapa cadastrada neste PI.</div>}
             <button onClick={() => setPasso(2)} className="mt-2 py-4 rounded-xl bg-cyan text-white font-semibold text-base">Próximo</button>
           </div>
         )}

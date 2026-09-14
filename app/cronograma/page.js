@@ -104,9 +104,10 @@ export default function CronogramaPage() {
   const { dados: dependencias, recarregar: recarregarDependencias } = useTabela("etapa_dependencias");
   const { dados: alocacoesRecurso, recarregar: recarregarAlocacoesRecurso } = useTabela("alocacoes_recurso");
 
+  const porOrdem = (a, b) => (a.ordem ?? 999999) - (b.ordem ?? 999999);
   const etapasDoPi = useMemo(() => etapas.filter((e) => e.pi_id === (piAtual && piAtual.id)), [etapas, piAtual]);
-  const macroEtapas = etapasDoPi.filter((e) => !e.parent_etapa_id);
-  const subDe = (macroId) => etapasDoPi.filter((e) => e.parent_etapa_id === macroId);
+  const macroEtapas = etapasDoPi.filter((e) => !e.parent_etapa_id).sort(porOrdem);
+  const subDe = (macroId) => etapasDoPi.filter((e) => e.parent_etapa_id === macroId).sort(porOrdem);
   const depsDe = (etapaId) => dependencias.filter((d) => d.etapa_id === etapaId).map((d) => etapasDoPi.find((e) => e.id === d.depende_de_etapa_id)).filter(Boolean);
   const alocsDaEtapa = (etapaId) => alocacoesRecurso.filter((a) => a.etapa_id === etapaId);
 
@@ -145,8 +146,9 @@ export default function CronogramaPage() {
   const addMacroEtapa = async () => {
     if (!piAtual) return;
     const t0 = todayISO();
+    const proximaOrdem = macroEtapas.length ? Math.max(...macroEtapas.map((e) => e.ordem ?? 0)) + 1 : 0;
     await supabase.from("etapas").insert({
-      pi_id: piAtual.id, nome: "Nova macro-etapa", tipo: "campo",
+      pi_id: piAtual.id, nome: "Nova macro-etapa", tipo: "campo", ordem: proximaOrdem,
       data_prevista_inicio: t0, data_prevista_fim: addDias(t0, 7), status: "nao_iniciada", percentual: 0,
     });
     registrarLog(usuario, "Criou macro-etapa", piAtual.codigo);
@@ -155,8 +157,10 @@ export default function CronogramaPage() {
   const addSubEtapa = async (macroId) => {
     const macro = etapasDoPi.find((e) => e.id === macroId);
     const base = macro?.data_prevista_inicio || todayISO();
+    const irmas = subDe(macroId);
+    const proximaOrdem = irmas.length ? Math.max(...irmas.map((e) => e.ordem ?? 0)) + 1 : 0;
     await supabase.from("etapas").insert({
-      pi_id: piAtual.id, parent_etapa_id: macroId, nome: "Nova sub-etapa", tipo: "campo",
+      pi_id: piAtual.id, parent_etapa_id: macroId, nome: "Nova sub-etapa", tipo: "campo", ordem: proximaOrdem,
       data_prevista_inicio: base, data_prevista_fim: addDias(base, 3), status: "nao_iniciada", percentual: 0,
     });
     recarregarEtapas();
@@ -187,22 +191,39 @@ export default function CronogramaPage() {
 
   const reordenarEtapa = async (dragId, targetId) => {
     if (dragId === targetId) return;
+    const dragEtapa = etapasDoPi.find((e) => e.id === dragId);
     const targetEtapa = etapasDoPi.find((e) => e.id === targetId);
-    if (!targetEtapa) return;
-    const novoParentId = targetEtapa.parent_etapa_id || null;
-    if (novoParentId === dragId) return;
-    const filhas = etapasDoPi.filter((e) => e.parent_etapa_id === dragId);
-    if (novoParentId) {
-      for (const filha of filhas) await supabase.from("etapas").update({ parent_etapa_id: novoParentId }).eq("id", filha.id);
+    if (!dragEtapa || !targetEtapa) return;
+    const parentDrag = dragEtapa.parent_etapa_id || null;
+    const parentTarget = targetEtapa.parent_etapa_id || null;
+
+    if (parentDrag === parentTarget) {
+      // mesmo grupo (duas macro-etapas, ou duas sub-etapas da mesma macro) → reordenar posição
+      const irmas = etapasDoPi.filter((e) => (e.parent_etapa_id || null) === parentDrag).sort(porOrdem);
+      const semArrastada = irmas.filter((e) => e.id !== dragId);
+      const idxAlvo = semArrastada.findIndex((e) => e.id === targetId);
+      const novaSequencia = [...semArrastada.slice(0, idxAlvo + 1), dragEtapa, ...semArrastada.slice(idxAlvo + 1)];
+      await Promise.all(novaSequencia.map((e, i) => supabase.from("etapas").update({ ordem: i }).eq("id", e.id)));
+    } else {
+      // grupos diferentes → muda de pai (comportamento anterior), vai pro fim da nova lista
+      if (parentTarget === dragId) return;
+      const novosIrmaos = etapasDoPi.filter((e) => (e.parent_etapa_id || null) === parentTarget && e.id !== dragId);
+      const novaOrdem = novosIrmaos.length ? Math.max(...novosIrmaos.map((e) => e.ordem ?? 0)) + 1 : 0;
+      const filhas = etapasDoPi.filter((e) => e.parent_etapa_id === dragId);
+      if (parentTarget) {
+        for (const filha of filhas) await supabase.from("etapas").update({ parent_etapa_id: parentTarget }).eq("id", filha.id);
+      }
+      await supabase.from("etapas").update({ parent_etapa_id: parentTarget, ordem: novaOrdem }).eq("id", dragId);
     }
-    await supabase.from("etapas").update({ parent_etapa_id: novoParentId }).eq("id", dragId);
     recarregarEtapas();
   };
   const tornarSubDe = async (dragId, macroId) => {
     if (dragId === macroId) return;
+    const irmas = subDe(macroId).filter((e) => e.id !== dragId);
+    const novaOrdem = irmas.length ? Math.max(...irmas.map((e) => e.ordem ?? 0)) + 1 : 0;
     const filhas = etapasDoPi.filter((e) => e.parent_etapa_id === dragId);
     for (const filha of filhas) await supabase.from("etapas").update({ parent_etapa_id: macroId }).eq("id", filha.id);
-    await supabase.from("etapas").update({ parent_etapa_id: macroId }).eq("id", dragId);
+    await supabase.from("etapas").update({ parent_etapa_id: macroId, ordem: novaOrdem }).eq("id", dragId);
     recarregarEtapas();
   };
 

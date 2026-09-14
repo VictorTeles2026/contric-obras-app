@@ -23,7 +23,16 @@ export default function RdoPage() {
 
   const [piId, setPiId] = useState("");
   const piAtual = pis.find((p) => p.id === piId) || pis[0];
-  const etapasDoPi = etapas.filter((e) => e.pi_id === (piAtual && piAtual.id) && !e.parent_etapa_id);
+  const porOrdem = (a, b) => (a.ordem ?? 999999) - (b.ordem ?? 999999);
+  const etapasDoPi = useMemo(() => {
+    if (!piAtual) return [];
+    const doPi = etapas.filter((e) => e.pi_id === piAtual.id);
+    const macros = doPi.filter((e) => !e.parent_etapa_id).sort(porOrdem);
+    return macros.flatMap((m) => [
+      { ...m, nivel: 0 },
+      ...doPi.filter((e) => e.parent_etapa_id === m.id).sort(porOrdem).map((s) => ({ ...s, nivel: 1 })),
+    ]);
+  }, [etapas, piAtual]);
 
   const liderResponsavel = useMemo(() => {
     if (!piAtual) return null;
@@ -129,8 +138,8 @@ export default function RdoPage() {
         <div className="text-[11px] font-mono text-muteddim mb-2">ATIVIDADES</div>
         <div className="flex flex-col gap-2">
           {etapasDoPi.map((e) => (
-            <div key={e.id} className="flex items-center gap-2 p-2 bg-panel rounded-lg text-sm">
-              <span className="flex-1">{e.nome}</span>
+            <div key={e.id} className={`flex items-center gap-2 p-2 bg-panel rounded-lg text-sm ${e.nivel ? "ml-5" : ""}`}>
+              <span className={`flex-1 ${e.nivel ? "text-muted" : ""}`}>{e.nivel ? "· " : ""}{e.nome}</span>
               <select
                 value={statusPorEtapa[e.id]?.status ?? e.status}
                 onChange={(ev) => setStatusPorEtapa((p) => ({ ...p, [e.id]: { ...p[e.id], status: ev.target.value } }))}
@@ -145,7 +154,7 @@ export default function RdoPage() {
               )}
             </div>
           ))}
-          {etapasDoPi.length === 0 && <div className="text-xs text-muteddim">Este PI não tem macro-etapas cadastradas.</div>}
+          {etapasDoPi.length === 0 && <div className="text-xs text-muteddim">Este PI não tem etapas cadastradas.</div>}
         </div>
       </div>
 
