@@ -113,23 +113,26 @@ export default function CronogramaPage() {
 
   const [pisModalAberto, setPisModalAberto] = useState(false);
   const [pisModalModo, setPisModalModo] = useState("create");
+  const [erro, setErro] = useState("");
 
   const salvarPi = async (dadosPi, valoresOrcamento) => {
     let piId = piAtual?.id;
     if (pisModalModo === "create") {
       const { data, error } = await supabase.from("pis").insert(dadosPi).select().single();
-      if (error) return;
+      if (error) { setErro(error.message); return; }
       piId = data.id;
       registrarLog(usuario, "Criou PI", data.codigo);
     } else {
-      await supabase.from("pis").update(dadosPi).eq("id", piId);
+      const { error } = await supabase.from("pis").update(dadosPi).eq("id", piId);
+      if (error) { setErro(error.message); return; }
       registrarLog(usuario, "Editou PI", dadosPi.codigo);
     }
     const linhas = Object.entries(valoresOrcamento)
       .filter(([, valor]) => valor !== "" && valor !== undefined)
       .map(([categoriaId, valor]) => ({ pi_id: piId, categoria_id: categoriaId, valor_orcado: Number(valor) }));
     if (linhas.length > 0) {
-      await supabase.from("orcamento_pi_item").upsert(linhas, { onConflict: "pi_id,categoria_id" });
+      const { error } = await supabase.from("orcamento_pi_item").upsert(linhas, { onConflict: "pi_id,categoria_id" });
+      if (error) { setErro(error.message); return; }
     }
     setPisModalAberto(false);
     setPiSelecionadoId(piId);
@@ -138,7 +141,8 @@ export default function CronogramaPage() {
 
   const salvarCronogramaBase = async () => {
     if (!piAtual) return;
-    await supabase.from("pis").update({ baseline_definida_em: new Date().toISOString(), baseline_definida_por: usuario.id }).eq("id", piAtual.id);
+    const { error } = await supabase.from("pis").update({ baseline_definida_em: new Date().toISOString(), baseline_definida_por: usuario.id }).eq("id", piAtual.id);
+    if (error) { setErro(error.message); return; }
     registrarLog(usuario, "Salvou Cronograma Base", piAtual.codigo);
     recarregarPis();
   };
@@ -147,10 +151,11 @@ export default function CronogramaPage() {
     if (!piAtual) return;
     const t0 = todayISO();
     const proximaOrdem = macroEtapas.length ? Math.max(...macroEtapas.map((e) => e.ordem ?? 0)) + 1 : 0;
-    await supabase.from("etapas").insert({
+    const { error } = await supabase.from("etapas").insert({
       pi_id: piAtual.id, nome: "Nova macro-etapa", tipo: "campo", ordem: proximaOrdem,
       data_prevista_inicio: t0, data_prevista_fim: addDias(t0, 7), status: "nao_iniciada", percentual: 0,
     });
+    if (error) { setErro(error.message); return; }
     registrarLog(usuario, "Criou macro-etapa", piAtual.codigo);
     recarregarEtapas();
   };
@@ -159,10 +164,11 @@ export default function CronogramaPage() {
     const base = macro?.data_prevista_inicio || todayISO();
     const irmas = subDe(macroId);
     const proximaOrdem = irmas.length ? Math.max(...irmas.map((e) => e.ordem ?? 0)) + 1 : 0;
-    await supabase.from("etapas").insert({
+    const { error } = await supabase.from("etapas").insert({
       pi_id: piAtual.id, parent_etapa_id: macroId, nome: "Nova sub-etapa", tipo: "campo", ordem: proximaOrdem,
       data_prevista_inicio: base, data_prevista_fim: addDias(base, 3), status: "nao_iniciada", percentual: 0,
     });
+    if (error) { setErro(error.message); return; }
     recarregarEtapas();
   };
   const atualizarEtapa = async (id, patch) => {
@@ -170,7 +176,8 @@ export default function CronogramaPage() {
     if (atual && patch.status && patch.status !== atual.status) {
       registrarLog(usuario, "Alterou status de etapa", `"${atual.nome}" → ${patch.status}`);
     }
-    await supabase.from("etapas").update(patch).eq("id", id);
+    const { error } = await supabase.from("etapas").update(patch).eq("id", id);
+    if (error) { setErro(error.message); return; }
     recarregarEtapas();
   };
   const excluirEtapa = async (id) => { await supabase.from("etapas").delete().eq("id", id); recarregarEtapas(); };
@@ -317,6 +324,13 @@ export default function CronogramaPage() {
           </button>
         )}
       </div>
+
+      {erro && (
+        <div className="flex items-center gap-3 px-3 py-2 bg-red/10 border-b border-red/30 text-xs text-red">
+          <span className="flex-1">⚠ Não deu pra salvar: {erro}</span>
+          <button onClick={() => setErro("")} className="font-semibold underline shrink-0">Fechar</button>
+        </div>
+      )}
 
       {pisModalAberto && (
         <PiModal
@@ -467,6 +481,8 @@ function EtapaRow({ etapa, editavel, onChange, onDelete, deps, onRemoverDep, anc
   const [inicioLocal, setInicioLocal] = useCampoDebounced(etapa.data_prevista_inicio || "", (v) => onChange(etapa.id, { data_prevista_inicio: v }), 300);
   const [fimLocal, setFimLocal] = useCampoDebounced(etapa.data_prevista_fim || "", (v) => onChange(etapa.id, { data_prevista_fim: v }), 300);
   const [percLocal, setPercLocal] = useCampoDebounced(etapa.percentual || 0, (v) => onChange(etapa.id, { percentual: Number(v) }));
+  const [medicaoPercLocal, setMedicaoPercLocal] = useCampoDebounced(etapa.medicao_percentual ?? "", (v) => onChange(etapa.id, { medicao_percentual: v === "" ? null : Number(v) }));
+  const [medicaoValorLocal, setMedicaoValorLocal] = useCampoDebounced(etapa.medicao_valor ?? "", (v) => onChange(etapa.id, { medicao_valor: v === "" ? null : Number(v) }));
 
   return (
     <div
@@ -557,6 +573,23 @@ function EtapaRow({ etapa, editavel, onChange, onDelete, deps, onRemoverDep, anc
               </label>
             ))}
           </div>
+        )}
+      </div>
+
+      <div className="flex items-center gap-1.5">
+        <label className="flex items-center gap-1 text-xs text-muted cursor-pointer whitespace-nowrap">
+          <input type="checkbox" checked={!!etapa.medicao} disabled={!editavel} onChange={(e) => onChange(etapa.id, { medicao: e.target.checked })} />
+          Medição
+        </label>
+        {etapa.medicao && (
+          <>
+            <input type="number" min="0" max="100" placeholder="%" value={medicaoPercLocal} disabled={!editavel}
+              onChange={(e) => setMedicaoPercLocal(e.target.value)}
+              className="w-16 px-2 py-1.5 rounded-lg border border-line text-xs bg-white" title="Percentual medido" />
+            <input type="number" step="0.01" placeholder="R$" value={medicaoValorLocal} disabled={!editavel}
+              onChange={(e) => setMedicaoValorLocal(e.target.value)}
+              className="w-24 px-2 py-1.5 rounded-lg border border-line text-xs bg-white" title="Valor medido (R$)" />
+          </>
         )}
       </div>
 
