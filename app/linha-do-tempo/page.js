@@ -11,6 +11,11 @@ const STATUS_COR = {
   parada: "#D64545",
 };
 const LABEL_W = 220;
+const AREAS = [
+  "Engenharia Mecânica", "Engenharia Elétrica", "Vendas", "Cliente",
+  "Suprimentos", "Produção", "Líder de Obra", "Coordenador de Obra", "Financeiro",
+];
+const PALETA_FILTRO = ["#0B84A5", "#2E9E44", "#C97A21", "#8E5CD9", "#D64545", "#3D8FB5", "#B5752E", "#5C8E5C"];
 
 function diffDias(iso) {
   return Math.ceil((new Date(iso + "T00:00:00") - new Date(new Date().toISOString().slice(0, 10) + "T00:00:00")) / 86400000);
@@ -26,6 +31,8 @@ function passoDiasPara(span) {
 export default function LinhaDoTempoPage() {
   const { dados: pis } = useTabela("pis", { order: { coluna: "codigo" } });
   const { dados: etapas } = useTabela("etapas");
+  const { dados: recursos } = useTabela("recursos");
+  const { dados: alocacoesRecurso } = useTabela("alocacoes_recurso");
   const [selecionarAberto, setSelecionarAberto] = useState(false);
   const [piIds, setPiIds] = useState([]);
   const [zoom, setZoom] = useState(1);
@@ -33,6 +40,33 @@ export default function LinhaDoTempoPage() {
   const nivelDe = (piId) => nivelPorPi[piId] || "tudo";
   const proximoNivel = { tudo: "macro", macro: "pi", pi: "tudo" };
   const ciclarNivel = (piId) => setNivelPorPi((p) => ({ ...p, [piId]: proximoNivel[nivelDe(piId)] }));
+
+  // ---- filtro por equipe/recurso ----
+  const [equipesDropdownAberto, setEquipesDropdownAberto] = useState(false);
+  const [recursosDropdownAberto, setRecursosDropdownAberto] = useState(false);
+  const [equipesDraft, setEquipesDraft] = useState([]);
+  const [recursosDraft, setRecursosDraft] = useState([]);
+  const [filtroAtivo, setFiltroAtivo] = useState({ equipes: [], recursos: [] });
+  const toggleEquipeDraft = (a) => setEquipesDraft((p) => p.includes(a) ? p.filter((x) => x !== a) : [...p, a]);
+  const toggleRecursoDraft = (id) => setRecursosDraft((p) => p.includes(id) ? p.filter((x) => x !== id) : [...p, id]);
+  const aplicarFiltro = () => { setFiltroAtivo({ equipes: equipesDraft, recursos: recursosDraft }); setEquipesDropdownAberto(false); setRecursosDropdownAberto(false); };
+  const limparFiltro = () => { setEquipesDraft([]); setRecursosDraft([]); setFiltroAtivo({ equipes: [], recursos: [] }); };
+
+  // cada equipe/recurso selecionado no filtro ganha uma cor fixa (mesma ordem: equipes depois recursos)
+  const itensFiltro = useMemo(() => {
+    const nomeRecurso = (id) => recursos.find((r) => r.id === id)?.nome || "?";
+    const lista = [
+      ...filtroAtivo.equipes.map((a) => ({ tipo: "equipe", valor: a, rotulo: a })),
+      ...filtroAtivo.recursos.map((id) => ({ tipo: "recurso", valor: id, rotulo: nomeRecurso(id) })),
+    ];
+    return lista.map((it, i) => ({ ...it, cor: PALETA_FILTRO[i % PALETA_FILTRO.length] }));
+  }, [filtroAtivo, recursos]);
+
+  const itensQueBatemNaEtapa = (etapa) => itensFiltro.filter((it) =>
+    it.tipo === "equipe"
+      ? (etapa.areas || []).includes(it.valor)
+      : alocacoesRecurso.some((al) => al.etapa_id === etapa.id && al.recurso_id === it.valor)
+  );
 
   const pisSelecionados = pis.filter((p) => piIds.includes(p.id));
   const etapasDosPis = etapas.filter((e) => piIds.includes(e.pi_id));
@@ -102,6 +136,55 @@ export default function LinhaDoTempoPage() {
           </div>
         </div>
 
+        {/* ---- filtro por equipe / recurso ---- */}
+        <div className="flex flex-wrap items-center gap-2 mb-4 bg-panel border border-line rounded-lg p-3">
+          <div className="relative">
+            <button onClick={() => { setEquipesDropdownAberto((o) => !o); setRecursosDropdownAberto(false); }} className="px-3 py-1.5 rounded-lg border border-line bg-white text-sm">
+              Equipes {equipesDraft.length > 0 ? `(${equipesDraft.length})` : ""} ▾
+            </button>
+            {equipesDropdownAberto && (
+              <div className="absolute z-20 mt-1 bg-white border border-line rounded-lg shadow-lg p-2 w-64 max-h-64 overflow-auto">
+                {AREAS.map((a) => (
+                  <label key={a} className="flex items-center gap-2 py-1 text-sm cursor-pointer">
+                    <input type="checkbox" checked={equipesDraft.includes(a)} onChange={() => toggleEquipeDraft(a)} />
+                    {a}
+                  </label>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="relative">
+            <button onClick={() => { setRecursosDropdownAberto((o) => !o); setEquipesDropdownAberto(false); }} className="px-3 py-1.5 rounded-lg border border-line bg-white text-sm">
+              Recursos {recursosDraft.length > 0 ? `(${recursosDraft.length})` : ""} ▾
+            </button>
+            {recursosDropdownAberto && (
+              <div className="absolute z-20 mt-1 bg-white border border-line rounded-lg shadow-lg p-2 w-64 max-h-64 overflow-auto">
+                {recursos.length === 0 && <div className="text-xs text-muteddim px-1 py-1">Nenhum recurso cadastrado.</div>}
+                {recursos.map((r) => (
+                  <label key={r.id} className="flex items-center gap-2 py-1 text-sm cursor-pointer">
+                    <input type="checkbox" checked={recursosDraft.includes(r.id)} onChange={() => toggleRecursoDraft(r.id)} />
+                    {r.nome}
+                  </label>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <button onClick={aplicarFiltro} className="px-4 py-1.5 rounded-lg bg-cyan text-white text-sm font-semibold">Filtrar</button>
+          <button onClick={limparFiltro} className="px-4 py-1.5 rounded-lg border border-line text-muted text-sm">Limpar Filtro</button>
+
+          {itensFiltro.length > 0 && (
+            <div className="flex flex-wrap items-center gap-2 ml-2">
+              {itensFiltro.map((it) => (
+                <span key={it.tipo + it.valor} className="text-xs font-semibold px-2 py-1 rounded-full text-white" style={{ background: it.cor }}>
+                  {it.rotulo}
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+
         {pisSelecionados.length === 0 && <div className="text-sm text-muteddim">Nenhum PI selecionado — clique em "Selecionar PIs" acima.</div>}
         {pisSelecionados.length > 0 && (
           <div className="text-[11px] text-muteddim mb-2">Clique no nome de um PI para alternar entre: tudo (macro + sub-etapas) → só macro-etapas → contraído.</div>
@@ -162,6 +245,7 @@ export default function LinhaDoTempoPage() {
                       const vencido = e.status !== "concluida" && dias !== null && dias < 0;
                       const urgente = e.status !== "concluida" && dias !== null && dias >= 0 && dias <= 1;
                       const atencao = e.status !== "concluida" && dias !== null && dias > 1 && dias <= 3;
+                      const marcas2 = itensQueBatemNaEtapa(e);
                       return (
                         <div key={e.id} className="flex items-center border-b border-line/60">
                           <div className={`shrink-0 sticky left-0 bg-white z-10 py-1.5 text-xs truncate border-r border-line ${e.nivel ? "pl-6 pr-2 text-muted" : "px-2"}`} style={{ width: LABEL_W }} title={e.nome}>
@@ -179,6 +263,13 @@ export default function LinhaDoTempoPage() {
                               }}
                               title={`${e.nome} · ${e.status}${e.status === "em_andamento" ? ` · ${e.percentual || 0}%` : ""}`}
                             />
+                            {marcas2.length > 0 && (
+                              <div className="absolute flex gap-0.5" style={{ left, top: e.nivel ? -1 : -2 }}>
+                                {marcas2.map((m) => (
+                                  <span key={m.tipo + m.valor} className="block rounded-full" style={{ width: 6, height: 6, background: m.cor }} title={m.rotulo} />
+                                ))}
+                              </div>
+                            )}
                             {(vencido || e.status === "em_andamento") && (
                               <span className="absolute top-2 text-[9px] font-mono text-muteddim" style={{ left: left + width + 4 }}>
                                 {vencido ? "VENCIDO" : `${e.percentual || 0}%`}
@@ -198,6 +289,51 @@ export default function LinhaDoTempoPage() {
                 );
               })}
             </div>
+          </div>
+        )}
+
+        {/* ---- tabelas de detalhe por equipe/recurso selecionado no filtro ---- */}
+        {itensFiltro.length > 0 && (
+          <div className="mt-6 flex flex-col gap-5">
+            {itensFiltro.map((it) => {
+              const linhas = pisSelecionados.flatMap((pi) =>
+                itensOrdenados(pi.id)
+                  .filter((e) => (it.tipo === "equipe" ? (e.areas || []).includes(it.valor) : alocacoesRecurso.some((al) => al.etapa_id === e.id && al.recurso_id === it.valor)))
+                  .map((e) => ({ pi, etapa: e }))
+              );
+              return (
+                <div key={it.tipo + it.valor}>
+                  <div className="font-head font-bold text-sm mb-2 px-2 py-1 rounded inline-block text-white" style={{ background: it.cor }}>
+                    {it.rotulo}
+                  </div>
+                  <div className="border border-line rounded-lg overflow-hidden">
+                    <table className="w-full text-xs">
+                      <thead>
+                        <tr className="bg-panel text-left">
+                          <th className="px-3 py-2 font-mono text-muteddim">PI</th>
+                          <th className="px-3 py-2 font-mono text-muteddim">Macro/sub etapa</th>
+                          <th className="px-3 py-2 font-mono text-muteddim">Início</th>
+                          <th className="px-3 py-2 font-mono text-muteddim">Fim</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {linhas.map(({ pi, etapa: e }) => (
+                          <tr key={pi.id + e.id} className="border-t border-line">
+                            <td className="px-3 py-2 font-mono text-cyan font-bold">{pi.codigo}</td>
+                            <td className="px-3 py-2">{e.nivel ? "· " : ""}{e.nome}</td>
+                            <td className="px-3 py-2">{e.data_prevista_inicio || "—"}</td>
+                            <td className="px-3 py-2">{e.data_prevista_fim || "—"}</td>
+                          </tr>
+                        ))}
+                        {linhas.length === 0 && (
+                          <tr><td colSpan={4} className="px-3 py-3 text-muteddim text-center">Nenhuma etapa encontrada nos PIs selecionados.</td></tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         )}
       </div>
