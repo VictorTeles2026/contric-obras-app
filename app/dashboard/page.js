@@ -1,5 +1,6 @@
 "use client";
 
+import { Fragment } from "react";
 import { useTabela } from "../../lib/dados";
 import { useAuth } from "../../lib/AuthContext";
 import PainelShell from "../../components/PainelShell";
@@ -54,42 +55,44 @@ export default function DashboardPage() {
           <div className="text-sm text-muteddim">Nenhuma etapa marcada com Medição em aberto — isso é feito no Cronograma, em cada macro ou sub-etapa.</div>
         )}
         {gruposMedicoes.length > 0 && (
-          <div className="flex flex-col gap-4">
-            {gruposMedicoes.map(({ pi, itens }) => (
-              <div key={pi.id}>
-                <div className="text-xs font-mono text-cyan font-bold mb-1">{pi.codigo} — {pi.cliente}{pi.projeto ? ` — ${pi.projeto}` : ""}</div>
-                <div className="overflow-x-auto">
-                  <table className="w-full text-xs">
-                    <thead>
-                      <tr className="text-left border-b border-line">
-                        <th className="py-2 pr-3 font-mono text-muteddim">Etapa</th>
-                        <th className="py-2 pr-3 font-mono text-muteddim">% avanço</th>
-                        <th className="py-2 pr-3 font-mono text-muteddim">% medição</th>
-                        <th className="py-2 pr-3 font-mono text-muteddim">R$</th>
-                        <th className="py-2 pr-3 font-mono text-muteddim">Previsão de término</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {itens.map((etapa) => {
-                        const dias = diasAte(etapa.data_prevista_fim);
-                        const vencida = dias !== null && dias < 0;
-                        const proxima = dias !== null && dias >= 0 && dias <= 20;
-                        const corTexto = vencida ? "text-red font-semibold" : proxima ? "text-amber font-semibold" : "";
-                        return (
-                          <tr key={etapa.id} className={`border-b border-line/60 ${corTexto}`}>
-                            <td className="py-2 pr-3">{etapa.parent_etapa_id ? "· " : ""}{etapa.nome}</td>
-                            <td className="py-2 pr-3">{formatarPercentual(etapa.percentual)}</td>
-                            <td className="py-2 pr-3">{formatarPercentual(etapa.medicao_percentual)}</td>
-                            <td className="py-2 pr-3">{formatarValor(etapa.medicao_valor)}</td>
-                            <td className="py-2 pr-3">{formatarData(etapa.data_prevista_fim)}{vencida ? " — VENCIDA" : proxima ? ` — em ${dias}d` : ""}</td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            ))}
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="text-left border-b border-line">
+                  <th className="py-2 pr-3 font-mono text-muteddim">Etapa</th>
+                  <th className="py-2 pr-3 font-mono text-muteddim">% avanço</th>
+                  <th className="py-2 pr-3 font-mono text-muteddim">% medição</th>
+                  <th className="py-2 pr-3 font-mono text-muteddim">R$</th>
+                  <th className="py-2 pr-3 font-mono text-muteddim">Previsão de término</th>
+                </tr>
+              </thead>
+              <tbody>
+                {gruposMedicoes.map(({ pi, itens }) => (
+                  <Fragment key={pi.id}>
+                    <tr>
+                      <td colSpan={5} className="pt-4 pb-1 text-xs font-mono text-cyan font-bold">
+                        {pi.codigo} — {pi.cliente}{pi.projeto ? ` — ${pi.projeto}` : ""}
+                      </td>
+                    </tr>
+                    {itens.map((etapa) => {
+                      const dias = diasAte(etapa.data_prevista_fim);
+                      const vencida = dias !== null && dias < 0;
+                      const proxima = dias !== null && dias >= 0 && dias <= 20;
+                      const corTexto = vencida ? "text-red font-semibold" : proxima ? "text-amber font-semibold" : "";
+                      return (
+                        <tr key={etapa.id} className={`border-b border-line/60 ${corTexto}`}>
+                          <td className="py-2 pr-3">{etapa.parent_etapa_id ? "· " : ""}{etapa.nome}</td>
+                          <td className="py-2 pr-3">{formatarPercentual(etapa.percentual)}</td>
+                          <td className="py-2 pr-3">{formatarPercentual(etapa.medicao_percentual)}</td>
+                          <td className="py-2 pr-3">{formatarValor(etapa.medicao_valor)}</td>
+                          <td className="py-2 pr-3">{formatarData(etapa.data_prevista_fim)}{vencida ? " — VENCIDA" : proxima ? ` — em ${dias}d` : ""}</td>
+                        </tr>
+                      );
+                    })}
+                  </Fragment>
+                ))}
+              </tbody>
+            </table>
           </div>
         )}
       </div>

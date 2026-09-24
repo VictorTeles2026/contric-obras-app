@@ -6,6 +6,7 @@ import { useAuth } from "../../../lib/AuthContext";
 import { supabase } from "../../../lib/supabase";
 import MobileShell from "../../../components/MobileShell";
 import AssinaturaCanvas from "../../../components/AssinaturaCanvas";
+import CapturaMidia from "../../../components/CapturaMidia";
 import { useMinhasPis, agruparPorCliente } from "../page";
 
 const NAV = [
@@ -41,6 +42,7 @@ export default function LiderRdoPage() {
   const [ocorrencias, setOcorrencias] = useState([]);
   const [novaCategoria, setNovaCategoria] = useState(null);
   const [novaDesc, setNovaDesc] = useState("");
+  const [novasMidias, setNovasMidias] = useState([]);
   const [enviado, setEnviado] = useState(false);
   const [enviando, setEnviando] = useState(false);
   const [pedirAssinatura, setPedirAssinatura] = useState(false);
@@ -48,8 +50,8 @@ export default function LiderRdoPage() {
 
   const adicionarOcorrencia = () => {
     if (!novaCategoria) return;
-    setOcorrencias((p) => [...p, { categoria: novaCategoria, descricao: novaDesc }]);
-    setNovaCategoria(null); setNovaDesc("");
+    setOcorrencias((p) => [...p, { categoria: novaCategoria, descricao: novaDesc, midias: novasMidias }]);
+    setNovaCategoria(null); setNovaDesc(""); setNovasMidias([]);
   };
 
   const enviar = async () => {
@@ -66,7 +68,7 @@ export default function LiderRdoPage() {
     }).select().single();
     if (!error) {
       if (ocorrencias.length > 0) {
-        await supabase.from("ocorrencias").insert(ocorrencias.map((o) => ({ pi_id: piAtivo.id, rdo_id: rdo.id, categoria: o.categoria, descricao: o.descricao, registrado_por: usuario.id })));
+        await supabase.from("ocorrencias").insert(ocorrencias.map((o) => ({ pi_id: piAtivo.id, rdo_id: rdo.id, categoria: o.categoria, descricao: o.descricao, midias: o.midias || [], registrado_por: usuario.id })));
       }
       await registrarLog(usuario, "Registrou RDO", `${usuario.nome} — ${piAtivo.codigo}`);
       setEnviado(true);
@@ -145,6 +147,7 @@ export default function LiderRdoPage() {
             {ocorrencias.map((o, i) => (
               <div key={i} className="bg-white rounded-xl border border-line p-4 text-base">
                 <span className="text-amber font-semibold">{o.categoria}</span>{o.descricao ? ` — ${o.descricao}` : ""}
+                {o.midias?.length > 0 && <div className="text-sm text-muteddim mt-1">📎 {o.midias.length} anexo(s)</div>}
               </div>
             ))}
             <div className="bg-white rounded-xl border border-line p-4">
@@ -155,8 +158,9 @@ export default function LiderRdoPage() {
                 ))}
               </div>
               <input placeholder="Descrição (opcional)" value={novaDesc} onChange={(e) => setNovaDesc(e.target.value)}
-                className="w-full px-3 py-2.5 rounded-lg border border-line text-base mb-2" />
-              <button onClick={adicionarOcorrencia} disabled={!novaCategoria} className="w-full py-2.5 rounded-lg bg-amber text-white text-sm font-semibold disabled:opacity-50">+ Adicionar ocorrência</button>
+                className="w-full px-3 py-2.5 rounded-lg border border-line text-base mb-3" />
+              <CapturaMidia value={novasMidias} onChange={setNovasMidias} />
+              <button onClick={adicionarOcorrencia} disabled={!novaCategoria} className="w-full mt-3 py-2.5 rounded-lg bg-amber text-white text-sm font-semibold disabled:opacity-50">+ Adicionar ocorrência</button>
             </div>
             <div className="flex gap-2">
               <button onClick={() => setPasso(1)} className="flex-1 py-4 rounded-xl border border-line text-muted font-semibold text-base">Voltar</button>

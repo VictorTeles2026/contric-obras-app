@@ -5,6 +5,7 @@ import { useTabela, registrarLog } from "../../lib/dados";
 import { useAuth, podeEditar } from "../../lib/AuthContext";
 import { supabase } from "../../lib/supabase";
 import PainelShell from "../../components/PainelShell";
+import CapturaMidia from "../../components/CapturaMidia";
 
 const STATUS = [
   ["nao_iniciada", "Não iniciada"], ["em_andamento", "Em andamento"],
@@ -49,6 +50,7 @@ export default function RdoPage() {
   const [ocorrencias, setOcorrencias] = useState([]);
   const [novaCategoria, setNovaCategoria] = useState(null);
   const [novaDesc, setNovaDesc] = useState("");
+  const [novasMidias, setNovasMidias] = useState([]);
   const [enviado, setEnviado] = useState(false);
 
   // ---- Minhas Horas de Hoje ----
@@ -79,8 +81,8 @@ export default function RdoPage() {
 
   const adicionarOcorrencia = () => {
     if (!novaCategoria) return;
-    setOcorrencias((p) => [...p, { categoria: novaCategoria, descricao: novaDesc }]);
-    setNovaCategoria(null); setNovaDesc("");
+    setOcorrencias((p) => [...p, { categoria: novaCategoria, descricao: novaDesc, midias: novasMidias }]);
+    setNovaCategoria(null); setNovaDesc(""); setNovasMidias([]);
   };
 
   const enviarRdo = async () => {
@@ -97,7 +99,7 @@ export default function RdoPage() {
 
     if (ocorrencias.length > 0) {
       await supabase.from("ocorrencias").insert(
-        ocorrencias.map((o) => ({ pi_id: piAtual.id, rdo_id: rdo.id, categoria: o.categoria, descricao: o.descricao, registrado_por: usuario.id }))
+        ocorrencias.map((o) => ({ pi_id: piAtual.id, rdo_id: rdo.id, categoria: o.categoria, descricao: o.descricao, midias: o.midias || [], registrado_por: usuario.id }))
       );
     }
 
@@ -163,9 +165,10 @@ export default function RdoPage() {
         {ocorrencias.map((o, i) => (
           <div key={i} className="text-xs p-2 bg-panel rounded-lg mb-1">
             <span className="text-amber font-semibold">{o.categoria}</span>{o.descricao ? ` — ${o.descricao}` : ""}
+            {o.midias?.length > 0 && <span className="text-muteddim"> · 📎 {o.midias.length} anexo(s)</span>}
           </div>
         ))}
-        <div className="flex gap-2 flex-wrap items-center">
+        <div className="flex gap-2 flex-wrap items-center mb-2">
           {CATEGORIAS_OCORRENCIA.map((c) => (
             <button key={c} type="button" onClick={() => setNovaCategoria(c)}
               className={`px-2.5 py-1 rounded-full text-xs border ${novaCategoria === c ? "bg-amber text-white border-amber" : "border-line text-muted"}`}>{c}</button>
@@ -174,6 +177,7 @@ export default function RdoPage() {
             className="flex-1 min-w-[160px] px-2 py-1.5 rounded-lg border border-line text-xs" />
           <button onClick={adicionarOcorrencia} disabled={!novaCategoria} className="px-3 py-1.5 rounded-lg bg-amber text-white text-xs font-semibold disabled:opacity-50">+ Adicionar</button>
         </div>
+        <CapturaMidia value={novasMidias} onChange={setNovasMidias} compacto />
       </div>
 
       {editavel ? (

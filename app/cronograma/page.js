@@ -409,7 +409,8 @@ export default function CronogramaPage() {
                       />
                     ))}
                     {editavel && (
-                      <button onClick={() => addSubEtapa(macro.id)} className="text-left text-[11px] text-muteddim hover:text-cyan py-1">
+                      <button onClick={() => addSubEtapa(macro.id)}
+                        className="self-start text-[11px] text-muteddim hover:text-cyan hover:border-cyan border border-line rounded-full px-2.5 py-1 mt-1">
                         + sub-etapa em "{macro.nome}"
                       </button>
                     )}

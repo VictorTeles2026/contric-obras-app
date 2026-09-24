@@ -5,6 +5,7 @@ import { registrarLog, useTabela } from "../../../lib/dados";
 import { useAuth } from "../../../lib/AuthContext";
 import { supabase } from "../../../lib/supabase";
 import MobileShell from "../../../components/MobileShell";
+import CapturaMidia from "../../../components/CapturaMidia";
 import { useMinhasPis, agruparPorCliente } from "../../lider/page";
 
 const NAV = [
@@ -24,6 +25,7 @@ export default function EquipeOcorrenciaPage() {
   const [piId, setPiId] = useState("");
   const [categoria, setCategoria] = useState(null);
   const [descricao, setDescricao] = useState("");
+  const [midias, setMidias] = useState([]);
   const [enviando, setEnviando] = useState(false);
   const [ok, setOk] = useState(false);
 
@@ -32,9 +34,9 @@ export default function EquipeOcorrenciaPage() {
   const enviar = async () => {
     if (!podeEnviar) return;
     setEnviando(true);
-    await supabase.from("ocorrencias").insert({ pi_id: piId, categoria, descricao: descricao.trim() || null, registrado_por: usuario.id });
+    await supabase.from("ocorrencias").insert({ pi_id: piId, categoria, descricao: descricao.trim() || null, midias, registrado_por: usuario.id });
     await registrarLog(usuario, "Registrou ocorrência", `${categoria} — ${meusPis.find((p) => p.id === piId)?.codigo}`);
-    setCategoria(null); setDescricao("");
+    setCategoria(null); setDescricao(""); setMidias([]);
     setEnviando(false); setOk(true); recarregar();
     setTimeout(() => setOk(false), 3000);
   };
@@ -74,6 +76,10 @@ export default function EquipeOcorrenciaPage() {
             <div className="text-sm text-muteddim mb-1.5">Descrição (opcional)</div>
             <textarea value={descricao} onChange={(e) => setDescricao(e.target.value)} rows={3} className="w-full px-3 py-2.5 rounded-lg border border-line text-base" />
           </div>
+          <div>
+            <div className="text-sm text-muteddim mb-2">Foto ou vídeo (opcional)</div>
+            <CapturaMidia value={midias} onChange={setMidias} />
+          </div>
           <button onClick={enviar} disabled={!podeEnviar || enviando} className="py-3.5 rounded-lg bg-amber text-white text-base font-semibold disabled:opacity-50">
             {enviando ? "Enviando..." : "Registrar ocorrência"}
           </button>
@@ -84,6 +90,7 @@ export default function EquipeOcorrenciaPage() {
           {minhasOcorrencias.map((o) => (
             <div key={o.id} className="bg-white rounded-xl border border-line p-4 text-base">
               <span className="text-amber font-semibold">{o.categoria}</span>{o.descricao ? ` — ${o.descricao}` : ""}
+              {o.midias?.length > 0 && <div className="text-sm text-muteddim mt-1">📎 {o.midias.length} anexo(s)</div>}
             </div>
           ))}
           {minhasOcorrencias.length === 0 && <div className="text-sm text-muteddim">Nenhuma ocorrência ainda.</div>}
