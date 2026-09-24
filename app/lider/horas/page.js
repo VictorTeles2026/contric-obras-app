@@ -1,113 +1,29 @@
 "use client";
 
-import { useState, useMemo } from "react";
-import { registrarLog } from "../../../lib/dados";
+import { useState } from "react";
 import { useAuth } from "../../../lib/AuthContext";
-import { supabase } from "../../../lib/supabase";
+import { useMinhasPis } from "../../../lib/minhasPis";
+import { NAV_LIDER } from "../../../lib/nav";
 import MobileShell from "../../../components/MobileShell";
-import { useMinhasPis, agruparPorCliente } from "../page";
-
-const NAV = [
-  { href: "/lider", label: "Início", icone: "🏠" },
-  { href: "/lider/rdo", label: "RDO", icone: "📋" },
-  { href: "/lider/horas", label: "Horas", icone: "⏱" },
-  { href: "/lider/cronograma", label: "Obras", icone: "📅" },
-  { href: "/lider/solicitar", label: "Solicitar", icone: "✎" },
-];
+import FormHoras from "../../../components/FormHoras";
+import UltimosLancamentos from "../../../components/UltimosLancamentos";
+import { Esqueleto, EstadoVazio } from "../../../components/ui";
 
 export default function LiderHorasPage() {
   const { usuario } = useAuth();
-  const meusPis = useMinhasPis(usuario);
-  const porCliente = useMemo(() => agruparPorCliente(meusPis), [meusPis]);
-  const [pisSelecionados, setPisSelecionados] = useState([]);
-  const [horaInicio, setHoraInicio] = useState("07:00");
-  const [horaFim, setHoraFim] = useState("");
-  const [enviado, setEnviado] = useState(false);
-  const [enviando, setEnviando] = useState(false);
-
-  const togglePi = (id) => setPisSelecionados((p) => p.includes(id) ? p.filter((x) => x !== id) : [...p, id]);
-  const horasTotais = horaInicio && horaFim
-    ? Math.max(0, (new Date(`2000-01-01T${horaFim}`) - new Date(`2000-01-01T${horaInicio}`)) / 3600000)
-    : 0;
-
-  const enviar = async () => {
-    if (pisSelecionados.length === 0 || horasTotais <= 0) return;
-    setEnviando(true);
-    const horasPorPi = horasTotais / pisSelecionados.length;
-    await supabase.from("apontamentos_horas").insert(
-      pisSelecionados.map((pid) => ({ usuario_id: usuario.id, pi_id: pid, horas_totais: horasPorPi, status: "pendente" }))
-    );
-    await registrarLog(usuario, "Enviou horas do dia", `${pisSelecionados.length} PI(s) — ${horasTotais.toFixed(1)}h`);
-    setEnviando(false);
-    setEnviado(true);
-  };
-
-  if (meusPis.length === 0) {
-    return <MobileShell nav={NAV}><div className="p-5 text-base text-muteddim leading-relaxed">Você não está alocado em nenhuma obra.</div></MobileShell>;
-  }
-
-  if (enviado) {
-    return (
-      <MobileShell nav={NAV}>
-        <div className="p-6 flex flex-col items-center text-center gap-3 mt-10">
-          <div className="text-5xl">✓</div>
-          <div className="font-head font-bold text-xl">Horas enviadas</div>
-          <p className="text-base text-muted">Pendente de validação.</p>
-          <a href="/lider" className="mt-4 px-6 py-3 rounded-lg bg-cyan text-white text-base font-semibold">Voltar ao início</a>
-        </div>
-      </MobileShell>
-    );
-  }
+  const { meusPis, todosPis, carregando } = useMinhasPis(usuario);
+  const [versao, setVersao] = useState(0);
 
   return (
-    <MobileShell nav={NAV}>
-      <div className="p-5 flex flex-col gap-5">
-        <div className="font-head font-bold text-xl">Minhas horas de hoje</div>
-
-        <div>
-          <div className="text-sm text-muteddim mb-2">Em quais obras você trabalhou hoje?</div>
-          <div className="flex flex-col gap-3">
-            {porCliente.map(([cliente, pisDoCliente]) => (
-              <div key={cliente}>
-                <div className="text-xs font-mono text-muteddim uppercase tracking-wide mb-1.5">{cliente}</div>
-                <div className="flex flex-wrap gap-2">
-                  {pisDoCliente.map((p) => (
-                    <button key={p.id} type="button" onClick={() => togglePi(p.id)}
-                      className={`px-4 py-2.5 rounded-xl text-left border ${pisSelecionados.includes(p.id) ? "bg-cyan text-white border-cyan" : "border-line text-muted bg-white"}`}>
-                      <div className="font-semibold">{p.codigo}</div>
-                      {p.projeto && <div className={`text-xs ${pisSelecionados.includes(p.id) ? "text-white/80" : "text-muteddim"}`}>{p.projeto}</div>}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* empilhados (não lado a lado) — evita o controle nativo de hora do iPhone estourar a largura */}
-        <div className="flex flex-col gap-3">
-          <div>
-            <div className="text-sm text-muteddim mb-1.5">Horário de início</div>
-            <input type="time" value={horaInicio} onChange={(e) => setHoraInicio(e.target.value)}
-              className="w-full px-4 py-3 rounded-lg border border-line text-base bg-white" />
-          </div>
-          <div>
-            <div className="text-sm text-muteddim mb-1.5">Horário de término</div>
-            <input type="time" value={horaFim} onChange={(e) => setHoraFim(e.target.value)}
-              className="w-full px-4 py-3 rounded-lg border border-line text-base bg-white" />
-          </div>
-        </div>
-
-        {horasTotais > 0 && pisSelecionados.length > 0 && (
-          <div className="text-base text-muted bg-white rounded-lg border border-line p-4 leading-relaxed">
-            {horasTotais.toFixed(1)}h ÷ {pisSelecionados.length} obra(s) = <strong>{(horasTotais / pisSelecionados.length).toFixed(1)}h</strong> cada
-          </div>
+    <MobileShell nav={NAV_LIDER} perfis={["lider"]}>
+      <div className="p-4 flex flex-col gap-5">
+        <div className="font-head font-bold text-2xl pt-1">Minhas horas</div>
+        {carregando && <Esqueleto linhas={3} />}
+        {!carregando && meusPis.length === 0 && (
+          <div className="cartao"><EstadoVazio icone="obra" titulo="Nenhuma obra" texto="Você não está alocado em nenhuma obra." /></div>
         )}
-
-        <button onClick={enviar} disabled={pisSelecionados.length === 0 || horasTotais <= 0 || enviando}
-          className="py-4 rounded-xl bg-amber text-white font-semibold text-base disabled:opacity-50">
-          {enviando ? "Enviando..." : "Enviar horas do dia"}
-        </button>
+        {!carregando && meusPis.length > 0 && <FormHoras usuario={usuario} pis={meusPis} onEnviado={() => setVersao((v) => v + 1)} />}
+        {!carregando && <UltimosLancamentos usuario={usuario} pis={todosPis} versao={versao} />}
       </div>
     </MobileShell>
   );

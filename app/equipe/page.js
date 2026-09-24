@@ -1,116 +1,172 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useEffect, useState } from "react";
+import dynamic from "next/dynamic";
 import { registrarLog, useTabela } from "../../lib/dados";
 import { useAuth } from "../../lib/AuthContext";
 import { supabase } from "../../lib/supabase";
+import { useMinhasPis, encontrarPiPorCodigo } from "../../lib/minhasPis";
+import { NAV_EQUIPE } from "../../lib/nav";
+import { hojeISO, horaCurta, formatarData, formatarHoras } from "../../lib/datas";
+import { useToast } from "../../lib/Toast";
 import MobileShell from "../../components/MobileShell";
-import LeitorQR from "../../components/LeitorQR";
-import { useMinhasPis, agruparPorCliente } from "../lider/page";
+import FormHoras from "../../components/FormHoras";
+import UltimosLancamentos from "../../components/UltimosLancamentos";
+import { Esqueleto, EstadoVazio, Segmentado, Aviso, Spinner } from "../../components/ui";
+import Icone from "../../components/Icone";
 
-const NAV = [
-  { href: "/equipe", label: "Horas", icone: "⏱" },
-  { href: "/equipe/ocorrencia", label: "Ocorrência", icone: "⚠" },
-];
+// o leitor (jsqr) só é baixado quando a câmera é aberta — deixa a tela mais leve no 4G
+const LeitorQR = dynamic(() => import("../../components/LeitorQR"), { ssr: false });
+
+const PERFIS_EQUIPE = ["funcionario", "terceiro"];
 
 function horasEntre(iniISO, fimISO) {
   return Math.max(0, (new Date(fimISO) - new Date(iniISO)) / 3600000);
 }
-function horaCurta(iso) {
-  return new Date(iso).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
-}
 
 export default function EquipeHorasPage() {
   const { usuario } = useAuth();
-  const meusPis = useMinhasPis(usuario);
-  const { dados: todosPis } = useTabela("pis");
+  const { meusPis, todosPis, carregando } = useMinhasPis(usuario);
   const [modo, setModo] = useState("checkin"); // "checkin" | "manual"
+  const [versao, setVersao] = useState(0);
+  const mudou = () => setVersao((v) => v + 1);
 
   return (
-    <MobileShell nav={NAV}>
-      <div className="p-5 flex flex-col gap-5">
-        <div className="font-head font-bold text-xl">Minhas horas de hoje</div>
+    <MobileShell nav={NAV_EQUIPE} perfis={PERFIS_EQUIPE}>
+      <div className="p-4 flex flex-col gap-5">
+        <div className="font-head font-bold text-2xl pt-1">Minhas horas</div>
 
-        <div className="flex bg-white border border-line rounded-full p-1">
-          <button onClick={() => setModo("checkin")} className={`flex-1 py-2.5 rounded-full text-sm font-semibold ${modo === "checkin" ? "bg-cyan text-white" : "text-muted"}`}>
-            Check-in / Check-out
-          </button>
-          <button onClick={() => setModo("manual")} className={`flex-1 py-2.5 rounded-full text-sm font-semibold ${modo === "manual" ? "bg-cyan text-white" : "text-muted"}`}>
-            Lançar manualmente
-          </button>
-        </div>
+        <Segmentado valor={modo} onChange={setModo} opcoes={[["checkin", "Check-in / out"], ["manual", "Lançar manual"]]} />
 
-        {modo === "checkin" ? <CheckInOut usuario={usuario} todosPis={todosPis} /> : <LancamentoManual usuario={usuario} meusPis={meusPis} />}
+        {carregando ? <Esqueleto linhas={2} altura={120} /> : modo === "checkin"
+          ? <CheckInOut usuario={usuario} todosPis={todosPis} meusPis={meusPis} onMudou={mudou} />
+          : meusPis.length === 0
+            ? <div className="cartao"><EstadoVazio icone="obra" titulo="Nenhuma obra" texto="Você ainda não está alocado em nenhuma obra. Fale com seu líder ou use o check-in pelo QR Code." /></div>
+            : <FormHoras usuario={usuario} pis={meusPis} onEnviado={mudou} />}
+
+        {!carregando && <UltimosLancamentos usuario={usuario} pis={todosPis} versao={versao} />}
       </div>
     </MobileShell>
   );
 }
 
-function CheckInOut({ usuario, todosPis }) {
-  const hoje = new Date().toISOString().slice(0, 10);
-  const { dados: apontamentosHoje, recarregar } = useTabela("apontamentos_horas", {
-    filtro: [["usuario_id", usuario?.id], ["data", hoje]],
+function Cronometro({ desde }) {
+  const [agora, setAgora] = useState(Date.now());
+  useEffect(() => {
+    const t = setInterval(() => setAgora(Date.now()), 30000);
+    return () => clearInterval(t);
+  }, []);
+  const min = Math.max(0, Math.floor((agora - new Date(desde).getTime()) / 60000));
+  return <>{Math.floor(min / 60)}h {String(min % 60).padStart(2, "0")}min</>;
+}
+
+function CheckInOut({ usuario, todosPis, meusPis, onMudou }) {
+  const { avisar } = useToast();
+  // sem filtro de data: uma sessão esquecida aberta ontem precisa aparecer para ser fechada
+  const { dados: meusApontamentos, carregando, recarregar } = useTabela("apontamentos_horas", {
+    filtro: [["usuario_id", usuario?.id]], order: { coluna: "created_at", asc: false },
   });
-  const sessaoAberta = apontamentosHoje.find((a) => a.entrada && !a.saida);
+  const sessaoAberta = meusApontamentos.find((a) => a.entrada && !a.saida);
   const piDaSessao = sessaoAberta ? todosPis.find((p) => p.id === sessaoAberta.pi_id) : null;
+  const sessaoDeOutroDia = sessaoAberta && sessaoAberta.data && sessaoAberta.data !== hojeISO();
 
   const [codigoPi, setCodigoPi] = useState("");
   const [scannerAberto, setScannerAberto] = useState(false);
   const [erro, setErro] = useState("");
   const [processando, setProcessando] = useState(false);
 
-  const fazerCheckin = async (textoLivre) => {
-    const termo = (textoLivre ?? codigoPi).trim().toLowerCase();
-    if (!termo) return;
-    const pi = todosPis.find((p) => p.codigo.toLowerCase() === termo || p.codigo.toLowerCase().includes(termo));
-    if (!pi) { setErro("Nenhuma obra encontrada com esse número."); return; }
+  const fazerCheckin = async (piOuTexto) => {
+    if (processando) return;
+    const pi = typeof piOuTexto === "object" ? piOuTexto : encontrarPiPorCodigo(todosPis, piOuTexto ?? codigoPi);
+    if (!pi) { setErro("Nenhuma obra encontrada com esse número. Confira e tente de novo."); return; }
     setErro(""); setProcessando(true);
-    await supabase.from("apontamentos_horas").insert({ usuario_id: usuario.id, pi_id: pi.id, data: hoje, entrada: new Date().toISOString(), status: "pendente" });
+    const { error } = await supabase.from("apontamentos_horas").insert({
+      usuario_id: usuario.id, pi_id: pi.id, data: hojeISO(), entrada: new Date().toISOString(), status: "pendente",
+    });
+    setProcessando(false);
+    if (error) { avisar(`Não foi possível registrar: ${error.message}`, "erro", 6000); return; }
     await registrarLog(usuario, "Check-in", pi.codigo);
-    setCodigoPi(""); setProcessando(false);
-    recarregar();
+    avisar(`Check-in em ${pi.codigo} registrado.`);
+    setCodigoPi("");
+    recarregar(); onMudou?.();
   };
 
   const fazerCheckout = async () => {
-    if (!sessaoAberta) return;
+    if (!sessaoAberta || processando) return;
     setProcessando(true);
     const saida = new Date().toISOString();
-    const horasTotais = horasEntre(sessaoAberta.entrada, saida);
-    await supabase.from("apontamentos_horas").update({ saida, horas_totais: horasTotais }).eq("id", sessaoAberta.id);
-    await registrarLog(usuario, "Check-out", `${piDaSessao?.codigo} — ${horasTotais.toFixed(1)}h`);
+    const horasTotais = Math.round(horasEntre(sessaoAberta.entrada, saida) * 100) / 100;
+    const { error } = await supabase.from("apontamentos_horas").update({ saida, horas_totais: horasTotais }).eq("id", sessaoAberta.id);
     setProcessando(false);
-    recarregar();
+    if (error) { avisar(`Não foi possível registrar: ${error.message}`, "erro", 6000); return; }
+    await registrarLog(usuario, "Check-out", `${piDaSessao?.codigo} — ${horasTotais.toFixed(1)}h`);
+    avisar(`Check-out registrado: ${formatarHoras(horasTotais)}.`);
+    recarregar(); onMudou?.();
   };
+
+  if (carregando) return <Esqueleto linhas={1} altura={200} />;
 
   if (sessaoAberta) {
     return (
-      <div className="bg-white rounded-xl border border-cyan p-5 flex flex-col items-center text-center gap-2">
-        <div className="text-xs font-mono text-muteddim">VOCÊ ESTÁ EM</div>
-        <div className="font-head font-bold text-2xl text-cyan">{piDaSessao?.codigo || "—"}</div>
-        {piDaSessao?.cliente && <div className="text-base font-semibold">{piDaSessao.cliente}</div>}
-        {piDaSessao?.projeto && <div className="text-sm text-muted">{piDaSessao.projeto}</div>}
-        <div className="text-base text-muted">desde as {horaCurta(sessaoAberta.entrada)}</div>
-        <button onClick={fazerCheckout} disabled={processando} className="w-full mt-3 py-4 rounded-xl bg-red text-white font-semibold text-base disabled:opacity-60">
-          {processando ? "Registrando..." : "Fazer check-out"}
+      <div className="rounded-2xl bg-gradient-to-br from-navy to-navysoft text-white p-6 flex flex-col items-center text-center gap-1.5 shadow-lg animar-surgir">
+        <div className="flex items-center gap-2 text-xs font-semibold text-green bg-green/15 rounded-full px-3 py-1 mb-2">
+          <span className="w-2 h-2 rounded-full bg-green animate-pulse" /> EM TRABALHO
+        </div>
+        <div className="font-head font-bold text-3xl text-white">{piDaSessao?.codigo || "—"}</div>
+        {piDaSessao?.cliente && <div className="text-base font-semibold text-slate-200">{piDaSessao.cliente}</div>}
+        {piDaSessao?.projeto && <div className="text-sm text-slate-400">{piDaSessao.projeto}</div>}
+        <div className="font-head font-bold text-4xl mt-4 tabular-nums"><Cronometro desde={sessaoAberta.entrada} /></div>
+        <div className="text-sm text-slate-300">
+          desde {sessaoDeOutroDia ? `${formatarData(sessaoAberta.data)} às ` : "as "}{horaCurta(sessaoAberta.entrada)}
+        </div>
+        {sessaoDeOutroDia && (
+          <Aviso tipo="alerta" className="mt-3 text-left !bg-amber/15 !text-amber !border-amber/30">
+            Este check-in ficou aberto desde outro dia. Faça o check-out e avise seu líder para corrigir as horas.
+          </Aviso>
+        )}
+        <button onClick={fazerCheckout} disabled={processando} className="btn btn-perigo btn-lg w-full mt-5">
+          {processando ? <><Spinner /> Registrando...</> : "Fazer check-out"}
         </button>
       </div>
     );
   }
 
   return (
-    <div className="flex flex-col gap-3">
-      <button onClick={() => setScannerAberto(true)} className="py-4 rounded-xl bg-cyan text-white font-semibold text-base flex items-center justify-center gap-2">
-        📷 Ler QR Code da obra
+    <div className="flex flex-col gap-3 animar-fade">
+      <button onClick={() => setScannerAberto(true)} className="rounded-2xl bg-gradient-to-br from-cyan to-[#0a6a86] text-white p-6 flex flex-col items-center gap-2 shadow-md active:scale-[0.99] transition-transform">
+        <div className="w-14 h-14 rounded-2xl bg-white/15 flex items-center justify-center"><Icone nome="qr" className="w-8 h-8" /></div>
+        <div className="font-head font-bold text-lg">Ler QR Code da obra</div>
+        <div className="text-sm text-white/80">para fazer o check-in</div>
       </button>
-      <div className="text-center text-sm text-muteddim">ou</div>
-      <div className="bg-white rounded-xl border border-line p-4 flex flex-col gap-3">
-        <div className="text-sm text-muteddim">Digite o número da obra (ex: PI-001)</div>
-        <input value={codigoPi} onChange={(e) => setCodigoPi(e.target.value)} placeholder="PI-001"
-          className="w-full px-4 py-3 rounded-lg border border-line text-base" />
+
+      {meusPis.length > 0 && (
+        <div className="cartao p-4">
+          <div className="rotulo">Ou toque na sua obra</div>
+          <div className="flex flex-col gap-2">
+            {meusPis.map((p) => (
+              <button key={p.id} onClick={() => fazerCheckin(p)} disabled={processando}
+                className="flex items-center justify-between gap-3 text-left rounded-xl border border-line px-4 py-3 hover:border-cyan active:bg-cyan/5 transition-colors disabled:opacity-50">
+                <div className="min-w-0">
+                  <div className="font-semibold">{p.codigo}</div>
+                  <div className="text-xs text-muted truncate">{p.projeto || p.cliente}</div>
+                </div>
+                <span className="text-sm font-semibold text-green shrink-0">Check-in →</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div className="cartao p-4 flex flex-col gap-3">
+        <div className="rotulo !mb-0">Ou digite o número da obra</div>
+        <form onSubmit={(e) => { e.preventDefault(); fazerCheckin(); }} className="flex gap-2">
+          <input value={codigoPi} onChange={(e) => { setCodigoPi(e.target.value); setErro(""); }} placeholder="Ex: PI-001"
+            autoCapitalize="characters" className="input input-lg flex-1" />
+          <button type="submit" disabled={!codigoPi.trim() || processando} className="btn btn-sucesso btn-lg shrink-0">
+            {processando ? <Spinner /> : "OK"}
+          </button>
+        </form>
         {erro && <div className="text-sm text-red">{erro}</div>}
-        <button onClick={() => fazerCheckin()} disabled={!codigoPi.trim() || processando} className="py-3.5 rounded-lg bg-green text-white font-semibold text-base disabled:opacity-50">
-          {processando ? "Registrando..." : "Fazer check-in"}
-        </button>
       </div>
 
       {scannerAberto && (
@@ -119,95 +175,6 @@ function CheckInOut({ usuario, todosPis }) {
           onFechar={() => setScannerAberto(false)}
         />
       )}
-    </div>
-  );
-}
-
-function LancamentoManual({ usuario, meusPis }) {
-  const porCliente = useMemo(() => agruparPorCliente(meusPis), [meusPis]);
-  const [pisSelecionados, setPisSelecionados] = useState([]);
-  const [horaInicio, setHoraInicio] = useState("07:00");
-  const [horaFim, setHoraFim] = useState("");
-  const [enviado, setEnviado] = useState(false);
-  const [enviando, setEnviando] = useState(false);
-
-  const togglePi = (id) => setPisSelecionados((p) => p.includes(id) ? p.filter((x) => x !== id) : [...p, id]);
-  const horasTotais = horaInicio && horaFim
-    ? Math.max(0, (new Date(`2000-01-01T${horaFim}`) - new Date(`2000-01-01T${horaInicio}`)) / 3600000)
-    : 0;
-
-  const enviar = async () => {
-    if (pisSelecionados.length === 0 || horasTotais <= 0) return;
-    setEnviando(true);
-    const horasPorPi = horasTotais / pisSelecionados.length;
-    await supabase.from("apontamentos_horas").insert(
-      pisSelecionados.map((pid) => ({ usuario_id: usuario.id, pi_id: pid, horas_totais: horasPorPi, status: "pendente" }))
-    );
-    await registrarLog(usuario, "Enviou horas do dia", `${pisSelecionados.length} PI(s) — ${horasTotais.toFixed(1)}h`);
-    setEnviando(false);
-    setEnviado(true);
-  };
-
-  if (meusPis.length === 0) {
-    return <div className="text-base text-muteddim leading-relaxed">Você ainda não está alocado em nenhuma obra. Fale com seu líder.</div>;
-  }
-
-  if (enviado) {
-    return (
-      <div className="p-6 flex flex-col items-center text-center gap-3 mt-6 bg-white rounded-xl border border-line">
-        <div className="text-5xl">✓</div>
-        <div className="font-head font-bold text-xl">Horas enviadas</div>
-        <p className="text-base text-muted">Seu líder vai validar em breve.</p>
-        <button onClick={() => setEnviado(false)} className="mt-4 px-6 py-3 rounded-lg bg-cyan text-white text-base font-semibold">Lançar de novo</button>
-      </div>
-    );
-  }
-
-  return (
-    <div className="flex flex-col gap-5">
-      <div>
-        <div className="text-sm text-muteddim mb-2">Em quais obras você trabalhou hoje?</div>
-        <div className="flex flex-col gap-3">
-          {porCliente.map(([cliente, pisDoCliente]) => (
-            <div key={cliente}>
-              <div className="text-xs font-mono text-muteddim uppercase tracking-wide mb-1.5">{cliente}</div>
-              <div className="flex flex-wrap gap-2">
-                {pisDoCliente.map((p) => (
-                  <button key={p.id} type="button" onClick={() => togglePi(p.id)}
-                    className={`px-4 py-2.5 rounded-xl text-left border ${pisSelecionados.includes(p.id) ? "bg-cyan text-white border-cyan" : "border-line text-muted bg-white"}`}>
-                    <div className="font-semibold">{p.codigo}</div>
-                    {p.projeto && <div className={`text-xs ${pisSelecionados.includes(p.id) ? "text-white/80" : "text-muteddim"}`}>{p.projeto}</div>}
-                  </button>
-                ))}
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      <div className="flex flex-col gap-3">
-        <div>
-          <div className="text-sm text-muteddim mb-1.5">Horário de início</div>
-          <input type="time" value={horaInicio} onChange={(e) => setHoraInicio(e.target.value)}
-            className="w-full px-4 py-3 rounded-lg border border-line text-base bg-white" />
-        </div>
-        <div>
-          <div className="text-sm text-muteddim mb-1.5">Horário de término</div>
-          <input type="time" value={horaFim} onChange={(e) => setHoraFim(e.target.value)}
-            className="w-full px-4 py-3 rounded-lg border border-line text-base bg-white" />
-        </div>
-      </div>
-
-      {horasTotais > 0 && pisSelecionados.length > 0 && (
-        <div className="text-base text-muted bg-white rounded-lg border border-line p-4 leading-relaxed">
-          {horasTotais.toFixed(1)}h ÷ {pisSelecionados.length} obra(s) = <strong>{(horasTotais / pisSelecionados.length).toFixed(1)}h</strong> cada
-        </div>
-      )}
-
-      <button onClick={enviar} disabled={pisSelecionados.length === 0 || horasTotais <= 0 || enviando}
-        className="py-4 rounded-xl bg-amber text-white font-semibold text-base disabled:opacity-50">
-        {enviando ? "Enviando..." : "Enviar horas do dia"}
-      </button>
     </div>
   );
 }

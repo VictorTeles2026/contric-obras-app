@@ -1,9 +1,12 @@
 "use client";
 
 import { useState } from "react";
-import { useTabela, registrarLog } from "../../lib/dados";
+import { useTabela, registrarLog, chamarApi } from "../../lib/dados";
 import { useAuth, podeGerenciarUsuarios } from "../../lib/AuthContext";
+import { useToast } from "../../lib/Toast";
 import PainelShell from "../../components/PainelShell";
+import { CabecalhoPagina, Modal, Campo, Aviso, Esqueleto, EstadoVazio, Spinner } from "../../components/ui";
+import Icone from "../../components/Icone";
 
 const PERFIS = [
   ["master", "Master (acesso total)"],
@@ -22,105 +25,133 @@ const FUNCOES = [
   "Gerente de Engenharia Mecânica", "Gestor de Projetos", "Gerente de Engenharia", "Diretor",
 ];
 const PERFIS_COM_FUNCAO = ["lider", "funcionario", "terceiro", "gerente", "coordenador"];
+const COR_PERFIL = {
+  master: "bg-navy text-white", gerente: "bg-cyan/10 text-cyan", coordenador: "bg-cyan/10 text-cyan",
+  lider: "bg-green/10 text-green", funcionario: "bg-panel text-muted", terceiro: "bg-amber/10 text-amber", visualizador: "bg-panel text-muted",
+};
 
 export default function UsuariosPage() {
   const { usuario } = useAuth();
+  const { avisar } = useToast();
   const souMaster = podeGerenciarUsuarios(usuario);
-  const { dados: usuarios, recarregar } = useTabela("usuarios", { order: { coluna: "created_at" } });
+  const { dados: usuarios, carregando, recarregar } = useTabela("usuarios", { order: { coluna: "nome" } });
 
   const [modalAberto, setModalAberto] = useState(false);
   const [editando, setEditando] = useState(null);
   const [pinGerado, setPinGerado] = useState(null);
+  const [busca, setBusca] = useState("");
+  const [filtroPerfil, setFiltroPerfil] = useState("");
+  const [mostrarInativos, setMostrarInativos] = useState(true);
+  const [alternando, setAlternando] = useState(null);
 
   const abrirNovo = () => { setEditando(null); setModalAberto(true); };
   const abrirEdicao = (u) => { setEditando(u); setModalAberto(true); };
 
   const toggleAtivo = async (u) => {
-    await fetch("/api/atualizar-usuario", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id: u.id, ativo: !u.ativo, auth_user_id: u.auth_user_id }),
-    });
+    setAlternando(u.id);
+    const { ok, json } = await chamarApi("/api/atualizar-usuario", { id: u.id, ativo: !u.ativo });
+    setAlternando(null);
+    if (!ok) { avisar(json.error || "Não foi possível alterar.", "erro", 6000); return; }
     await registrarLog(usuario, u.ativo ? "Desabilitou usuário" : "Habilitou usuário", u.nome);
+    avisar(u.ativo ? `${u.nome} desabilitado.` : `${u.nome} habilitado.`);
     recarregar();
   };
 
+  const termo = busca.trim().toLowerCase();
+  const filtrados = usuarios.filter((u) =>
+    (!filtroPerfil || u.perfil === filtroPerfil) && (mostrarInativos || u.ativo) &&
+    (!termo || [u.nome, u.email, u.funcao, u.empresa_terceira].some((c) => (c || "").toLowerCase().includes(termo))));
+
   return (
     <PainelShell>
-    <div className="p-6">
-      <div className="flex items-center justify-between mb-4">
-        <div>
-          <h1 className="font-head font-bold text-xl">Usuários e Acessos</h1>
-          <p className="text-sm text-muted">Quem acessa o sistema, com qual perfil.</p>
-        </div>
-        {souMaster ? (
-          <button onClick={abrirNovo} className="px-4 py-2 rounded-lg bg-cyan text-white text-sm font-semibold">
-            + Novo usuário
-          </button>
-        ) : (
-          <span className="text-xs font-mono text-muteddim">👁 Somente o Master pode gerenciar usuários</span>
-        )}
-      </div>
+      <div className="p-4 md:p-8 max-w-5xl mx-auto">
+        <CabecalhoPagina
+          titulo="Usuários e Acessos"
+          subtitulo={`${usuarios.filter((u) => u.ativo).length} ativos de ${usuarios.length} cadastrados`}
+          acoes={souMaster
+            ? <button onClick={abrirNovo} className="btn btn-primario"><Icone nome="mais2" className="w-4 h-4" /> Novo usuário</button>
+            : <span className="text-xs text-muteddim">Somente o Master pode gerenciar usuários</span>}
+        />
 
-      <div className="flex flex-col gap-2">
-        {usuarios.map((u) => (
-          <div key={u.id} className={`flex flex-wrap items-center gap-3 p-3 rounded-lg bg-panel ${!u.ativo ? "opacity-50" : ""}`}>
-            <div className="flex-1 min-w-[160px]">
-              <div className="text-sm font-semibold">{u.nome}</div>
-              <div className="text-[11px] font-mono text-muteddim">
-                {PERFIS.find((p) => p[0] === u.perfil)?.[1]}{u.funcao ? ` · ${u.funcao}` : ""}
+        <div className="flex flex-col sm:flex-row gap-2 mb-4">
+          <div className="relative flex-1">
+            <Icone nome="buscar" className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muteddim" />
+            <input value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Buscar por nome, e-mail, função ou empresa" className="input pl-9" />
+          </div>
+          <select value={filtroPerfil} onChange={(e) => setFiltroPerfil(e.target.value)} className="input sm:!w-56">
+            <option value="">Todos os perfis</option>
+            {PERFIS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+          </select>
+          <label className="flex items-center gap-2 text-sm text-muted whitespace-nowrap px-1 cursor-pointer">
+            <input type="checkbox" className="accent-cyan w-4 h-4" checked={mostrarInativos} onChange={(e) => setMostrarInativos(e.target.checked)} />
+            Mostrar desabilitados
+          </label>
+        </div>
+
+        {carregando && <Esqueleto linhas={5} altura={64} />}
+        {!carregando && filtrados.length === 0 && <EstadoVazio icone="usuarios" titulo="Ninguém encontrado" texto="Ajuste a busca ou os filtros." />}
+
+        <div className="flex flex-col gap-2">
+          {filtrados.map((u) => (
+            <div key={u.id} className={`cartao flex flex-wrap items-center gap-3 p-3 md:p-4 transition-opacity ${!u.ativo ? "opacity-60" : ""}`}>
+              <div className="w-10 h-10 rounded-full bg-panel border border-line flex items-center justify-center font-semibold text-sm text-muted shrink-0">
+                {(u.nome || "?").split(" ").slice(0, 2).map((p) => p[0]).join("").toUpperCase()}
+              </div>
+              <div className="flex-1 min-w-[180px]">
+                <div className="text-sm font-semibold flex items-center gap-2 flex-wrap">
+                  {u.nome}
+                  {u.id === usuario?.id && <span className="selo bg-cyan/10 text-cyan">você</span>}
+                </div>
+                <div className="text-xs text-muted flex items-center gap-1.5 flex-wrap mt-0.5">
+                  <span className={`selo ${COR_PERFIL[u.perfil] || "bg-panel text-muted"}`}>{PERFIS.find((p) => p[0] === u.perfil)?.[1]?.split(" (")[0] || u.perfil}</span>
+                  {u.funcao && <span>{u.funcao}</span>}
+                </div>
+              </div>
+              <div className="text-xs text-muted min-w-[160px] break-all">
+                {u.perfil === "terceiro" ? (
+                  <>
+                    {u.empresa_terceira || "—"}
+                    <div className="font-mono text-[11px]">{u.tipo_terceiro === "avulso" ? `Avulso · PIN ${u.pin}` : "Fixo · login"}</div>
+                  </>
+                ) : (u.email || "—")}
+              </div>
+              <div className="flex items-center gap-2 ml-auto">
+                {souMaster && (
+                  <button onClick={() => abrirEdicao(u)} className="btn btn-contorno btn-sm">Editar</button>
+                )}
+                {souMaster && u.id !== usuario?.id ? (
+                  <button onClick={() => toggleAtivo(u)} disabled={alternando === u.id} title={u.ativo ? "Clique para desabilitar" : "Clique para habilitar"}
+                    className={`btn btn-sm border ${u.ativo ? "border-green/40 text-green bg-green/5 hover:bg-green/10" : "border-line text-muted bg-white hover:bg-panel"}`}>
+                    {alternando === u.id ? <Spinner className="w-3.5 h-3.5" /> : <span className={`w-2 h-2 rounded-full ${u.ativo ? "bg-green" : "bg-muteddim"}`} />}
+                    {u.ativo ? "Ativo" : "Desabilitado"}
+                  </button>
+                ) : (
+                  <span className={`selo ${u.ativo ? "bg-green/10 text-green" : "bg-panel text-muted"}`}>{u.ativo ? "Ativo" : "Desabilitado"}</span>
+                )}
               </div>
             </div>
-            <div className="text-xs text-muted min-w-[140px]">
-              {u.perfil === "terceiro" ? (
-                <>
-                  {u.empresa_terceira}
-                  <div className="font-mono text-[10.5px]">
-                    {u.tipo_terceiro === "fixo" ? "Fixo · login" : `Avulso · PIN ${u.pin}`}
-                  </div>
-                </>
-              ) : (u.email || "—")}
-            </div>
-            {souMaster && (
-              <button onClick={() => abrirEdicao(u)} className="text-xs border border-line rounded-full px-3 py-1 text-muted">
-                Editar
-              </button>
-            )}
-            {souMaster ? (
-              <button onClick={() => toggleAtivo(u)} className={`text-xs rounded-full px-3 py-1 border font-mono ${u.ativo ? "border-green text-green" : "border-muteddim text-muteddim"}`}>
-                {u.ativo ? "ATIVO" : "DESABILITADO"}
-              </button>
-            ) : (
-              <span className={`text-xs rounded-full px-3 py-1 border font-mono ${u.ativo ? "border-green text-green" : "border-muteddim text-muteddim"}`}>
-                {u.ativo ? "ATIVO" : "DESABILITADO"}
-              </span>
-            )}
-          </div>
-        ))}
-      </div>
-
-      {modalAberto && (
-        <ModalUsuario
-          usuarioInicial={editando}
-          onClose={() => setModalAberto(false)}
-          onSalvo={() => { setModalAberto(false); recarregar(); }}
-          onPinGerado={setPinGerado}
-        />
-      )}
-
-      {pinGerado && (
-        <div className="fixed inset-0 bg-navy/50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-xl w-full max-w-xs p-6 text-center">
-            <div className="font-head font-bold mb-2">Código gerado</div>
-            <div className="text-3xl font-mono font-bold text-cyan tracking-widest my-3">{pinGerado}</div>
-            <p className="text-xs text-muted mb-4">Repasse pessoalmente. É reutilizável nas próximas obras.</p>
-            <button onClick={() => setPinGerado(null)} className="w-full py-2 rounded-lg bg-cyan text-white text-sm font-semibold">
-              Concluir
-            </button>
-          </div>
+          ))}
         </div>
-      )}
-    </div>
+
+        {modalAberto && (
+          <ModalUsuario
+            usuarioInicial={editando}
+            onClose={() => setModalAberto(false)}
+            onSalvo={(msg) => { setModalAberto(false); avisar(msg); recarregar(); }}
+            onPinGerado={setPinGerado}
+          />
+        )}
+
+        {pinGerado && (
+          <Modal titulo="Código gerado" onFechar={() => setPinGerado(null)} largura="max-w-xs"
+            rodape={<button onClick={() => setPinGerado(null)} className="btn btn-primario w-full">Concluir</button>}>
+            <div className="text-center">
+              <div className="text-4xl font-mono font-bold text-cyan tracking-[0.3em] my-3">{pinGerado}</div>
+              <p className="text-sm text-muted">Repasse pessoalmente. É reutilizável nas próximas obras.</p>
+            </div>
+          </Modal>
+        )}
+      </div>
     </PainelShell>
   );
 }
@@ -141,108 +172,97 @@ function ModalUsuario({ usuarioInicial, onClose, onSalvo, onPinGerado }) {
   const mostraFuncao = PERFIS_COM_FUNCAO.includes(perfil);
   const ehTerceiroAvulso = perfil === "terceiro" && tipoTerceiro === "avulso";
   const precisaLoginNovo = !ehTerceiroAvulso && (!editando || !usuarioInicial?.auth_user_id);
-  const podeSalvar = nome.trim() && (!precisaLoginNovo || (email && (editando || senha)));
+  const senhaCurta = senha && senha.length < 6;
+  const emailValido = !email || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
+  // login novo (criação, ou terceiro avulso que passa a ter login) exige e-mail e senha
+  const podeSalvar = nome.trim() && !senhaCurta && emailValido && (!precisaLoginNovo || (email.trim() && senha)) && !salvando;
 
   const salvar = async () => {
+    if (!podeSalvar) return;
     setSalvando(true); setErro("");
     if (editando) {
-      const res = await fetch("/api/atualizar-usuario", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          id: usuarioInicial.id, nome, perfil, funcao: mostraFuncao ? funcao : null,
-          email: ehTerceiroAvulso ? null : email, novaSenha: senha || undefined,
-          tipoTerceiro, empresaTerceira,
-        }),
+      const { ok, json } = await chamarApi("/api/atualizar-usuario", {
+        id: usuarioInicial.id, nome, perfil, funcao: mostraFuncao ? funcao : null,
+        email: ehTerceiroAvulso ? null : email, novaSenha: senha || undefined,
+        tipoTerceiro, empresaTerceira,
       });
-      const json = await res.json();
       setSalvando(false);
-      if (!res.ok) { setErro(json.error); return; }
+      if (!ok) { setErro(json.error || "Não foi possível salvar."); return; }
       await registrarLog(usuarioAtual, "Editou usuário", nome);
-      onSalvo();
+      if (json.usuario?.pin && !usuarioInicial.pin) onPinGerado(json.usuario.pin);
+      onSalvo("Alterações salvas.");
     } else {
-      const res = await fetch("/api/criar-usuario", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ nome, perfil, funcao: mostraFuncao ? funcao : null, email, senha, tipoTerceiro, empresaTerceira }),
+      const { ok, json } = await chamarApi("/api/criar-usuario", {
+        nome, perfil, funcao: mostraFuncao ? funcao : null, email, senha, tipoTerceiro, empresaTerceira,
       });
-      const json = await res.json();
       setSalvando(false);
-      if (!res.ok) { setErro(json.error); return; }
+      if (!ok) { setErro(json.error || "Não foi possível criar."); return; }
       await registrarLog(usuarioAtual, "Criou usuário", `${nome} (${PERFIS.find((p) => p[0] === perfil)?.[1]})`);
       if (json.usuario?.pin) onPinGerado(json.usuario.pin);
-      onSalvo();
+      onSalvo(`${nome} criado.`);
     }
   };
 
   return (
-    <div className="fixed inset-0 bg-navy/50 flex items-start justify-center p-4 pt-16 z-50 overflow-auto">
-      <div className="bg-white rounded-xl w-full max-w-md p-5">
-        <div className="font-head font-bold mb-4">{editando ? `Editar — ${usuarioInicial.nome}` : "Novo usuário"}</div>
+    <Modal titulo={editando ? `Editar — ${usuarioInicial.nome}` : "Novo usuário"} onFechar={onClose}
+      rodape={<>
+        <button onClick={onClose} className="btn btn-fantasma">Cancelar</button>
+        <button onClick={salvar} disabled={!podeSalvar} className="btn btn-primario">
+          {salvando ? <><Spinner /> Salvando...</> : editando ? "Salvar alterações" : "Criar usuário"}
+        </button>
+      </>}>
+      <form onSubmit={(e) => { e.preventDefault(); salvar(); }} className="flex flex-col gap-4">
+        <Campo rotulo="Nome"><input value={nome} onChange={(e) => setNome(e.target.value)} className="input" autoFocus /></Campo>
 
-        <div className="flex flex-col gap-3">
-          <Campo label="NOME"><input value={nome} onChange={(e) => setNome(e.target.value)} className="input" /></Campo>
-
-          <Campo label="PERFIL">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <Campo rotulo="Perfil">
             <select value={perfil} onChange={(e) => setPerfil(e.target.value)} className="input">
               {PERFIS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
             </select>
           </Campo>
-
           {mostraFuncao && (
-            <Campo label="FUNÇÃO">
+            <Campo rotulo="Função">
               <select value={funcao} onChange={(e) => setFuncao(e.target.value)} className="input">
                 <option value="">Selecione...</option>
                 {FUNCOES.map((f) => <option key={f} value={f}>{f}</option>)}
               </select>
             </Campo>
           )}
-
-          {perfil === "terceiro" && (
-            <>
-              <Campo label="TIPO DE TERCEIRO">
-                <div className="flex gap-2">
-                  <button type="button" onClick={() => setTipoTerceiro("fixo")} className={`px-3 py-1.5 rounded-full text-xs border ${tipoTerceiro === "fixo" ? "bg-cyan text-white border-cyan" : "border-line text-muted"}`}>Fixo (login)</button>
-                  <button type="button" onClick={() => setTipoTerceiro("avulso")} className={`px-3 py-1.5 rounded-full text-xs border ${tipoTerceiro === "avulso" ? "bg-amber text-white border-amber" : "border-line text-muted"}`}>Avulso (PIN)</button>
-                </div>
-                {editando && usuarioInicial?.pin && ehTerceiroAvulso && (
-                  <div className="text-[11px] font-mono text-muteddim mt-1">PIN atual: {usuarioInicial.pin}</div>
-                )}
-              </Campo>
-              <Campo label="EMPRESA TERCEIRA"><input value={empresaTerceira} onChange={(e) => setEmpresaTerceira(e.target.value)} className="input" /></Campo>
-            </>
-          )}
-
-          {!ehTerceiroAvulso && (
-            <>
-              <Campo label="E-MAIL (login)"><input type="email" value={email} onChange={(e) => setEmail(e.target.value)} className="input" /></Campo>
-              <Campo label={editando ? "NOVA SENHA (deixe em branco para não alterar)" : "SENHA INICIAL"}>
-                <input type="password" value={senha} onChange={(e) => setSenha(e.target.value)} className="input" />
-              </Campo>
-            </>
-          )}
-
-          {erro && <div className="text-xs text-red bg-red/10 rounded-lg px-3 py-2">{erro}</div>}
         </div>
 
-        <div className="flex justify-end gap-2 mt-5">
-          <button onClick={onClose} className="px-3 py-2 text-sm text-muted">Cancelar</button>
-          <button onClick={salvar} disabled={!podeSalvar || salvando} className="px-4 py-2 rounded-lg bg-cyan text-white text-sm font-semibold disabled:opacity-50">
-            {salvando ? "Salvando..." : editando ? "Salvar alterações" : "Criar usuário"}
-          </button>
-        </div>
-      </div>
+        {perfil === "terceiro" && (
+          <>
+            <div>
+              <span className="rotulo">Tipo de terceiro</span>
+              <div className="flex gap-2">
+                <button type="button" onClick={() => setTipoTerceiro("fixo")} className={`chip ${tipoTerceiro === "fixo" ? "chip-ativo" : ""}`}>Fixo (login)</button>
+                <button type="button" onClick={() => setTipoTerceiro("avulso")} className={`chip ${tipoTerceiro === "avulso" ? "!bg-amber !text-white !border-amber" : ""}`}>Avulso (PIN)</button>
+              </div>
+              {editando && usuarioInicial?.pin && ehTerceiroAvulso && (
+                <div className="text-xs font-mono text-muteddim mt-1.5">PIN atual: {usuarioInicial.pin}</div>
+              )}
+            </div>
+            <Campo rotulo="Empresa terceira"><input value={empresaTerceira} onChange={(e) => setEmpresaTerceira(e.target.value)} className="input" /></Campo>
+          </>
+        )}
 
-      <style jsx>{`
-        .input { width: 100%; padding: 8px 10px; border-radius: 8px; border: 1px solid #D7E0EC; font-size: 13px; }
-      `}</style>
-    </div>
-  );
-}
+        {!ehTerceiroAvulso && (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <Campo rotulo="E-mail (login)">
+              <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} className="input" autoComplete="off" />
+              {!emailValido && <span className="block text-xs text-red mt-1">E-mail inválido.</span>}
+            </Campo>
+            <Campo rotulo={editando && !precisaLoginNovo ? "Nova senha (opcional)" : "Senha inicial"}>
+              <input type="password" value={senha} onChange={(e) => setSenha(e.target.value)} className="input" autoComplete="new-password"
+                placeholder={editando && !precisaLoginNovo ? "Deixe em branco para manter" : "Mínimo 6 caracteres"} />
+              {senhaCurta && <span className="block text-xs text-red mt-1">Mínimo de 6 caracteres.</span>}
+            </Campo>
+          </div>
+        )}
 
-function Campo({ label, children }) {
-  return (
-    <div>
-      <div className="text-[10px] font-mono text-muteddim mb-1">{label}</div>
-      {children}
-    </div>
+        {erro && <Aviso tipo="erro">{erro}</Aviso>}
+        <button type="submit" className="hidden" />
+      </form>
+    </Modal>
   );
 }

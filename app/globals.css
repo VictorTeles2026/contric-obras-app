@@ -3,15 +3,151 @@
 @tailwind utilities;
 
 html, body {
-  height: 100%;
+  min-height: 100%;
+}
+
+body {
+  -webkit-tap-highlight-color: transparent;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
 
 /* Evita o zoom automático do Safari/iOS ao tocar em campos com fonte < 16px,
-   que "quebra" o layout na hora (parece caixa em cima de caixa) até soltar o dedo. */
-input, select, textarea {
-  font-size: 16px !important;
+   que "quebra" o layout na hora (parece caixa em cima de caixa) até soltar o dedo.
+   Só vale em telas pequenas/toque — no desktop os campos podem ser mais compactos. */
+@media (max-width: 767px), (pointer: coarse) {
+  input, select, textarea {
+    font-size: 16px !important;
+  }
 }
 
-input[type="date"]::-webkit-calendar-picker-indicator {
-  filter: none;
+input[type="date"]::-webkit-calendar-picker-indicator,
+input[type="time"]::-webkit-calendar-picker-indicator {
+  cursor: pointer;
+  opacity: 0.6;
+}
+
+/* inputs de data/hora no iOS têm largura mínima própria e estouravam o card */
+input[type="date"], input[type="time"] {
+  min-width: 0;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+:focus-visible {
+  outline: 2px solid #0B84A5;
+  outline-offset: 2px;
+}
+
+@layer components {
+  /* ---------- campos ---------- */
+  .input {
+    @apply w-full rounded-lg border border-line bg-white px-3 py-2 text-sm text-textmain
+      transition-colors placeholder:text-muteddim
+      hover:border-muteddim focus:border-cyan focus:outline-none focus:ring-2 focus:ring-cyan/20
+      disabled:cursor-not-allowed disabled:bg-panel disabled:text-muted;
+  }
+  .input-lg {
+    @apply px-4 py-3 text-base rounded-xl;
+  }
+  .rotulo {
+    @apply mb-1 block text-xs font-medium text-muted;
+  }
+
+  /* ---------- botões ---------- */
+  .btn {
+    @apply inline-flex select-none items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold
+      transition-all duration-150 active:scale-[0.98]
+      disabled:pointer-events-none disabled:opacity-50;
+  }
+  .btn-lg {
+    @apply rounded-xl px-5 py-3.5 text-base;
+  }
+  .btn-sm {
+    @apply px-3 py-1.5 text-xs;
+  }
+  .btn-primario { @apply bg-cyan text-white shadow-sm hover:bg-[#0a7594]; }
+  .btn-escuro { @apply bg-navy text-white shadow-sm hover:bg-navysoft; }
+  .btn-sucesso { @apply bg-green text-white shadow-sm hover:bg-[#288a3b]; }
+  .btn-alerta { @apply bg-amber text-white shadow-sm hover:bg-[#b36c1d]; }
+  .btn-perigo { @apply bg-red text-white shadow-sm hover:bg-[#c03c3c]; }
+  .btn-contorno { @apply border border-line bg-white text-textmain hover:border-muteddim hover:bg-panel; }
+  .btn-contorno-perigo { @apply border border-red/40 bg-white text-red hover:bg-red/5; }
+  .btn-fantasma { @apply text-muted hover:bg-panel hover:text-textmain; }
+
+  /* ---------- chips / filtros ---------- */
+  .chip {
+    @apply inline-flex items-center gap-1.5 rounded-full border border-line bg-white px-3 py-1.5 text-xs font-medium text-muted
+      transition-colors hover:border-muteddim hover:text-textmain;
+  }
+  .chip-ativo { @apply border-cyan bg-cyan text-white hover:border-cyan hover:text-white; }
+
+  /* ---------- superfícies ---------- */
+  .cartao {
+    @apply rounded-xl border border-line bg-white shadow-[0_1px_2px_rgba(14,27,61,0.04)];
+  }
+  .cartao-interativo {
+    @apply transition-all hover:-translate-y-px hover:border-cyan/40 hover:shadow-md active:translate-y-0;
+  }
+  .titulo-secao {
+    @apply text-[11px] font-semibold uppercase tracking-wider text-muteddim;
+  }
+  .selo {
+    @apply inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold;
+  }
+}
+
+/* no celular, botões pequenos e chips ganham altura mínima de toque (~40px);
+   no desktop continuam compactos para o mouse */
+@media (max-width: 767px), (pointer: coarse) {
+  .btn-sm, .chip { min-height: 40px; }
+}
+
+@layer utilities {
+  .pb-safe { padding-bottom: env(safe-area-inset-bottom); }
+  .rolagem-fina::-webkit-scrollbar { width: 8px; height: 8px; }
+  .rolagem-fina::-webkit-scrollbar-thumb { background: #D7E0EC; border-radius: 8px; }
+  .rolagem-fina::-webkit-scrollbar-track { background: transparent; }
+}
+
+@keyframes surgir {
+  from { opacity: 0; transform: translateY(6px); }
+  /* termina em "none" (e não translateY(0)) para não criar containing block
+     e quebrar modais position:fixed dentro do elemento animado */
+  to { opacity: 1; transform: none; }
+}
+@keyframes esqueleto {
+  0% { background-position: -200px 0; }
+  100% { background-position: calc(200px + 100%) 0; }
+}
+@keyframes subir {
+  from { transform: translateY(100%); }
+  to { transform: none; }
+}
+@keyframes fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* fill-mode "backwards" (e não "both"): ao terminar, a animação não deixa NENHUM transform
+   aplicado. Com "both" o Chrome mantinha matrix(1,0,0,1,0,0), o que cria um containing block
+   e fazia modais / leitor de QR (position: fixed) se posicionarem relativos à página. */
+.animar-surgir { animation: surgir 0.28s ease-out backwards; }
+.animar-subir { animation: subir 0.25s cubic-bezier(0.2, 0.8, 0.2, 1) backwards; }
+.animar-fade { animation: fade 0.2s ease-out backwards; }
+/* troca de página: só opacidade — sem transform, nunca interfere em elementos position:fixed */
+.animar-pagina { animation: fade 0.22s ease-out backwards; }
+.animar-modal { animation: subir 0.25s cubic-bezier(0.2, 0.8, 0.2, 1) backwards; }
+@media (min-width: 640px) {
+  .animar-modal { animation: surgir 0.2s ease-out backwards; }
+}
+.esqueleto {
+  background: linear-gradient(90deg, #EEF2F7 0px, #F7F9FC 80px, #EEF2F7 160px);
+  background-size: 200px 100%;
+  animation: esqueleto 1.2s ease-in-out infinite;
+  border-radius: 10px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animar-surgir, .animar-subir, .animar-fade, .animar-pagina, .animar-modal, .esqueleto { animation: none; }
 }

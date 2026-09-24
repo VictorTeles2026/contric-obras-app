@@ -1,9 +1,11 @@
 {
-  "name": "Contric — Gestão de Obras",
+  "name": "Contric â€” GestÃ£o de Obras",
   "short_name": "Contric",
-  "description": "Sistema de gestão de obras da Contric",
-  "start_url": "/dashboard",
+  "description": "Sistema de gestÃ£o de obras da Contric",
+  "start_url": "/",
   "display": "standalone",
+  "orientation": "portrait-primary",
+  "scope": "/",
   "background_color": "#FFFFFF",
   "theme_color": "#0E1B3D",
   "icons": [

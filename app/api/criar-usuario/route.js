@@ -1,29 +1,35 @@
 import { NextResponse } from "next/server";
-import { supabaseAdmin } from "../../../lib/supabaseAdmin";
-
-function gerarPin() {
-  return String(Math.floor(100000 + Math.random() * 900000));
-}
+import { exigirMaster, PERFIS_VALIDOS, gerarPinUnico } from "../../../lib/authServidor";
 
 export async function POST(req) {
-  const body = await req.json();
-  const { nome, perfil, funcao, email, senha, tipoTerceiro, empresaTerceira } = body;
+  const { admin, resposta } = await exigirMaster(req);
+  if (resposta) return resposta;
+
+  const body = await req.json().catch(() => ({}));
+  const { perfil, funcao, senha, tipoTerceiro, empresaTerceira } = body;
+  const nome = String(body.nome || "").trim();
+  const email = String(body.email || "").trim().toLowerCase();
 
   if (!nome || !perfil) {
     return NextResponse.json({ error: "Nome e perfil são obrigatórios." }, { status: 400 });
   }
+  if (!PERFIS_VALIDOS.includes(perfil)) {
+    return NextResponse.json({ error: "Perfil inválido." }, { status: 400 });
+  }
 
-  const admin = supabaseAdmin();
   const ehTerceiroAvulso = perfil === "terceiro" && tipoTerceiro === "avulso";
 
   let authUserId = null;
   let pin = null;
 
   if (ehTerceiroAvulso) {
-    pin = gerarPin();
+    pin = await gerarPinUnico(admin);
   } else {
     if (!email || !senha) {
       return NextResponse.json({ error: "E-mail e senha são obrigatórios para esse perfil." }, { status: 400 });
+    }
+    if (String(senha).length < 6) {
+      return NextResponse.json({ error: "A senha precisa ter pelo menos 6 caracteres." }, { status: 400 });
     }
     const { data, error } = await admin.auth.admin.createUser({
       email,
@@ -31,7 +37,8 @@ export async function POST(req) {
       email_confirm: true,
     });
     if (error) {
-      return NextResponse.json({ error: error.message }, { status: 400 });
+      const msg = /already.*registered|already exists/i.test(error.message) ? "Já existe um login com esse e-mail." : error.message;
+      return NextResponse.json({ error: msg }, { status: 400 });
     }
     authUserId = data.user.id;
   }
@@ -44,8 +51,8 @@ export async function POST(req) {
       email: email || null,
       perfil,
       funcao: funcao || null,
-      tipo_terceiro: perfil === "terceiro" ? tipoTerceiro : null,
-      empresa_terceira: perfil === "terceiro" ? empresaTerceira : null,
+      tipo_terceiro: perfil === "terceiro" ? (tipoTerceiro || "fixo") : null,
+      empresa_terceira: perfil === "terceiro" ? (empresaTerceira || null) : null,
       pin,
       ativo: true,
     })

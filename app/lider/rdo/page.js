@@ -1,41 +1,34 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
+import Link from "next/link";
 import { useTabela, registrarLog } from "../../../lib/dados";
 import { useAuth } from "../../../lib/AuthContext";
 import { supabase } from "../../../lib/supabase";
+import { useMinhasPis, agruparPorCliente } from "../../../lib/minhasPis";
+import { NAV_LIDER } from "../../../lib/nav";
+import { hojeISO } from "../../../lib/datas";
+import { STATUS_ETAPA, LISTA_STATUS_ETAPA, CATEGORIAS_OCORRENCIA, etapasEmArvore } from "../../../lib/constantes";
+import { useToast } from "../../../lib/Toast";
 import MobileShell from "../../../components/MobileShell";
 import AssinaturaCanvas from "../../../components/AssinaturaCanvas";
 import CapturaMidia from "../../../components/CapturaMidia";
-import { useMinhasPis, agruparPorCliente } from "../page";
+import { Esqueleto, EstadoVazio, TelaSucesso, Aviso, Spinner } from "../../../components/ui";
+import Icone from "../../../components/Icone";
 
-const NAV = [
-  { href: "/lider", label: "Início", icone: "🏠" },
-  { href: "/lider/rdo", label: "RDO", icone: "📋" },
-  { href: "/lider/horas", label: "Horas", icone: "⏱" },
-  { href: "/lider/cronograma", label: "Obras", icone: "📅" },
-  { href: "/lider/solicitar", label: "Solicitar", icone: "✎" },
-];
-const STATUS = [["nao_iniciada", "Não iniciada"], ["em_andamento", "Em andamento"], ["concluida", "Concluída"], ["parada", "Parada"]];
-const CATEGORIAS = ["Atraso", "Retrabalho", "Reclamação do cliente", "Prejuízo", "Outro"];
-const porOrdem = (a, b) => (a.ordem ?? 999999) - (b.ordem ?? 999999);
+const PASSOS = ["Atividades", "Ocorrências", "Enviar"];
+const limitar = (n) => Math.max(0, Math.min(100, Number(n) || 0));
 
 export default function LiderRdoPage() {
   const { usuario } = useAuth();
-  const meusPis = useMinhasPis(usuario);
+  const { avisar } = useToast();
+  const { meusPis, carregando } = useMinhasPis(usuario);
   const [piEscolhidoId, setPiEscolhidoId] = useState(null);
   const piAtivo = meusPis.find((p) => p.id === piEscolhidoId) || meusPis[0];
   const porCliente = useMemo(() => agruparPorCliente(meusPis), [meusPis]);
   const { dados: etapas } = useTabela("etapas");
-  const etapasDoPi = useMemo(() => {
-    if (!piAtivo) return [];
-    const doPi = etapas.filter((e) => e.pi_id === piAtivo.id);
-    const macros = doPi.filter((e) => !e.parent_etapa_id).sort(porOrdem);
-    return macros.flatMap((m) => [
-      { ...m, nivel: 0 },
-      ...doPi.filter((e) => e.parent_etapa_id === m.id).sort(porOrdem).map((s) => ({ ...s, nivel: 1 })),
-    ]);
-  }, [etapas, piAtivo]);
+  const { dados: meusRdos } = useTabela("rdos", { filtro: [["lider_id", usuario?.id]] });
+  const etapasDoPi = useMemo(() => (piAtivo ? etapasEmArvore(etapas.filter((e) => e.pi_id === piAtivo.id)) : []), [etapas, piAtivo]);
 
   const [passo, setPasso] = useState(1);
   const [statusPorEtapa, setStatusPorEtapa] = useState({});
@@ -48,155 +41,278 @@ export default function LiderRdoPage() {
   const [pedirAssinatura, setPedirAssinatura] = useState(false);
   const [assinaturaImagem, setAssinaturaImagem] = useState(null);
 
+  useEffect(() => { window.scrollTo({ top: 0, behavior: "smooth" }); }, [passo]);
+
+  const hoje = hojeISO();
+  const jaEnviouHoje = piAtivo && meusRdos.some((r) => r.pi_id === piAtivo.id && r.data === hoje && r.status !== "rejeitado");
+
+  const valorDe = (e) => ({
+    status: statusPorEtapa[e.id]?.status ?? e.status,
+    percentual: statusPorEtapa[e.id]?.percentual ?? (Number(e.percentual) || 0),
+  });
+  const alterar = (id, patch) => setStatusPorEtapa((p) => ({ ...p, [id]: { ...p[id], ...patch } }));
+  const alteradas = etapasDoPi.filter((e) => {
+    const v = valorDe(e);
+    return v.status !== e.status || (v.status === "em_andamento" && v.percentual !== (Number(e.percentual) || 0));
+  });
+
+  const trocarPi = (id) => {
+    setPiEscolhidoId(id); setPasso(1); setStatusPorEtapa({}); setOcorrencias([]);
+    setPedirAssinatura(false); setAssinaturaImagem(null);
+  };
+
   const adicionarOcorrencia = () => {
     if (!novaCategoria) return;
-    setOcorrencias((p) => [...p, { categoria: novaCategoria, descricao: novaDesc, midias: novasMidias }]);
+    setOcorrencias((p) => [...p, { categoria: novaCategoria, descricao: novaDesc.trim(), midias: novasMidias }]);
     setNovaCategoria(null); setNovaDesc(""); setNovasMidias([]);
   };
 
   const enviar = async () => {
-    if (!piAtivo) return;
+    if (!piAtivo || enviando) return;
+    // ocorrência preenchida mas não "adicionada" — não deixa se perder
+    const listaOcorrencias = novaCategoria
+      ? [...ocorrencias, { categoria: novaCategoria, descricao: novaDesc.trim(), midias: novasMidias }]
+      : ocorrencias;
     setEnviando(true);
-    const atividades = etapasDoPi.map((e) => ({
-      etapa_id: e.id, nome: e.nome,
-      status: statusPorEtapa[e.id]?.status ?? e.status,
-      percentual: statusPorEtapa[e.id]?.percentual ?? e.percentual ?? 0,
-    }));
+    const atividades = etapasDoPi.map((e) => {
+      const v = valorDe(e);
+      return { etapa_id: e.id, nome: e.nome, status: v.status, percentual: v.status === "concluida" ? 100 : limitar(v.percentual) };
+    });
     const { data: rdo, error } = await supabase.from("rdos").insert({
-      pi_id: piAtivo.id, lider_id: usuario.id, atividades, status: "pendente",
+      pi_id: piAtivo.id, lider_id: usuario.id, data: hoje, atividades, status: "pendente",
       assinatura_cliente: pedirAssinatura, assinatura_cliente_imagem: pedirAssinatura ? assinaturaImagem : null,
     }).select().single();
-    if (!error) {
-      if (ocorrencias.length > 0) {
-        await supabase.from("ocorrencias").insert(ocorrencias.map((o) => ({ pi_id: piAtivo.id, rdo_id: rdo.id, categoria: o.categoria, descricao: o.descricao, midias: o.midias || [], registrado_por: usuario.id })));
-      }
-      await registrarLog(usuario, "Registrou RDO", `${usuario.nome} — ${piAtivo.codigo}`);
-      setEnviado(true);
+    if (error) {
+      setEnviando(false);
+      avisar(`Não foi possível enviar o RDO: ${error.message}`, "erro", 7000);
+      return;
     }
+    if (listaOcorrencias.length > 0) {
+      const { error: erroOc } = await supabase.from("ocorrencias").insert(listaOcorrencias.map((o) => ({
+        pi_id: piAtivo.id, rdo_id: rdo.id, categoria: o.categoria, descricao: o.descricao || null, midias: o.midias || [], registrado_por: usuario.id,
+      })));
+      if (erroOc) avisar(`RDO enviado, mas as ocorrências falharam: ${erroOc.message}`, "erro", 7000);
+    }
+    await registrarLog(usuario, "Registrou RDO", `${usuario.nome} — ${piAtivo.codigo}`);
     setEnviando(false);
+    setEnviado(true);
   };
 
+  if (carregando) {
+    return <MobileShell nav={NAV_LIDER} perfis={["lider"]}><div className="p-4"><Esqueleto linhas={4} /></div></MobileShell>;
+  }
+
   if (!piAtivo) {
-    return <MobileShell nav={NAV}><div className="p-5 text-base text-muteddim leading-relaxed">Você não está alocado em nenhuma obra.</div></MobileShell>;
+    return (
+      <MobileShell nav={NAV_LIDER} perfis={["lider"]}>
+        <div className="p-4"><div className="cartao"><EstadoVazio icone="obra" titulo="Nenhuma obra" texto="Você não está alocado em nenhuma obra." /></div></div>
+      </MobileShell>
+    );
   }
 
   if (enviado) {
     return (
-      <MobileShell nav={NAV}>
-        <div className="p-6 flex flex-col items-center text-center gap-3 mt-10">
-          <div className="text-5xl">✓</div>
-          <div className="font-head font-bold text-xl">RDO enviado</div>
-          <p className="text-base text-muted leading-relaxed">Pendente de validação pelo Coordenador ou Gerente.</p>
-          <a href="/lider" className="mt-4 px-6 py-3 rounded-lg bg-cyan text-white text-base font-semibold">Voltar ao início</a>
-        </div>
+      <MobileShell nav={NAV_LIDER} perfis={["lider"]}>
+        <TelaSucesso titulo="RDO enviado" texto="Pendente de validação pelo Coordenador ou Gerente.">
+          {meusPis.length > 1 && (
+            <button onClick={() => { setEnviado(false); trocarPi(meusPis.find((p) => p.id !== piAtivo.id)?.id); }} className="btn btn-primario btn-lg w-full">
+              Fazer RDO de outra obra
+            </button>
+          )}
+          <Link href="/lider" className="btn btn-contorno btn-lg w-full">Voltar ao início</Link>
+        </TelaSucesso>
       </MobileShell>
     );
   }
 
   return (
-    <MobileShell nav={NAV}>
-      <div className="p-5">
-        <div className="text-xs font-mono text-cyan font-bold tracking-wide">{piAtivo.codigo}</div>
-        <div className="font-head font-bold text-xl mt-0.5">{piAtivo.cliente}</div>
-        {piAtivo.projeto && <div className="text-sm text-muted mb-4">{piAtivo.projeto}</div>}
-        {!piAtivo.projeto && <div className="mb-4" />}
+    <MobileShell nav={NAV_LIDER} perfis={["lider"]}>
+      <div className="p-4">
+        {/* obra */}
+        <div className="cartao p-4 mb-4">
+          <div className="text-xs font-mono text-cyan font-bold tracking-wide">{piAtivo.codigo}</div>
+          <div className="font-head font-bold text-xl leading-tight mt-0.5">{piAtivo.projeto || piAtivo.cliente}</div>
+          {piAtivo.projeto && <div className="text-sm text-muted">{piAtivo.cliente}</div>}
+          {meusPis.length > 1 && (
+            <select value={piAtivo.id} onChange={(e) => trocarPi(e.target.value)} className="input mt-3" aria-label="Trocar de obra">
+              {porCliente.map(([cliente, pisDoCliente]) => (
+                <optgroup key={cliente} label={cliente}>
+                  {pisDoCliente.map((p) => <option key={p.id} value={p.id}>{p.codigo} — {p.projeto || p.cliente}</option>)}
+                </optgroup>
+              ))}
+            </select>
+          )}
+        </div>
 
-        {meusPis.length > 1 && (
-          <select value={piAtivo.id} onChange={(e) => { setPiEscolhidoId(e.target.value); setPasso(1); }}
-            className="w-full mb-4 px-3 py-2.5 rounded-lg border border-line text-base bg-white">
-            {porCliente.map(([cliente, pisDoCliente]) => (
-              <optgroup key={cliente} label={cliente}>
-                {pisDoCliente.map((p) => <option key={p.id} value={p.id}>{p.codigo} — {p.projeto || p.cliente}</option>)}
-              </optgroup>
-            ))}
-          </select>
-        )}
+        {jaEnviouHoje && <Aviso tipo="info" className="mb-4">Você já enviou um RDO hoje para esta obra. Um novo envio fica como complemento.</Aviso>}
 
-        <div className="flex gap-1.5 mb-5">
-          {[1, 2, 3].map((n) => (
-            <div key={n} className={`flex-1 h-2 rounded-full ${passo >= n ? "bg-cyan" : "bg-line"}`} />
-          ))}
+        {/* passos */}
+        <div className="flex gap-2 mb-5">
+          {PASSOS.map((nome, i) => {
+            const n = i + 1;
+            const feito = passo > n, atual = passo === n;
+            return (
+              <button key={nome} type="button" onClick={() => n < passo && setPasso(n)} disabled={n > passo}
+                className="flex-1 flex flex-col gap-1.5 text-left disabled:cursor-default">
+                <div className={`h-1.5 rounded-full transition-colors ${passo >= n ? "bg-cyan" : "bg-line"}`} />
+                <span className={`text-xs font-semibold ${atual ? "text-cyan" : feito ? "text-textmain" : "text-muteddim"}`}>{feito ? "✓ " : `${n}. `}{nome}</span>
+              </button>
+            );
+          })}
         </div>
 
         {passo === 1 && (
-          <div className="flex flex-col gap-3">
-            <div className="text-sm font-mono text-muteddim tracking-wide">PASSO 1 — ATIVIDADES</div>
-            {etapasDoPi.map((e) => (
-              <div key={e.id} className={`bg-white rounded-xl border border-line p-4 ${e.nivel ? "ml-5" : ""}`}>
-                <div className={`font-semibold text-base mb-3 ${e.nivel ? "text-muted" : ""}`}>{e.nivel ? "· " : ""}{e.nome}</div>
-                <select value={statusPorEtapa[e.id]?.status ?? e.status}
-                  onChange={(ev) => setStatusPorEtapa((p) => ({ ...p, [e.id]: { ...p[e.id], status: ev.target.value } }))}
-                  className="w-full px-3 py-2.5 rounded-lg border border-line text-base mb-2">
-                  {STATUS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-                </select>
-                {(statusPorEtapa[e.id]?.status ?? e.status) === "em_andamento" && (
-                  <input type="number" min="0" max="100" value={statusPorEtapa[e.id]?.percentual ?? e.percentual ?? 0}
-                    onChange={(ev) => setStatusPorEtapa((p) => ({ ...p, [e.id]: { ...p[e.id], percentual: Number(ev.target.value) } }))}
-                    className="w-full px-3 py-2.5 rounded-lg border border-line text-base" placeholder="% concluído" />
-                )}
-              </div>
-            ))}
-            {etapasDoPi.length === 0 && <div className="text-sm text-muteddim">Nenhuma etapa cadastrada neste PI.</div>}
-            <button onClick={() => setPasso(2)} className="mt-2 py-4 rounded-xl bg-cyan text-white font-semibold text-base">Próximo</button>
+          <div className="flex flex-col gap-3 animar-surgir">
+            <div className="text-sm text-muted">Atualize o andamento de cada atividade.{alteradas.length > 0 && <strong className="text-cyan"> {alteradas.length} alterada(s).</strong>}</div>
+            {etapasDoPi.map((e) => {
+              const v = valorDe(e);
+              const mudou = alteradas.some((a) => a.id === e.id);
+              return (
+                <div key={e.id} className={`cartao p-4 transition-colors ${e.nivel ? "ml-4 border-l-4 border-l-line" : ""} ${mudou ? "!border-cyan/50 bg-cyan/[0.03]" : ""}`}>
+                  <div className={`font-semibold mb-3 leading-snug ${e.nivel ? "text-[15px] text-muted" : "text-base"}`}>{e.nome}</div>
+                  <div className="grid grid-cols-2 gap-2">
+                    {LISTA_STATUS_ETAPA.map(([valor, rotulo]) => {
+                      const ativo = v.status === valor;
+                      return (
+                        <button key={valor} type="button" onClick={() => alterar(e.id, { status: valor })} aria-pressed={ativo}
+                          className={`py-2.5 px-2 rounded-lg text-sm font-semibold border transition-all active:scale-[0.97] ${ativo ? "text-white border-transparent shadow-sm" : "bg-white border-line text-muted"}`}
+                          style={ativo ? { background: STATUS_ETAPA[valor].barra } : undefined}>
+                          {rotulo}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  {v.status === "em_andamento" && (
+                    <div className="mt-3 flex items-center gap-3 animar-fade">
+                      <input type="range" min="0" max="100" step="5" value={limitar(v.percentual)}
+                        onChange={(ev) => alterar(e.id, { percentual: limitar(ev.target.value) })}
+                        className="flex-1 accent-cyan h-8" aria-label="Percentual concluído" />
+                      <div className="relative w-20">
+                        <input type="number" inputMode="numeric" min="0" max="100" value={v.percentual}
+                          onChange={(ev) => alterar(e.id, { percentual: ev.target.value === "" ? "" : limitar(ev.target.value) })}
+                          className="input text-right pr-7" aria-label="Percentual" />
+                        <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-sm text-muted">%</span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+            {etapasDoPi.length === 0 && <div className="cartao"><EstadoVazio icone="cronograma" titulo="Sem etapas" texto="Nenhuma etapa cadastrada nesta obra. Você ainda pode registrar ocorrências." /></div>}
+            <BarraAcoes>
+              <button onClick={() => setPasso(2)} className="btn btn-primario btn-lg flex-1">Próximo <Icone nome="seta" className="w-5 h-5" /></button>
+            </BarraAcoes>
           </div>
         )}
 
         {passo === 2 && (
-          <div className="flex flex-col gap-3">
-            <div className="text-sm font-mono text-muteddim tracking-wide">PASSO 2 — OCORRÊNCIAS</div>
+          <div className="flex flex-col gap-3 animar-surgir">
+            <div className="text-sm text-muted">Houve algum problema hoje? Se não, é só avançar.</div>
             {ocorrencias.map((o, i) => (
-              <div key={i} className="bg-white rounded-xl border border-line p-4 text-base">
-                <span className="text-amber font-semibold">{o.categoria}</span>{o.descricao ? ` — ${o.descricao}` : ""}
-                {o.midias?.length > 0 && <div className="text-sm text-muteddim mt-1">📎 {o.midias.length} anexo(s)</div>}
+              <div key={i} className="cartao p-4 flex items-start gap-3">
+                <div className="flex-1 min-w-0 text-base">
+                  <span className="text-amber font-semibold">{o.categoria}</span>{o.descricao ? ` — ${o.descricao}` : ""}
+                  {o.midias?.length > 0 && <div className="text-sm text-muteddim mt-1">📎 {o.midias.length} anexo(s)</div>}
+                </div>
+                <button onClick={() => setOcorrencias((p) => p.filter((_, idx) => idx !== i))} className="p-1.5 text-muteddim hover:text-red" aria-label="Remover ocorrência">
+                  <Icone nome="lixo" className="w-5 h-5" />
+                </button>
               </div>
             ))}
-            <div className="bg-white rounded-xl border border-line p-4">
+            <div className="cartao p-4">
+              <div className="rotulo">Tipo de ocorrência</div>
               <div className="flex flex-wrap gap-2 mb-3">
-                {CATEGORIAS.map((c) => (
-                  <button key={c} type="button" onClick={() => setNovaCategoria(c)}
-                    className={`px-4 py-2 rounded-full text-sm border ${novaCategoria === c ? "bg-amber text-white border-amber" : "border-line text-muted"}`}>{c}</button>
+                {CATEGORIAS_OCORRENCIA.map((c) => (
+                  <button key={c} type="button" onClick={() => setNovaCategoria(novaCategoria === c ? null : c)}
+                    className={`px-4 py-2.5 rounded-full text-sm font-medium border transition-colors ${novaCategoria === c ? "bg-amber text-white border-amber" : "border-line text-muted bg-white"}`}>{c}</button>
                 ))}
               </div>
-              <input placeholder="Descrição (opcional)" value={novaDesc} onChange={(e) => setNovaDesc(e.target.value)}
-                className="w-full px-3 py-2.5 rounded-lg border border-line text-base mb-3" />
-              <CapturaMidia value={novasMidias} onChange={setNovasMidias} />
-              <button onClick={adicionarOcorrencia} disabled={!novaCategoria} className="w-full mt-3 py-2.5 rounded-lg bg-amber text-white text-sm font-semibold disabled:opacity-50">+ Adicionar ocorrência</button>
+              {novaCategoria && (
+                <div className="animar-fade">
+                  <textarea placeholder="Descreva o que aconteceu (opcional)" value={novaDesc} onChange={(e) => setNovaDesc(e.target.value)} rows={2}
+                    className="input input-lg mb-3" />
+                  <CapturaMidia value={novasMidias} onChange={setNovasMidias} />
+                  <button onClick={adicionarOcorrencia} className="btn btn-alerta w-full mt-3">+ Adicionar ocorrência</button>
+                </div>
+              )}
             </div>
-            <div className="flex gap-2">
-              <button onClick={() => setPasso(1)} className="flex-1 py-4 rounded-xl border border-line text-muted font-semibold text-base">Voltar</button>
-              <button onClick={() => setPasso(3)} className="flex-1 py-4 rounded-xl bg-cyan text-white font-semibold text-base">Próximo</button>
-            </div>
+            <BarraAcoes>
+              <button onClick={() => setPasso(1)} className="btn btn-contorno btn-lg"><Icone nome="voltar" className="w-5 h-5" /></button>
+              <button onClick={() => { if (novaCategoria) adicionarOcorrencia(); setPasso(3); }} className="btn btn-primario btn-lg flex-1">
+                {ocorrencias.length === 0 && !novaCategoria ? "Sem ocorrências" : "Próximo"} <Icone nome="seta" className="w-5 h-5" />
+              </button>
+            </BarraAcoes>
           </div>
         )}
 
         {passo === 3 && (
-          <div className="flex flex-col gap-3">
-            <div className="text-sm font-mono text-muteddim tracking-wide">PASSO 3 — CONFERIR E ENVIAR</div>
-            <div className="bg-white rounded-xl border border-line p-4 text-base">
-              <div className="font-semibold mb-1">{etapasDoPi.length} atividade(s)</div>
-              <div className="text-muteddim text-sm">{ocorrencias.length} ocorrência(s) registrada(s)</div>
+          <div className="flex flex-col gap-3 animar-surgir">
+            <div className="cartao p-4">
+              <div className="titulo-secao mb-3">Resumo</div>
+              <div className="grid grid-cols-3 gap-2 text-center">
+                <Resumo valor={etapasDoPi.length} rotulo="atividades" />
+                <Resumo valor={alteradas.length} rotulo="alteradas" destaque />
+                <Resumo valor={ocorrencias.length} rotulo="ocorrências" alerta={ocorrencias.length > 0} />
+              </div>
+              {alteradas.length > 0 && (
+                <div className="mt-3 pt-3 border-t border-line flex flex-col gap-1.5">
+                  {alteradas.map((e) => {
+                    const v = valorDe(e);
+                    return (
+                      <div key={e.id} className="flex justify-between gap-2 text-sm">
+                        <span className="truncate">{e.nome}</span>
+                        <span className="shrink-0 font-semibold" style={{ color: STATUS_ETAPA[v.status]?.barra }}>
+                          {STATUS_ETAPA[v.status]?.rotulo}{v.status === "em_andamento" ? ` · ${limitar(v.percentual)}%` : ""}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
 
-            <label className="flex items-center gap-2 bg-white rounded-xl border border-line p-4 text-base cursor-pointer">
-              <input type="checkbox" checked={pedirAssinatura} onChange={(e) => { setPedirAssinatura(e.target.checked); if (!e.target.checked) setAssinaturaImagem(null); }} />
-              Assinatura do cliente
+            <label className="cartao p-4 flex items-center gap-3 text-base cursor-pointer">
+              <input type="checkbox" className="w-5 h-5 accent-cyan" checked={pedirAssinatura}
+                onChange={(e) => { setPedirAssinatura(e.target.checked); if (!e.target.checked) setAssinaturaImagem(null); }} />
+              <Icone nome="assinatura" className="w-5 h-5 text-muted" />
+              <span className="flex-1">Coletar assinatura do cliente</span>
             </label>
 
             {pedirAssinatura && (
-              <div className="bg-white rounded-xl border border-line p-4">
+              <div className="cartao p-4 animar-fade">
                 <AssinaturaCanvas onMudar={setAssinaturaImagem} />
               </div>
             )}
 
-            <div className="flex gap-2">
-              <button onClick={() => setPasso(2)} className="flex-1 py-4 rounded-xl border border-line text-muted font-semibold text-base">Voltar</button>
-              <button onClick={enviar} disabled={enviando || (pedirAssinatura && !assinaturaImagem)} className="flex-1 py-4 rounded-xl bg-green text-white font-semibold text-base disabled:opacity-60">
-                {enviando ? "Enviando..." : "✓ Enviar RDO"}
+            <BarraAcoes>
+              <button onClick={() => setPasso(2)} className="btn btn-contorno btn-lg" disabled={enviando}><Icone nome="voltar" className="w-5 h-5" /></button>
+              <button onClick={enviar} disabled={enviando || (pedirAssinatura && !assinaturaImagem)} className="btn btn-sucesso btn-lg flex-1">
+                {enviando ? <><Spinner /> Enviando...</> : <><Icone nome="aprovar" className="w-5 h-5" strokeWidth={2.4} /> Enviar RDO</>}
               </button>
-            </div>
+            </BarraAcoes>
+            {pedirAssinatura && !assinaturaImagem && <div className="text-xs text-center text-muteddim">Falta a assinatura do cliente.</div>}
           </div>
         )}
       </div>
     </MobileShell>
+  );
+}
+
+// botões de navegação fixos logo acima do menu inferior — sempre ao alcance do polegar
+function BarraAcoes({ children }) {
+  return (
+    <div className="sticky z-20 -mx-4 px-4 pt-3 pb-3 mt-2 bg-gradient-to-t from-panel via-panel to-panel/0"
+      style={{ bottom: "calc(4.5rem + env(safe-area-inset-bottom))" }}>
+      <div className="flex gap-2">{children}</div>
+    </div>
+  );
+}
+
+function Resumo({ valor, rotulo, destaque, alerta }) {
+  return (
+    <div className="rounded-xl bg-panel py-3">
+      <div className={`font-head font-bold text-2xl ${alerta ? "text-amber" : destaque ? "text-cyan" : "text-textmain"}`}>{valor}</div>
+      <div className="text-xs text-muted">{rotulo}</div>
+    </div>
   );
 }
