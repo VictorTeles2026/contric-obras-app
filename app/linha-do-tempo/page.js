@@ -62,10 +62,18 @@ export default function LinhaDoTempoPage() {
     return lista.map((it, i) => ({ ...it, cor: PALETA_FILTRO[i % PALETA_FILTRO.length] }));
   }, [filtroAtivo, recursos]);
 
+  const sobrepoePeriodo = (iniA, fimA, iniB, fimB) => iniA && fimA && iniB && fimB && iniA <= fimB && iniB <= fimA;
+  const recursoBateNaEtapa = (recursoId, etapa) => alocacoesRecurso.some((al) => {
+    if (al.recurso_id !== recursoId) return false;
+    if (al.etapa_id) return al.etapa_id === etapa.id; // alocação feita direto na etapa (Cronograma)
+    // alocação feita por PI + período (tela Recursos, sem etapa específica) — vale se o período cruza com a etapa
+    return al.pi_id === etapa.pi_id && sobrepoePeriodo(al.periodo_inicio, al.periodo_fim, etapa.data_prevista_inicio, etapa.data_prevista_fim);
+  });
+
   const itensQueBatemNaEtapa = (etapa) => itensFiltro.filter((it) =>
     it.tipo === "equipe"
       ? (etapa.areas || []).includes(it.valor)
-      : alocacoesRecurso.some((al) => al.etapa_id === etapa.id && al.recurso_id === it.valor)
+      : recursoBateNaEtapa(it.valor, etapa)
   );
 
   const pisSelecionados = pis.filter((p) => piIds.includes(p.id));
@@ -298,7 +306,7 @@ export default function LinhaDoTempoPage() {
             {itensFiltro.map((it) => {
               const linhas = pisSelecionados.flatMap((pi) =>
                 itensOrdenados(pi.id)
-                  .filter((e) => (it.tipo === "equipe" ? (e.areas || []).includes(it.valor) : alocacoesRecurso.some((al) => al.etapa_id === e.id && al.recurso_id === it.valor)))
+                  .filter((e) => (it.tipo === "equipe" ? (e.areas || []).includes(it.valor) : recursoBateNaEtapa(it.valor, e)))
                   .map((e) => ({ pi, etapa: e }))
               );
               return (

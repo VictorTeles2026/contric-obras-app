@@ -15,16 +15,16 @@ export default function AprovacoesPage() {
 
   const rdosPendentes = rdosTodos.filter((r) => r.status === "pendente");
   const horasPendentes = horasTodas.filter((h) => h.status === "pendente");
-  const piNome = (id) => pis.find((p) => p.id === id)?.codigo || "?";
+  const piInfo = (id) => pis.find((p) => p.id === id);
 
   const aprovarRdo = async (rdo) => {
     await supabase.from("rdos").update({ status: "aprovado", decidido_por: usuario.id, decidido_em: new Date().toISOString() }).eq("id", rdo.id);
-    await registrarLog(usuario, "Validou RDO", `${piNome(rdo.pi_id)} — ${rdo.data}`);
+    await registrarLog(usuario, "Validou RDO", `${piInfo(rdo.pi_id)?.codigo} — ${rdo.data}`);
     recarregarRdos();
   };
   const rejeitarRdo = async (rdo, motivo) => {
     await supabase.from("rdos").update({ status: "rejeitado", decidido_por: usuario.id, decidido_em: new Date().toISOString(), motivo_rejeicao: motivo }).eq("id", rdo.id);
-    await registrarLog(usuario, "Rejeitou RDO", `${piNome(rdo.pi_id)} · motivo: ${motivo}`);
+    await registrarLog(usuario, "Rejeitou RDO", `${piInfo(rdo.pi_id)?.codigo} · motivo: ${motivo}`);
     recarregarRdos();
   };
   const aprovarHoras = async (h, normais, extras) => {
@@ -32,7 +32,7 @@ export default function AprovacoesPage() {
       status: "aprovado", decidido_por: usuario.id, decidido_em: new Date().toISOString(),
       horas_normais: normais, horas_extras: extras,
     }).eq("id", h.id);
-    await registrarLog(usuario, "Validou horas", `${piNome(h.pi_id)} — ${normais}h normais + ${extras}h extras`);
+    await registrarLog(usuario, "Validou horas", `${piInfo(h.pi_id)?.codigo} — ${normais}h normais + ${extras}h extras`);
     recarregarHoras();
   };
 
@@ -46,7 +46,7 @@ export default function AprovacoesPage() {
         <div className="text-[11px] font-mono text-muteddim mb-2">RDOS PENDENTES ({rdosPendentes.length})</div>
         <div className="flex flex-col gap-2">
           {rdosPendentes.map((rdo) => (
-            <RdoCard key={rdo.id} rdo={rdo} piNome={piNome} editavel={editavel} onAprovar={() => aprovarRdo(rdo)} onRejeitar={(m) => rejeitarRdo(rdo, m)} />
+            <RdoCard key={rdo.id} rdo={rdo} pi={piInfo(rdo.pi_id)} editavel={editavel} onAprovar={() => aprovarRdo(rdo)} onRejeitar={(m) => rejeitarRdo(rdo, m)} />
           ))}
           {rdosPendentes.length === 0 && <div className="text-xs text-muteddim">Nenhum RDO pendente.</div>}
         </div>
@@ -56,7 +56,7 @@ export default function AprovacoesPage() {
         <div className="text-[11px] font-mono text-muteddim mb-2">HORAS PENDENTES ({horasPendentes.length})</div>
         <div className="flex flex-col gap-2">
           {horasPendentes.map((h) => (
-            <HorasCard key={h.id} registro={h} piNome={piNome} editavel={editavel} onAprovar={aprovarHoras} />
+            <HorasCard key={h.id} registro={h} pi={piInfo(h.pi_id)} editavel={editavel} onAprovar={aprovarHoras} />
           ))}
           {horasPendentes.length === 0 && <div className="text-xs text-muteddim">Nenhum registro de horas pendente.</div>}
         </div>
@@ -66,14 +66,26 @@ export default function AprovacoesPage() {
   );
 }
 
-function RdoCard({ rdo, piNome, editavel, onAprovar, onRejeitar }) {
+function CabecalhoPi({ pi }) {
+  return (
+    <div className="text-sm font-semibold">
+      {pi?.cliente || "?"} <span className="text-muteddim font-normal">·</span> <span className="font-mono text-cyan">{pi?.codigo || "?"}</span>
+      {pi?.projeto && <> <span className="text-muteddim font-normal">·</span> {pi.projeto}</>}
+    </div>
+  );
+}
+
+function RdoCard({ rdo, pi, editavel, onAprovar, onRejeitar }) {
   const [rejeitando, setRejeitando] = useState(false);
   const [motivo, setMotivo] = useState("");
   return (
     <div className="border border-line rounded-lg p-3">
-      <div className="flex justify-between items-center mb-2">
-        <span className="text-sm font-semibold">{piNome(rdo.pi_id)} · {rdo.data}</span>
-        <span className="text-[10px] font-mono text-amber bg-amber/10 rounded-full px-2 py-0.5">PENDENTE</span>
+      <div className="flex justify-between items-center mb-2 gap-2">
+        <div>
+          <CabecalhoPi pi={pi} />
+          <span className="text-xs text-muted">{rdo.data}</span>
+        </div>
+        <span className="text-[10px] font-mono text-amber bg-amber/10 rounded-full px-2 py-0.5 shrink-0">PENDENTE</span>
       </div>
       {(rdo.atividades || []).map((a, i) => (
         <div key={i} className="flex justify-between text-xs py-0.5">
@@ -100,15 +112,18 @@ function RdoCard({ rdo, piNome, editavel, onAprovar, onRejeitar }) {
   );
 }
 
-function HorasCard({ registro, piNome, editavel, onAprovar }) {
+function HorasCard({ registro, pi, editavel, onAprovar }) {
   const total = registro.horas_totais || 0;
   const [normais, setNormais] = useState(total);
   const [extras, setExtras] = useState(0);
   return (
     <div className="border border-line rounded-lg p-3">
-      <div className="flex justify-between items-center mb-2">
-        <span className="text-sm font-semibold">{piNome(registro.pi_id)} · {registro.data}</span>
-        <span className="text-[10px] font-mono text-amber bg-amber/10 rounded-full px-2 py-0.5">PENDENTE</span>
+      <div className="flex justify-between items-center mb-2 gap-2">
+        <div>
+          <CabecalhoPi pi={pi} />
+          <span className="text-xs text-muted">{registro.data}</span>
+        </div>
+        <span className="text-[10px] font-mono text-amber bg-amber/10 rounded-full px-2 py-0.5 shrink-0">PENDENTE</span>
       </div>
       <div className="text-xs text-muted mb-2">{total.toFixed(1)}h total</div>
       <div className="flex gap-2">

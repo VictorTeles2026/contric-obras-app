@@ -1,11 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { registrarLog } from "../../../lib/dados";
 import { useAuth } from "../../../lib/AuthContext";
 import { supabase } from "../../../lib/supabase";
 import MobileShell from "../../../components/MobileShell";
-import { useMinhasPis } from "../page";
+import { useMinhasPis, agruparPorCliente } from "../page";
 
 const NAV = [
   { href: "/lider", label: "Início", icone: "🏠" },
@@ -18,6 +18,7 @@ const NAV = [
 export default function LiderHorasPage() {
   const { usuario } = useAuth();
   const meusPis = useMinhasPis(usuario);
+  const porCliente = useMemo(() => agruparPorCliente(meusPis), [meusPis]);
   const [pisSelecionados, setPisSelecionados] = useState([]);
   const [horaInicio, setHoraInicio] = useState("07:00");
   const [horaFim, setHoraFim] = useState("");
@@ -65,12 +66,20 @@ export default function LiderHorasPage() {
 
         <div>
           <div className="text-sm text-muteddim mb-2">Em quais obras você trabalhou hoje?</div>
-          <div className="flex flex-wrap gap-2">
-            {meusPis.map((p) => (
-              <button key={p.id} type="button" onClick={() => togglePi(p.id)}
-                className={`px-4 py-2.5 rounded-full text-base border ${pisSelecionados.includes(p.id) ? "bg-cyan text-white border-cyan" : "border-line text-muted bg-white"}`}>
-                {p.codigo}
-              </button>
+          <div className="flex flex-col gap-3">
+            {porCliente.map(([cliente, pisDoCliente]) => (
+              <div key={cliente}>
+                <div className="text-xs font-mono text-muteddim uppercase tracking-wide mb-1.5">{cliente}</div>
+                <div className="flex flex-wrap gap-2">
+                  {pisDoCliente.map((p) => (
+                    <button key={p.id} type="button" onClick={() => togglePi(p.id)}
+                      className={`px-4 py-2.5 rounded-xl text-left border ${pisSelecionados.includes(p.id) ? "bg-cyan text-white border-cyan" : "border-line text-muted bg-white"}`}>
+                      <div className="font-semibold">{p.codigo}</div>
+                      {p.projeto && <div className={`text-xs ${pisSelecionados.includes(p.id) ? "text-white/80" : "text-muteddim"}`}>{p.projeto}</div>}
+                    </button>
+                  ))}
+                </div>
+              </div>
             ))}
           </div>
         </div>

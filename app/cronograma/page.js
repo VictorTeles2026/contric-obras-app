@@ -306,7 +306,7 @@ export default function CronogramaPage() {
       <div className="flex flex-wrap items-center gap-3 p-3 bg-panel border-b border-line">
         <span className="text-[10px] font-mono text-muteddim">PI</span>
         <select value={piAtual?.id || ""} onChange={(e) => setPiSelecionadoId(e.target.value)} className="px-2 py-1.5 rounded-lg border border-line text-sm bg-white">
-          {pis.map((p) => <option key={p.id} value={p.id}>{p.codigo} — {p.cliente}</option>)}
+          {pis.map((p) => <option key={p.id} value={p.id}>{p.codigo} — {p.cliente}{p.projeto ? ` — ${p.projeto}` : ""}</option>)}
         </select>
         {editavel && (
           <button onClick={() => { setPisModalModo("create"); setPisModalAberto(true); }} className="px-3 py-1.5 rounded-lg bg-cyan text-white text-xs font-semibold">

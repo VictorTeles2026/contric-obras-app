@@ -1,12 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { registrarLog, useTabela } from "../../lib/dados";
 import { useAuth } from "../../lib/AuthContext";
 import { supabase } from "../../lib/supabase";
 import MobileShell from "../../components/MobileShell";
 import LeitorQR from "../../components/LeitorQR";
-import { useMinhasPis } from "../lider/page";
+import { useMinhasPis, agruparPorCliente } from "../lider/page";
 
 const NAV = [
   { href: "/equipe", label: "Horas", icone: "⏱" },
@@ -87,6 +87,8 @@ function CheckInOut({ usuario, todosPis }) {
       <div className="bg-white rounded-xl border border-cyan p-5 flex flex-col items-center text-center gap-2">
         <div className="text-xs font-mono text-muteddim">VOCÊ ESTÁ EM</div>
         <div className="font-head font-bold text-2xl text-cyan">{piDaSessao?.codigo || "—"}</div>
+        {piDaSessao?.cliente && <div className="text-base font-semibold">{piDaSessao.cliente}</div>}
+        {piDaSessao?.projeto && <div className="text-sm text-muted">{piDaSessao.projeto}</div>}
         <div className="text-base text-muted">desde as {horaCurta(sessaoAberta.entrada)}</div>
         <button onClick={fazerCheckout} disabled={processando} className="w-full mt-3 py-4 rounded-xl bg-red text-white font-semibold text-base disabled:opacity-60">
           {processando ? "Registrando..." : "Fazer check-out"}
@@ -122,6 +124,7 @@ function CheckInOut({ usuario, todosPis }) {
 }
 
 function LancamentoManual({ usuario, meusPis }) {
+  const porCliente = useMemo(() => agruparPorCliente(meusPis), [meusPis]);
   const [pisSelecionados, setPisSelecionados] = useState([]);
   const [horaInicio, setHoraInicio] = useState("07:00");
   const [horaFim, setHoraFim] = useState("");
@@ -164,12 +167,20 @@ function LancamentoManual({ usuario, meusPis }) {
     <div className="flex flex-col gap-5">
       <div>
         <div className="text-sm text-muteddim mb-2">Em quais obras você trabalhou hoje?</div>
-        <div className="flex flex-wrap gap-2">
-          {meusPis.map((p) => (
-            <button key={p.id} type="button" onClick={() => togglePi(p.id)}
-              className={`px-4 py-2.5 rounded-full text-base border ${pisSelecionados.includes(p.id) ? "bg-cyan text-white border-cyan" : "border-line text-muted bg-white"}`}>
-              {p.codigo}
-            </button>
+        <div className="flex flex-col gap-3">
+          {porCliente.map(([cliente, pisDoCliente]) => (
+            <div key={cliente}>
+              <div className="text-xs font-mono text-muteddim uppercase tracking-wide mb-1.5">{cliente}</div>
+              <div className="flex flex-wrap gap-2">
+                {pisDoCliente.map((p) => (
+                  <button key={p.id} type="button" onClick={() => togglePi(p.id)}
+                    className={`px-4 py-2.5 rounded-xl text-left border ${pisSelecionados.includes(p.id) ? "bg-cyan text-white border-cyan" : "border-line text-muted bg-white"}`}>
+                    <div className="font-semibold">{p.codigo}</div>
+                    {p.projeto && <div className={`text-xs ${pisSelecionados.includes(p.id) ? "text-white/80" : "text-muteddim"}`}>{p.projeto}</div>}
+                  </button>
+                ))}
+              </div>
+            </div>
           ))}
         </div>
       </div>

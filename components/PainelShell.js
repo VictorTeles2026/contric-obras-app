@@ -2,7 +2,8 @@
 
 import { useEffect } from "react";
 import { useRouter, usePathname } from "next/navigation";
-import { useAuth } from "../lib/AuthContext";
+import { useAuth, podeAcessarDesktop } from "../lib/AuthContext";
+import { rotaInicialPara } from "../lib/rotas";
 
 const NAV = [
   { href: "/dashboard", label: "Dashboard" },
@@ -26,10 +27,17 @@ export default function PainelShell({ children }) {
     if (!carregando && !sessao) router.replace("/login");
   }, [carregando, sessao, router]);
 
+  useEffect(() => {
+    if (!carregando && sessao && usuario && !podeAcessarDesktop(usuario)) {
+      router.replace(rotaInicialPara(usuario));
+    }
+  }, [carregando, sessao, usuario, router]);
+
   if (carregando) {
     return <div className="min-h-screen flex items-center justify-center text-muted text-sm">Carregando...</div>;
   }
   if (!sessao) return null;
+  if (usuario && !podeAcessarDesktop(usuario)) return null;
 
   return (
     <div className="min-h-screen flex flex-col md:flex-row bg-white">

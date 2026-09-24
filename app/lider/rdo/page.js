@@ -5,7 +5,8 @@ import { useTabela, registrarLog } from "../../../lib/dados";
 import { useAuth } from "../../../lib/AuthContext";
 import { supabase } from "../../../lib/supabase";
 import MobileShell from "../../../components/MobileShell";
-import { useMinhasPis } from "../page";
+import AssinaturaCanvas from "../../../components/AssinaturaCanvas";
+import { useMinhasPis, agruparPorCliente } from "../page";
 
 const NAV = [
   { href: "/lider", label: "Início", icone: "🏠" },
@@ -21,7 +22,9 @@ const porOrdem = (a, b) => (a.ordem ?? 999999) - (b.ordem ?? 999999);
 export default function LiderRdoPage() {
   const { usuario } = useAuth();
   const meusPis = useMinhasPis(usuario);
-  const piAtivo = meusPis[0];
+  const [piEscolhidoId, setPiEscolhidoId] = useState(null);
+  const piAtivo = meusPis.find((p) => p.id === piEscolhidoId) || meusPis[0];
+  const porCliente = useMemo(() => agruparPorCliente(meusPis), [meusPis]);
   const { dados: etapas } = useTabela("etapas");
   const etapasDoPi = useMemo(() => {
     if (!piAtivo) return [];
@@ -40,6 +43,8 @@ export default function LiderRdoPage() {
   const [novaDesc, setNovaDesc] = useState("");
   const [enviado, setEnviado] = useState(false);
   const [enviando, setEnviando] = useState(false);
+  const [pedirAssinatura, setPedirAssinatura] = useState(false);
+  const [assinaturaImagem, setAssinaturaImagem] = useState(null);
 
   const adicionarOcorrencia = () => {
     if (!novaCategoria) return;
@@ -55,7 +60,10 @@ export default function LiderRdoPage() {
       status: statusPorEtapa[e.id]?.status ?? e.status,
       percentual: statusPorEtapa[e.id]?.percentual ?? e.percentual ?? 0,
     }));
-    const { data: rdo, error } = await supabase.from("rdos").insert({ pi_id: piAtivo.id, lider_id: usuario.id, atividades, status: "pendente" }).select().single();
+    const { data: rdo, error } = await supabase.from("rdos").insert({
+      pi_id: piAtivo.id, lider_id: usuario.id, atividades, status: "pendente",
+      assinatura_cliente: pedirAssinatura, assinatura_cliente_imagem: pedirAssinatura ? assinaturaImagem : null,
+    }).select().single();
     if (!error) {
       if (ocorrencias.length > 0) {
         await supabase.from("ocorrencias").insert(ocorrencias.map((o) => ({ pi_id: piAtivo.id, rdo_id: rdo.id, categoria: o.categoria, descricao: o.descricao, registrado_por: usuario.id })));
@@ -87,7 +95,20 @@ export default function LiderRdoPage() {
     <MobileShell nav={NAV}>
       <div className="p-5">
         <div className="text-xs font-mono text-cyan font-bold tracking-wide">{piAtivo.codigo}</div>
-        <div className="font-head font-bold text-xl mb-4 mt-0.5">{piAtivo.cliente}</div>
+        <div className="font-head font-bold text-xl mt-0.5">{piAtivo.cliente}</div>
+        {piAtivo.projeto && <div className="text-sm text-muted mb-4">{piAtivo.projeto}</div>}
+        {!piAtivo.projeto && <div className="mb-4" />}
+
+        {meusPis.length > 1 && (
+          <select value={piAtivo.id} onChange={(e) => { setPiEscolhidoId(e.target.value); setPasso(1); }}
+            className="w-full mb-4 px-3 py-2.5 rounded-lg border border-line text-base bg-white">
+            {porCliente.map(([cliente, pisDoCliente]) => (
+              <optgroup key={cliente} label={cliente}>
+                {pisDoCliente.map((p) => <option key={p.id} value={p.id}>{p.codigo} — {p.projeto || p.cliente}</option>)}
+              </optgroup>
+            ))}
+          </select>
+        )}
 
         <div className="flex gap-1.5 mb-5">
           {[1, 2, 3].map((n) => (
@@ -151,9 +172,21 @@ export default function LiderRdoPage() {
               <div className="font-semibold mb-1">{etapasDoPi.length} atividade(s)</div>
               <div className="text-muteddim text-sm">{ocorrencias.length} ocorrência(s) registrada(s)</div>
             </div>
+
+            <label className="flex items-center gap-2 bg-white rounded-xl border border-line p-4 text-base cursor-pointer">
+              <input type="checkbox" checked={pedirAssinatura} onChange={(e) => { setPedirAssinatura(e.target.checked); if (!e.target.checked) setAssinaturaImagem(null); }} />
+              Assinatura do cliente
+            </label>
+
+            {pedirAssinatura && (
+              <div className="bg-white rounded-xl border border-line p-4">
+                <AssinaturaCanvas onMudar={setAssinaturaImagem} />
+              </div>
+            )}
+
             <div className="flex gap-2">
               <button onClick={() => setPasso(2)} className="flex-1 py-4 rounded-xl border border-line text-muted font-semibold text-base">Voltar</button>
-              <button onClick={enviar} disabled={enviando} className="flex-1 py-4 rounded-xl bg-green text-white font-semibold text-base disabled:opacity-60">
+              <button onClick={enviar} disabled={enviando || (pedirAssinatura && !assinaturaImagem)} className="flex-1 py-4 rounded-xl bg-green text-white font-semibold text-base disabled:opacity-60">
                 {enviando ? "Enviando..." : "✓ Enviar RDO"}
               </button>
             </div>

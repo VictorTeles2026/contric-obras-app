@@ -18,8 +18,10 @@ const FUNCOES = [
   "Líder", "Programador", "Eletricista Eletromecânico", "Eletricista Força e Controle",
   "Mecânico", "Serralheiro", "Encanador", "Téc. Automação", "Téc. Eletrotécnica",
   "Téc. Mecatrônico", "Pedreiro", "Técnico de Segurança",
+  "Projetista Mecânico", "Projetista Elétrico", "Gerente de Engenharia Elétrica",
+  "Gerente de Engenharia Mecânica", "Gestor de Projetos", "Gerente de Engenharia", "Diretor",
 ];
-const PERFIS_COM_FUNCAO = ["lider", "funcionario", "terceiro"];
+const PERFIS_COM_FUNCAO = ["lider", "funcionario", "terceiro", "gerente", "coordenador"];
 
 export default function UsuariosPage() {
   const { usuario } = useAuth();

@@ -5,7 +5,7 @@ import { registrarLog, useTabela } from "../../../lib/dados";
 import { useAuth } from "../../../lib/AuthContext";
 import { supabase } from "../../../lib/supabase";
 import MobileShell from "../../../components/MobileShell";
-import { useMinhasPis } from "../../lider/page";
+import { useMinhasPis, agruparPorCliente } from "../../lider/page";
 
 const NAV = [
   { href: "/equipe", label: "Horas", icone: "⏱" },
@@ -16,6 +16,7 @@ const CATEGORIAS = ["Atraso", "Retrabalho", "Reclamação do cliente", "Prejuíz
 export default function EquipeOcorrenciaPage() {
   const { usuario } = useAuth();
   const meusPis = useMinhasPis(usuario);
+  const porCliente = agruparPorCliente(meusPis);
   const { dados: minhasOcorrencias, recarregar } = useTabela("ocorrencias", {
     order: { coluna: "created_at" }, filtro: [["registrado_por", usuario?.id]],
   });
@@ -53,7 +54,11 @@ export default function EquipeOcorrenciaPage() {
             <div className="text-sm text-muteddim mb-1.5">Obra</div>
             <select value={piId} onChange={(e) => setPiId(e.target.value)} className="w-full px-3 py-2.5 rounded-lg border border-line text-base">
               <option value="">Selecione...</option>
-              {meusPis.map((p) => <option key={p.id} value={p.id}>{p.codigo}</option>)}
+              {porCliente.map(([cliente, pisDoCliente]) => (
+                <optgroup key={cliente} label={cliente}>
+                  {pisDoCliente.map((p) => <option key={p.id} value={p.id}>{p.codigo}{p.projeto ? ` — ${p.projeto}` : ""}</option>)}
+                </optgroup>
+              ))}
             </select>
           </div>
           <div>
