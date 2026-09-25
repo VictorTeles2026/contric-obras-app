@@ -44,7 +44,7 @@ export default function EquipeHorasPage() {
             ? <div className="cartao"><EstadoVazio icone="obra" titulo="Nenhuma obra" texto="Você ainda não está alocado em nenhuma obra. Fale com seu líder ou use o check-in pelo QR Code." /></div>
             : <FormHoras usuario={usuario} pis={meusPis} onEnviado={mudou} />}
 
-        {!carregando && <UltimosLancamentos usuario={usuario} pis={todosPis} versao={versao} />}
+        {!carregando && <UltimosLancamentos usuario={usuario} pis={todosPis} pisEditaveis={meusPis} versao={versao} />}
       </div>
     </MobileShell>
   );

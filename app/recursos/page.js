@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useRef } from "react";
+import { useState, useMemo, useRef, useEffect } from "react";
 import { useTabela, registrarLog } from "../../lib/dados";
 import { useAuth, podeEditar } from "../../lib/AuthContext";
 import { supabase } from "../../lib/supabase";
@@ -10,6 +10,7 @@ import { useToast } from "../../lib/Toast";
 import PainelShell from "../../components/PainelShell";
 import { Modal, EstadoVazio, Esqueleto, Aviso, Campo } from "../../components/ui";
 import Icone from "../../components/Icone";
+import GraficoUtilizacao from "../../components/GraficoUtilizacao";
 const UNIDADES = [["hora", "Hora"], ["diaria", "Diária"], ["semana", "Semana"], ["quinzena", "Quinzena"], ["mes", "Mês"]];
 const PERFIS_COM_ALOCACAO = ["lider", "funcionario", "terceiro"];
 
@@ -179,14 +180,57 @@ export default function RecursosPage() {
     recarregarAlocacoes();
   };
 
+  // abas: cadastro/alocação e o gráfico de utilização (que antes era uma página separada)
+  const [aba, setAbaEstado] = useState("cadastro");
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get("aba") === "utilizacao") setAbaEstado("utilizacao");
+  }, []);
+  const setAba = (v) => {
+    setAbaEstado(v);
+    const url = new URL(window.location.href);
+    if (v === "utilizacao") url.searchParams.set("aba", v); else url.searchParams.delete("aba");
+    window.history.replaceState(null, "", url.toString());
+  };
+  const sobrealocados = useMemo(() => recursos.filter((r) => {
+    const eventos = [];
+    alocacoes.filter((a) => a.recurso_id === r.id && a.modo === "periodo_percentual").forEach((a) => {
+      eventos.push([a.periodo_inicio, 1, Number(a.percentual)]);
+      eventos.push([a.periodo_fim, 2, -Number(a.percentual)]);
+    });
+    eventos.sort((x, y) => String(x[0]).localeCompare(String(y[0])) || x[1] - y[1]);
+    let atual = 0, pico = 0;
+    eventos.forEach(([, , d]) => { atual += d; pico = Math.max(pico, atual); });
+    return pico > 100;
+  }).length, [recursos, alocacoes]);
+
   return (
     <PainelShell>
-    <div className="flex flex-col md:flex-row md:h-[100dvh]">
-      <aside className="w-full md:w-96 shrink-0 bg-white border-b md:border-b-0 md:border-r border-line p-4 md:p-5 md:overflow-y-auto rolagem-fina">
-        <div className="flex items-center justify-between mb-4">
-          <h1 className="font-head font-bold text-xl">Recursos</h1>
-          <span className="text-xs text-muted">{recursos.length} cadastrados</span>
+    <div className="flex flex-col md:h-[100dvh]">
+      <div className="bg-white border-b border-line px-4 md:px-6 pt-4 shrink-0">
+        <div className="flex items-center justify-between gap-3 mb-3">
+          <h1 className="font-head font-bold text-xl md:text-2xl">Recursos</h1>
+          <span className="text-xs text-muted">{recursos.length} cadastrados · {alocacoes.length} alocações</span>
         </div>
+        <div className="flex gap-1 overflow-x-auto" role="tablist">
+          {[["cadastro", "Recursos e alocações", null], ["utilizacao", "Utilização", sobrealocados]].map(([v, l, n]) => (
+            <button key={v} role="tab" aria-selected={aba === v} onClick={() => setAba(v)}
+              className={`relative px-4 py-2.5 text-sm font-semibold whitespace-nowrap transition-colors ${aba === v ? "text-cyan" : "text-muted hover:text-textmain"}`}>
+              {l}
+              {n > 0 && <span className="ml-2 selo bg-red/10 text-red" title="Recursos acima de 100%">⚠ {n}</span>}
+              {aba === v && <span className="absolute left-0 right-0 -bottom-px h-0.5 bg-cyan rounded-full" />}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {aba === "utilizacao" ? (
+        <div className="flex-1 min-h-0 p-4 md:p-6 md:overflow-y-auto rolagem-fina">
+          <GraficoUtilizacao recursos={recursos} alocacoes={alocacoes} pis={pis} carregando={carregandoRecursos}
+            onSelecionarRecurso={(id) => { setAba("cadastro"); setSelecionadosIds([id]); setAncoraId(id); setEditandoAlocId(null); fecharTudoMenos(null); }} />
+        </div>
+      ) : (
+    <div className="flex flex-col md:flex-row flex-1 min-h-0">
+      <aside className="w-full md:w-96 shrink-0 bg-white border-b md:border-b-0 md:border-r border-line p-4 md:p-5 md:overflow-y-auto rolagem-fina">
 
         {editavel && (
           <div className="flex flex-col gap-2 mb-4">
@@ -371,6 +415,8 @@ export default function RecursosPage() {
           </div>
         )}
       </section>
+    </div>
+      )}
 
       {massaOpen && (
         <AlocacaoEmMassaModal pis={pis} recursos={recursos} usuarios={usuarios} onAplicar={aplicarAlocacaoMassa} onCancelar={() => setMassaOpen(false)}

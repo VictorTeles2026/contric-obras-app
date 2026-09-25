@@ -10,6 +10,7 @@ import { NAV_LIDER } from "../../../lib/nav";
 import { hojeISO } from "../../../lib/datas";
 import { STATUS_ETAPA, LISTA_STATUS_ETAPA, CATEGORIAS_OCORRENCIA, etapasEmArvore } from "../../../lib/constantes";
 import { useToast } from "../../../lib/Toast";
+import { gerarPdfRdoSeguro } from "../../../lib/pdfRdo";
 import MobileShell from "../../../components/MobileShell";
 import AssinaturaCanvas from "../../../components/AssinaturaCanvas";
 import CapturaMidia from "../../../components/CapturaMidia";
@@ -38,6 +39,7 @@ export default function LiderRdoPage() {
   const [novasMidias, setNovasMidias] = useState([]);
   const [enviado, setEnviado] = useState(false);
   const [enviando, setEnviando] = useState(false);
+  const [etapaEnvio, setEtapaEnvio] = useState("");
   const [pedirAssinatura, setPedirAssinatura] = useState(false);
   const [assinaturaImagem, setAssinaturaImagem] = useState(null);
 
@@ -94,6 +96,9 @@ export default function LiderRdoPage() {
       if (erroOc) avisar(`RDO enviado, mas as ocorrências falharam: ${erroOc.message}`, "erro", 7000);
     }
     await registrarLog(usuario, "Registrou RDO", `${usuario.nome} — ${piAtivo.codigo}`);
+    setEtapaEnvio("Gerando PDF...");
+    await gerarPdfRdoSeguro(rdo.id, avisar);
+    setEtapaEnvio("");
     setEnviando(false);
     setEnviado(true);
   };
@@ -287,7 +292,7 @@ export default function LiderRdoPage() {
             <BarraAcoes>
               <button onClick={() => setPasso(2)} className="btn btn-contorno btn-lg" disabled={enviando}><Icone nome="voltar" className="w-5 h-5" /></button>
               <button onClick={enviar} disabled={enviando || (pedirAssinatura && !assinaturaImagem)} className="btn btn-sucesso btn-lg flex-1">
-                {enviando ? <><Spinner /> Enviando...</> : <><Icone nome="aprovar" className="w-5 h-5" strokeWidth={2.4} /> Enviar RDO</>}
+                {enviando ? <><Spinner /> {etapaEnvio || "Enviando..."}</> : <><Icone nome="aprovar" className="w-5 h-5" strokeWidth={2.4} /> Enviar RDO</>}
               </button>
             </BarraAcoes>
             {pedirAssinatura && !assinaturaImagem && <div className="text-xs text-center text-muteddim">Falta a assinatura do cliente.</div>}

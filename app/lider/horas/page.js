@@ -23,7 +23,7 @@ export default function LiderHorasPage() {
           <div className="cartao"><EstadoVazio icone="obra" titulo="Nenhuma obra" texto="Você não está alocado em nenhuma obra." /></div>
         )}
         {!carregando && meusPis.length > 0 && <FormHoras usuario={usuario} pis={meusPis} onEnviado={() => setVersao((v) => v + 1)} />}
-        {!carregando && <UltimosLancamentos usuario={usuario} pis={todosPis} versao={versao} />}
+        {!carregando && <UltimosLancamentos usuario={usuario} pis={todosPis} pisEditaveis={meusPis} versao={versao} />}
       </div>
     </MobileShell>
   );

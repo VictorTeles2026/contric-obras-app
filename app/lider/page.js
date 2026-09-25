@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useTabela } from "../../lib/dados";
 import { useAuth } from "../../lib/AuthContext";
@@ -10,6 +10,11 @@ import { hojeISO, saudacao } from "../../lib/datas";
 import MobileShell from "../../components/MobileShell";
 import { Esqueleto, EstadoVazio } from "../../components/ui";
 import Icone from "../../components/Icone";
+import { EditorRdo } from "../../components/Editores";
+import { supabase } from "../../lib/supabase";
+import { linkTemporario } from "../../lib/pdfRdo";
+import { formatarData } from "../../lib/datas";
+import { useToast } from "../../lib/Toast";
 
 const STATUS_ABERTOS = ["pendente_coordenador", "pendente_gerente"];
 
@@ -17,7 +22,25 @@ export default function LiderHomePage() {
   const { usuario } = useAuth();
   const { meusPis, carregando } = useMinhasPis(usuario);
   const { dados: etapas } = useTabela("etapas");
-  const { dados: meusRdos } = useTabela("rdos", { filtro: [["lider_id", usuario?.id]] });
+  const { dados: meusRdos, recarregar: recarregarRdos } = useTabela("rdos", { filtro: [["lider_id", usuario?.id]] });
+  const { avisar } = useToast();
+  const [editando, setEditando] = useState(null); // { rdo, ocorrencias }
+  const abrirEdicao = async (rdo) => {
+    const { data } = await supabase.from("ocorrencias").select("*").eq("rdo_id", rdo.id);
+    setEditando({ rdo, ocorrencias: data || [] });
+  };
+  const abrirPdf = async (rdo) => {
+    // abre a aba antes do "await" — senão o navegador do celular bloqueia como pop-up
+    const aba = window.open("", "_blank");
+    try {
+      const url = await linkTemporario(rdo.pdf_path);
+      if (aba) aba.location.href = url; else window.location.href = url;
+    } catch (e) {
+      aba?.close();
+      avisar(`Não foi possível abrir o PDF: ${e.message}`, "erro");
+    }
+  };
+  const rdosRecentes = [...meusRdos].sort((a, b) => (b.data || "").localeCompare(a.data || "") || (b.created_at || "").localeCompare(a.created_at || "")).slice(0, 8);
   const { dados: solicitacoes } = useTabela("solicitacoes_alteracao_cronograma", { filtro: [["solicitado_por", usuario?.id]] });
 
   const hoje = hojeISO();
@@ -83,6 +106,42 @@ export default function LiderHomePage() {
               <AcaoRapida href="/lider/rdo" icone="rdo" titulo="Novo RDO" cor="text-green bg-green/10" />
             </div>
 
+            {/* meus RDOs */}
+            {rdosRecentes.length > 0 && (
+              <div className="flex flex-col gap-2">
+                <div className="titulo-secao">Meus RDOs</div>
+                {rdosRecentes.map((r) => {
+                  const pi = meusPis.find((p) => p.id === r.pi_id);
+                  const cor = { pendente: "bg-amber/10 text-amber", aprovado: "bg-green/10 text-green", rejeitado: "bg-red/10 text-red" }[r.status] || "bg-panel text-muted";
+                  const rotulo = { pendente: "Aguardando aprovação", aprovado: "Aprovado", rejeitado: "Reprovado" }[r.status] || r.status;
+                  return (
+                    <div key={r.id} className="cartao p-4">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <div className="font-semibold">{pi?.codigo || "Obra"} <span className="text-muted font-normal">· {formatarData(r.data)}</span></div>
+                          <div className="text-xs text-muted truncate">{pi?.cliente}</div>
+                        </div>
+                        <span className={`selo shrink-0 ${cor}`}>{rotulo}</span>
+                      </div>
+                      {r.status === "rejeitado" && r.motivo_rejeicao && (
+                        <div className="text-sm text-red bg-red/5 rounded-lg px-3 py-2 mt-2">Motivo: {r.motivo_rejeicao}</div>
+                      )}
+                      {(r.status === "pendente" || r.pdf_path) && (
+                        <div className="flex gap-2 mt-3">
+                          {r.status === "pendente" && (
+                            <button onClick={() => abrirEdicao(r)} className="btn btn-contorno btn-sm flex-1"><Icone nome="editar" className="w-4 h-4" /> Editar</button>
+                          )}
+                          {r.pdf_path && (
+                            <button onClick={() => abrirPdf(r)} className="btn btn-contorno btn-sm flex-1"><Icone nome="pdf" className="w-4 h-4" /> Ver PDF</button>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
             {/* obras */}
             <div className="flex flex-col gap-4">
               <div className="titulo-secao">Minhas obras ({meusPis.length})</div>
@@ -122,6 +181,11 @@ export default function LiderHomePage() {
           </>
         )}
       </div>
+      {editando && (
+        <EditorRdo rdo={editando.rdo} pi={meusPis.find((p) => p.id === editando.rdo.pi_id)} pis={meusPis}
+          ocorrenciasOriginais={editando.ocorrencias} comoAprovador={false}
+          onFechar={() => setEditando(null)} onSalvo={recarregarRdos} />
+      )}
     </MobileShell>
   );
 }

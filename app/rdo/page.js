@@ -8,6 +8,7 @@ import { useMinhasPis } from "../../lib/minhasPis";
 import { hojeISO } from "../../lib/datas";
 import { STATUS_ETAPA, LISTA_STATUS_ETAPA, CATEGORIAS_OCORRENCIA, etapasEmArvore } from "../../lib/constantes";
 import { useToast } from "../../lib/Toast";
+import { gerarPdfRdoSeguro } from "../../lib/pdfRdo";
 import PainelShell from "../../components/PainelShell";
 import CapturaMidia from "../../components/CapturaMidia";
 import FormHoras from "../../components/FormHoras";
@@ -86,9 +87,10 @@ export default function RdoPage() {
     if (naoSouOResponsavel) {
       await registrarLog(usuario, "Aviso ao líder responsável", `${liderResponsavel.nome} — RDO de ${piAtual.codigo} preenchido por ${usuario.nome}`);
     }
+    const pdf = await gerarPdfRdoSeguro(rdo.id, avisar);
     setEnviando(false);
     setStatusPorEtapa({}); setOcorrencias([]);
-    avisar("RDO enviado — pendente de validação em Aprovações.");
+    if (pdf) avisar("RDO enviado e PDF salvo em Documentos — pendente de validação em Aprovações.");
   };
 
   return (

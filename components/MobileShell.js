@@ -8,6 +8,7 @@ import { rotaInicialPara } from "../lib/rotas";
 import { TelaCarregando } from "./ui";
 import TelaAcessoNegado from "./TelaAcessoNegado";
 import Icone from "./Icone";
+import SinoNotificacoes from "./SinoNotificacoes";
 
 function iniciais(nome) {
   return (nome || "?").split(" ").filter(Boolean).slice(0, 2).map((p) => p[0]).join("").toUpperCase();
@@ -53,6 +54,7 @@ export default function MobileShell({ children, nav, perfis, titulo }) {
             </div>
           </div>
           <div className="flex items-center gap-1 shrink-0">
+            <SinoNotificacoes usuario={usuario} />
             {podeAcessarDesktop(usuario) && (
               <Link href="/dashboard" className="text-sm font-semibold text-slate-200 px-3 py-2.5 rounded-lg hover:bg-white/10">Painel</Link>
             )}

@@ -10,6 +10,7 @@ import { useTabela } from "../lib/dados";
 import { Logo, TelaCarregando } from "./ui";
 import TelaAcessoNegado from "./TelaAcessoNegado";
 import Icone from "./Icone";
+import SinoNotificacoes from "./SinoNotificacoes";
 
 function usePendencias(ativo) {
   // contador de pendências no item "Aprovações" do menu
@@ -79,8 +80,8 @@ export default function PainelShell({ children }) {
   return (
     <div className="min-h-[100dvh] flex flex-col md:flex-row bg-panel">
       {/* Sidebar — desktop */}
-      <aside className="hidden md:flex md:flex-col w-60 shrink-0 bg-navy text-white p-4 sticky top-0 h-screen">
-        <div className="mb-7 px-1"><Logo claro /></div>
+      <aside className="hidden md:flex md:flex-col print:!hidden w-60 shrink-0 bg-navy text-white p-4 sticky top-0 h-screen">
+        <div className="mb-7 px-1 flex items-center justify-between"><Logo claro /><SinoNotificacoes usuario={usuario} /></div>
         <nav className="flex flex-col gap-0.5 overflow-y-auto rolagem-fina -mx-1 px-1">
           {NAV_PAINEL.map((item) => itemMenu(item))}
         </nav>
@@ -88,10 +89,13 @@ export default function PainelShell({ children }) {
       </aside>
 
       {/* Topbar — mobile */}
-      <header className="md:hidden sticky top-0 z-30 bg-navy text-white" style={{ paddingTop: "env(safe-area-inset-top)" }}>
+      <header className="md:hidden print:hidden sticky top-0 z-30 bg-navy text-white" style={{ paddingTop: "env(safe-area-inset-top)" }}>
         <div className="flex items-center justify-between px-4 h-14">
           <Logo tamanho="sm" claro />
-          <div className="text-xs text-slate-300 truncate max-w-[50%]">{usuario.nome}</div>
+          <div className="flex items-center gap-1 min-w-0">
+            <div className="text-xs text-slate-300 truncate max-w-[160px]">{usuario.nome}</div>
+            <SinoNotificacoes usuario={usuario} />
+          </div>
         </div>
       </header>
 
@@ -100,7 +104,7 @@ export default function PainelShell({ children }) {
       </main>
 
       {/* Nav inferior — mobile: 4 atalhos + "Mais" com o restante do menu */}
-      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-30 bg-white/95 backdrop-blur border-t border-line" style={{ paddingBottom: "env(safe-area-inset-bottom)" }}>
+      <nav className="md:hidden print:hidden fixed bottom-0 left-0 right-0 z-30 bg-white/95 backdrop-blur border-t border-line" style={{ paddingBottom: "env(safe-area-inset-bottom)" }}>
         <div className="flex justify-around px-1">
           {principais.map((item) => {
             const ativo = pathname === item.href;

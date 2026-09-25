@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useEffect, useRef } from "react";
+import { useState, useMemo, useEffect, useLayoutEffect, useRef } from "react";
 import { useTabela } from "../../lib/dados";
 import { tsLocal, diasAte as diffDias, formatarData as formatarDataIso } from "../../lib/datas";
 import { AREAS, STATUS_ETAPA } from "../../lib/constantes";
@@ -14,10 +14,6 @@ const PALETA_FILTRO = ["#0B84A5", "#2E9E44", "#C97A21", "#8E5CD9", "#D64545", "#
 
 function formatarData(ts) {
   return new Date(ts).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
-}
-function passoDiasPara(span) {
-  const diasTotais = span / 86400000;
-  return diasTotais > 120 ? 14 : diasTotais > 45 ? 7 : diasTotais > 20 ? 3 : 1;
 }
 // primeiro "meia-noite local" a partir de um instante qualquer — as marcas da régua
 // caíam em horários quebrados (ex: 14h37) e o rótulo podia mostrar o dia errado
@@ -54,7 +50,11 @@ export default function LinhaDoTempoPage() {
     iniciouRef.current = true;
     setPiIds(pis.filter((p) => p.status === "ativo").map((p) => p.id));
   }, [pis, carregandoPis]);
-  const [zoom, setZoom] = useState(1);
+  // período visível (em dias) — a barra de rolagem desloca essa "janela" ao longo do cronograma
+  const [janelaDias, setJanelaDias] = useState(60);
+  const rolagemRef = useRef(null);
+  const [larguraContainer, setLarguraContainer] = useState(0);
+  const [rolagem, setRolagem] = useState(0);
   const [nivelPorPi, setNivelPorPi] = useState({}); // "tudo" (padrão) | "macro" | "pi"
   const nivelDe = (piId) => nivelPorPi[piId] || "tudo";
   const proximoNivel = { tudo: "macro", macro: "pi", pi: "tudo" };
@@ -135,15 +135,64 @@ export default function LinhaDoTempoPage() {
     return { min: min - folga, max: max + folga };
   }, [etapasDosPis]);
 
-  const largura = 640 * zoom;
   const span = escala.max - escala.min || 1;
+  const spanDias = span / 86400000;
+  const larguraVisivel = Math.max(300, (larguraContainer || 900) - LABEL_W);
+  // "Tudo" (janelaDias = null) encaixa o cronograma inteiro na tela, sem rolagem
+  const pxPorDia = janelaDias ? larguraVisivel / janelaDias : larguraVisivel / spanDias;
+  const largura = Math.max(larguraVisivel, spanDias * pxPorDia);
   const hojeX = ((Date.now() - escala.min) / span) * largura;
+  const rolagemMax = Math.max(0, largura - larguraVisivel);
+  const inicioVisivel = escala.min + (rolagem / pxPorDia) * 86400000;
+  const fimVisivel = inicioVisivel + (larguraVisivel / pxPorDia) * 86400000;
+
+  // mede a largura disponível (muda ao redimensionar a janela ou abrir/fechar a barra lateral)
+  const temGrafico = pisSelecionados.length > 0;
+  useEffect(() => {
+    const el = rolagemRef.current;
+    if (!el) return;
+    const medir = () => setLarguraContainer(el.clientWidth);
+    medir();
+    const ro = new ResizeObserver(medir);
+    ro.observe(el);
+    window.addEventListener("resize", medir);
+    return () => { ro.disconnect(); window.removeEventListener("resize", medir); };
+  }, [temGrafico]);
+  // garantia extra: confere a largura a cada renderização (só atualiza se mudou)
+  useLayoutEffect(() => {
+    const w = rolagemRef.current?.clientWidth;
+    if (w && w !== larguraContainer) setLarguraContainer(w);
+  });
+
+  const rolarPara = (x, suave = true) => {
+    const el = rolagemRef.current;
+    if (!el) return;
+    el.scrollTo({ left: Math.max(0, Math.min(rolagemMax, x)), behavior: suave ? "smooth" : "auto" });
+  };
+  const irParaHoje = (suave = true) => rolarPara(hojeX - larguraVisivel / 2, suave);
+
+  // ao abrir (ou trocar o período), centraliza no dia de hoje
+  const centralizouRef = useRef("");
+  useEffect(() => {
+    const chave = `${janelaDias}|${piIds.join(",")}|${Math.round(largura)}`;
+    if (!temGrafico || !larguraContainer || centralizouRef.current === chave) return;
+    centralizouRef.current = chave;
+    setTimeout(() => irParaHoje(false), 0);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [janelaDias, piIds, largura, larguraContainer, temGrafico]);
+
+  const OPCOES_JANELA = [[14, "2 sem."], [30, "1 mês"], [60, "2 meses"], [90, "3 meses"], [180, "6 meses"], [null, "Tudo"]];
+  const idxJanela = OPCOES_JANELA.findIndex(([v]) => v === janelaDias);
+  const aproximar = () => idxJanela > 0 && setJanelaDias(OPCOES_JANELA[idxJanela - 1][0]);
+  const afastar = () => idxJanela < OPCOES_JANELA.length - 1 && setJanelaDias(OPCOES_JANELA[idxJanela + 1][0]);
+
   const marcas = useMemo(() => {
-    const passo = passoDiasPara(span);
+    // espaçamento das datas da régua conforme o zoom: pelo menos ~56px entre rótulos
+    const passo = [1, 2, 3, 7, 14, 30, 60].find((p) => p * pxPorDia >= 56) || 90;
     const arr = [];
     for (let t = proximaMeiaNoite(escala.min); t <= escala.max; ) { arr.push(t); const d = new Date(t); d.setDate(d.getDate() + passo); t = d.getTime(); }
     return arr;
-  }, [escala, span]);
+  }, [escala, pxPorDia]);
 
   return (
     <PainelShell>
@@ -152,11 +201,6 @@ export default function LinhaDoTempoPage() {
           titulo="Linha do Tempo"
           subtitulo="Visão multi-PI, para acompanhamento e apresentação."
           acoes={<>
-            <div className="flex items-center border border-line rounded-lg bg-white overflow-hidden" role="group" aria-label="Zoom">
-              <button onClick={() => setZoom((z) => Math.max(0.5, Number((z - 0.5).toFixed(1))))} className="px-3 py-2 text-muted hover:bg-panel" aria-label="Diminuir zoom">−</button>
-              <span className="text-xs font-mono text-muted w-12 text-center">{Math.round(zoom * 100)}%</span>
-              <button onClick={() => setZoom((z) => Math.min(4, Number((z + 0.5).toFixed(1))))} className="px-3 py-2 text-muted hover:bg-panel" aria-label="Aumentar zoom">+</button>
-            </div>
             <button onClick={() => setSelecionarAberto(true)} className="btn btn-contorno !border-cyan !text-cyan hover:!bg-cyan/5">
               <Icone nome="buscar" className="w-4 h-4" /> PIs ({piIds.length} de {pis.length})
             </button>
@@ -230,7 +274,40 @@ export default function LinhaDoTempoPage() {
         )}
 
         {pisSelecionados.length > 0 && (
-          <div className="cartao overflow-x-auto rolagem-fina">
+          <div className="cartao px-3 py-2.5 mb-2 flex flex-wrap items-center gap-x-3 gap-y-2 sticky top-[calc(3.5rem+env(safe-area-inset-top))] md:top-0 z-30">
+            {/* período visível */}
+            <div className="flex items-center gap-1" role="group" aria-label="Período visível">
+              <button onClick={afastar} disabled={idxJanela === OPCOES_JANELA.length - 1} className="btn btn-contorno btn-sm !px-2.5" title="Mostrar um período maior" aria-label="Diminuir zoom">−</button>
+              <select value={janelaDias ?? ""} onChange={(e) => setJanelaDias(e.target.value ? Number(e.target.value) : null)}
+                className="input !w-auto !py-1.5 !text-sm font-semibold" aria-label="Período visível">
+                {OPCOES_JANELA.map(([v, l]) => <option key={l} value={v ?? ""}>{l}</option>)}
+              </select>
+              <button onClick={aproximar} disabled={idxJanela === 0} className="btn btn-contorno btn-sm !px-2.5" title="Mostrar um período menor (mais detalhe)" aria-label="Aumentar zoom">+</button>
+            </div>
+
+            {/* barra de rolagem do período */}
+            <div className="flex items-center gap-2 flex-1 min-w-[260px]">
+              <button onClick={() => rolarPara(rolagem - larguraVisivel * 0.8)} disabled={rolagem <= 0} className="btn btn-contorno btn-sm !px-2" aria-label="Período anterior">
+                <Icone nome="voltar" className="w-4 h-4" />
+              </button>
+              <input type="range" min="0" max={Math.max(1, Math.round(rolagemMax))} step="1" value={Math.round(rolagem)} disabled={rolagemMax <= 0}
+                onChange={(e) => rolarPara(Number(e.target.value), false)}
+                className="flex-1 accent-cyan h-2 cursor-pointer disabled:cursor-default disabled:opacity-40" aria-label="Deslocar o período visível" />
+              <button onClick={() => rolarPara(rolagem + larguraVisivel * 0.8)} disabled={rolagem >= rolagemMax - 1} className="btn btn-contorno btn-sm !px-2" aria-label="Próximo período">
+                <Icone nome="seta" className="w-4 h-4" />
+              </button>
+              <button onClick={() => irParaHoje()} className="btn btn-contorno btn-sm !border-red/40 !text-red hover:!bg-red/5">Hoje</button>
+            </div>
+
+            <div className="text-xs text-muted whitespace-nowrap">
+              <span className="font-semibold text-textmain">{new Date(inicioVisivel).toLocaleDateString("pt-BR")}</span> a <span className="font-semibold text-textmain">{new Date(fimVisivel).toLocaleDateString("pt-BR")}</span>
+            </div>
+          </div>
+        )}
+
+        {pisSelecionados.length > 0 && (
+          <div ref={rolagemRef} onScroll={(e) => setRolagem(e.currentTarget.scrollLeft)}
+            className="cartao overflow-x-auto rolagem-linha-tempo">
             <div style={{ minWidth: LABEL_W + largura }}>
               {/* cabeçalho: rótulo vazio (fixo) + régua de datas */}
               <div className="flex sticky top-0 bg-white z-20 border-b border-line">

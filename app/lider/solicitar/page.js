@@ -11,6 +11,8 @@ import { STATUS_SOLICITACAO, etapasEmArvore } from "../../../lib/constantes";
 import { useToast } from "../../../lib/Toast";
 import MobileShell from "../../../components/MobileShell";
 import { Esqueleto, EstadoVazio, Spinner } from "../../../components/ui";
+import { EditorSolicitacao } from "../../../components/Editores";
+import Icone from "../../../components/Icone";
 
 const CAMPOS = [["data_prevista_inicio", "Data de início"], ["data_prevista_fim", "Data de término"], ["nome", "Nome da etapa"], ["outro", "Outro"]];
 const ROTULO_CAMPO = Object.fromEntries(CAMPOS);
@@ -31,6 +33,7 @@ export default function LiderSolicitarPage() {
   const [valorProposto, setValorProposto] = useState("");
   const [justificativa, setJustificativa] = useState("");
   const [enviando, setEnviando] = useState(false);
+  const [editando, setEditando] = useState(null);
 
   const etapaSelecionada = etapas.find((e) => e.id === etapaId);
   const valorAtual = campo === "outro" ? null : etapaSelecionada?.[campo] || null;
@@ -127,12 +130,23 @@ export default function LiderSolicitarPage() {
                 <div className="text-muted mt-1">
                   {ROTULO_CAMPO[s.campo_alterado] || s.campo_alterado}: {mostrarValor(s.campo_alterado, s.valor_atual)} → <strong className="text-textmain">{mostrarValor(s.campo_alterado, s.valor_proposto)}</strong>
                 </div>
-                {s.created_at && <div className="text-xs text-muteddim mt-1.5">{formatarDataHora(s.created_at)}</div>}
+                {s.created_at && <div className="text-xs text-muteddim mt-1.5">{formatarDataHora(s.created_at)}{s.editado_em ? " · editada" : ""}</div>}
+                {(s.motivo_coordenador || s.motivo_gerente) && s.status.startsWith("rejeitada") && (
+                  <div className="text-sm text-red bg-red/5 rounded-lg px-3 py-2 mt-2">Motivo: {s.motivo_gerente || s.motivo_coordenador}</div>
+                )}
+                {s.status === "pendente_coordenador" && (
+                  <button onClick={() => setEditando(s)} className="btn btn-contorno btn-sm w-full mt-2.5">
+                    <Icone nome="editar" className="w-4 h-4" /> Editar (até ser analisada)
+                  </button>
+                )}
               </div>
             );
           })}
           {minhasSolicitacoes.length === 0 && <div className="text-sm text-muteddim">Nenhuma solicitação ainda.</div>}
         </div>
+        {editando && (
+          <EditorSolicitacao s={editando} etapas={etapas} comoAprovador={false} onFechar={() => setEditando(null)} onSalvo={recarregar} />
+        )}
       </div>
     </MobileShell>
   );
