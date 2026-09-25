@@ -11,6 +11,7 @@ import { Logo, TelaCarregando } from "./ui";
 import TelaAcessoNegado from "./TelaAcessoNegado";
 import Icone from "./Icone";
 import SinoNotificacoes from "./SinoNotificacoes";
+import AlterarSenha from "./AlterarSenha";
 
 function usePendencias(ativo) {
   // contador de pendências no item "Aprovações" do menu
@@ -24,6 +25,7 @@ export default function PainelShell({ children }) {
   const router = useRouter();
   const pathname = usePathname();
   const [menuAberto, setMenuAberto] = useState(false);
+  const [trocandoSenha, setTrocandoSenha] = useState(false);
   const liberado = !!usuario && podeAcessarDesktop(usuario);
   const pendencias = usePendencias(liberado);
 
@@ -69,13 +71,18 @@ export default function PainelShell({ children }) {
         <div className="text-sm text-white truncate">{usuario.nome}</div>
         <div className="text-xs text-slate-400">{ROTULO_PERFIL[usuario.perfil] || usuario.perfil}</div>
       </div>
+      <button onClick={() => setTrocandoSenha(true)} title="Alterar minha senha" aria-label="Alterar minha senha" className="p-2 rounded-lg text-slate-300 hover:bg-white/10 hover:text-white">
+        <Icone nome="chave" className="w-[18px] h-[18px]" />
+      </button>
       <button onClick={sair} title="Sair" aria-label="Sair" className="p-2 rounded-lg text-slate-300 hover:bg-white/10 hover:text-white">
         <Icone nome="sair" className="w-[18px] h-[18px]" />
       </button>
     </div>
   );
 
-  const principais = NAV_PAINEL.filter((i) => i.principal);
+  // itens com "perfis" só aparecem para esses perfis (ex: Clientes)
+  const navVisivel = NAV_PAINEL.filter((i) => !i.perfis || i.perfis.includes(usuario.perfil));
+  const principais = navVisivel.filter((i) => i.principal);
 
   return (
     <div className="min-h-[100dvh] flex flex-col md:flex-row bg-panel">
@@ -83,7 +90,7 @@ export default function PainelShell({ children }) {
       <aside className="hidden md:flex md:flex-col print:!hidden w-60 shrink-0 bg-navy text-white p-4 sticky top-0 h-screen">
         <div className="mb-7 px-1 flex items-center justify-between"><Logo claro /><SinoNotificacoes usuario={usuario} /></div>
         <nav className="flex flex-col gap-0.5 overflow-y-auto rolagem-fina -mx-1 px-1">
-          {NAV_PAINEL.map((item) => itemMenu(item))}
+          {navVisivel.map((item) => itemMenu(item))}
         </nav>
         <div className="mt-auto">{rodapeUsuario}</div>
       </aside>
@@ -130,6 +137,8 @@ export default function PainelShell({ children }) {
         </div>
       </nav>
 
+      {trocandoSenha && <AlterarSenha onFechar={() => setTrocandoSenha(false)} />}
+
       {/* Menu completo — mobile */}
       {menuAberto && (
         <div className="md:hidden fixed inset-0 z-50 animar-fade">
@@ -143,7 +152,7 @@ export default function PainelShell({ children }) {
                 <Icone nome="fechar" />
               </button>
             </div>
-            <nav className="grid grid-cols-1 gap-0.5">{NAV_PAINEL.map((item) => itemMenu(item, true))}</nav>
+            <nav className="grid grid-cols-1 gap-0.5">{navVisivel.map((item) => itemMenu(item, true))}</nav>
             {rodapeUsuario}
           </div>
         </div>

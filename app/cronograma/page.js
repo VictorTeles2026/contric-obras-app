@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useMemo, useRef, useEffect, useLayoutEffect, useCallback } from "react";
-import { useTabela, registrarLog } from "../../lib/dados";
+import { useTabela, registrarLog, chamarApi } from "../../lib/dados";
 import { useAuth, podeEditar } from "../../lib/AuthContext";
 import { supabase } from "../../lib/supabase";
 import { hojeISO as todayISO, addDias, isoLocal } from "../../lib/datas";
@@ -210,6 +210,10 @@ export default function CronogramaPage() {
     }
     const { error } = await supabase.from("etapas").update(patch).eq("id", id);
     if (error) { setErro(error.message); return; }
+    // clientes com acesso à linha do tempo deste PI recebem aviso (o servidor limita a 1 por dia)
+    if (["nome", "data_prevista_inicio", "data_prevista_fim", "status"].some((k) => k in patch) && atual) {
+      chamarApi("/api/clientes/avisar", { piId: atual.pi_id, tipo: "linha_tempo" }).catch(() => {});
+    }
     recarregarEtapas();
   };
   const excluirEtapa = async (id) => {

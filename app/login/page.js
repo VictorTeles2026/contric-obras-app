@@ -95,6 +95,7 @@ export default function LoginPage() {
               </button>
             </form>
           )}
+          <a href="/acesso-clientes" className="block text-center text-sm text-muted hover:text-textmain mt-5">Sou cliente → <strong>Acesso Clientes Contric</strong></a>
         </div>
       </div>
     </div>

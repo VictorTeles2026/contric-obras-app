@@ -1,22 +1,37 @@
 "use client";
 
 import { useState, useRef } from "react";
-import { useTabela, registrarLog } from "../../lib/dados";
+import { useTabela, registrarLog, chamarApi } from "../../lib/dados";
 import { useAuth, podeEditar } from "../../lib/AuthContext";
 import { supabase } from "../../lib/supabase";
 import { BUCKET_DOCUMENTOS, gerarPdfRdo, gerarPdfOcorrencia, linkTemporario } from "../../lib/pdfRdo";
 import { formatarDataHora } from "../../lib/datas";
 import { useToast } from "../../lib/Toast";
 import PainelShell from "../../components/PainelShell";
-import { CabecalhoPagina, EstadoVazio, Esqueleto, Aviso, Spinner } from "../../components/ui";
+import { CabecalhoPagina, EstadoVazio, Esqueleto, Aviso, Spinner, Modal } from "../../components/ui";
 import Icone from "../../components/Icone";
 import { ConfirmarExclusao } from "../../components/AcoesMaster";
 import { EditorRdo, EditorOcorrencia } from "../../components/Editores";
 import { ehMaster, excluirDocumento } from "../../lib/exclusoes";
 
-const TIPOS = [["", "Todos"], ["rdo", "RDOs (PDF)"], ["ocorrencia", "Ocorrências (PDF)"], ["arquivo", "Documentos"], ["foto", "Fotos"], ["video", "Vídeos"]];
-const ICONE_TIPO = { rdo: "pdf", ocorrencia: "alerta", arquivo: "pasta", foto: "camera", video: "video" };
-const COR_TIPO = { rdo: "bg-red/10 text-red", ocorrencia: "bg-amber/10 text-amber", arquivo: "bg-cyan/10 text-cyan", foto: "bg-green/10 text-green", video: "bg-[#8E5CD9]/10 text-[#8E5CD9]" };
+const TIPOS = [["", "Todos"], ["rdo", "RDOs (PDF)"], ["ocorrencia", "Ocorrências (PDF)"], ["ata", "Atas de reuniões"], ["arquivo", "Outros documentos"], ["foto", "Fotos"], ["video", "Vídeos"]];
+const ICONE_TIPO = { rdo: "pdf", ocorrencia: "alerta", ata: "usuarios", arquivo: "pasta", foto: "camera", video: "video" };
+const COR_TIPO = { rdo: "bg-red/10 text-red", ocorrencia: "bg-amber/10 text-amber", ata: "bg-navy/10 text-navy", arquivo: "bg-cyan/10 text-cyan", foto: "bg-green/10 text-green", video: "bg-[#8E5CD9]/10 text-[#8E5CD9]" };
+
+// Classificação dos arquivos enviados: o prefixo do nome identifica a classificação
+// (ex: ATA_REUNIAO_20260925_PI-2041_AMBEV.pdf). O nome sugerido pode ser editado, mas o prefixo é mantido.
+const CLASSIFICACOES = [
+  ["ATA_REUNIAO", "Ata de reunião"], ["CONTRATO", "Contrato"], ["PROPOSTA", "Proposta / orçamento"], ["PROJETO", "Projeto / desenho"],
+  ["RELATORIO", "Relatório"], ["NF", "Nota fiscal"], ["FOTO", "Foto"], ["DOC", "Outro documento"],
+];
+const rotuloClassificacao = (nome) => CLASSIFICACOES.find(([p]) => nome.startsWith(`${p}_`))?.[1];
+const limparParte = (t) => String(t || "").normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^A-Za-z0-9]+/g, "-").replace(/^-+|-+$/g, "").toUpperCase();
+function sugerirNome(prefixo, pi) {
+  const h = new Date();
+  const data = `${h.getFullYear()}${String(h.getMonth() + 1).padStart(2, "0")}${String(h.getDate()).padStart(2, "0")}`;
+  return [prefixo, data, limparParte(pi?.codigo), limparParte(pi?.cliente)].filter(Boolean).join("_");
+}
+const extensao = (nome) => { const p = nome.split("."); return p.length > 1 ? `.${p.pop().toLowerCase().replace(/[^a-z0-9]/g, "")}` : ""; };
 
 function tamanhoLegivel(bytes) {
   if (!bytes && bytes !== 0) return "—";
@@ -57,7 +72,8 @@ export default function DocumentosPage() {
     const itens = [];
     (lista.data || []).filter((f) => f.id && !f.name.startsWith(".")).forEach((f) => {
       itens.push({
-        chave: `s-${f.name}`, tipo: f.name.startsWith("RDO_") ? "rdo" : f.name.startsWith("OCORRENCIA_") ? "ocorrencia" : "arquivo", nome: f.name,
+        chave: `s-${f.name}`, tipo: f.name.startsWith("RDO_") ? "rdo" : f.name.startsWith("OCORRENCIA_") ? "ocorrencia" : f.name.startsWith("ATA_") ? "ata" : "arquivo", nome: f.name,
+        classificacao: rotuloClassificacao(f.name),
         data: f.created_at || f.updated_at, tamanho: f.metadata?.size, caminho: `${id}/${f.name}`,
         // registro de origem do PDF (para o Master poder editá-lo; o PDF é refeito ao salvar)
         rdo: (rdos || []).find((r) => r.pdf_path === `${id}/${f.name}`),
@@ -101,22 +117,40 @@ export default function DocumentosPage() {
     } else if (item.ocorrencia) setEditandoRegistro({ tipo: "ocorrencia", item: item.ocorrencia });
   };
 
-  const enviarArquivos = async (arquivos) => {
-    if (!arquivos.length || !resultado?.pi) return;
+  // 1º passo: escolher arquivos → abre a classificação com nome sugerido
+  const [pendentes, setPendentes] = useState(null); // [{ arquivo, prefixo, base, editado }]
+  const prepararEnvio = (arquivos) => {
+    const validos = arquivos.filter((a) => {
+      if (a.size > 50 * 1024 * 1024) { avisar(`"${a.name}" passa de 50 MB e não foi enviado.`, "erro"); return false; }
+      return true;
+    });
+    if (!validos.length) return;
+    setPendentes(validos.map((arquivo) => ({ arquivo, prefixo: "DOC", base: sugerirNome("DOC", resultado.pi), editado: false })));
+  };
+  const alterarPendente = (i, patch) => setPendentes((p) => p.map((x, k) => (k === i ? { ...x, ...patch } : x)));
+
+  // 2º passo: envia com o nome escolhido
+  const enviarArquivos = async (lista) => {
+    if (!lista.length || !resultado?.pi) return;
     setEnviando(true);
     const existentes = new Set(resultado.itens.filter((i) => i.caminho).map((i) => i.nome));
-    let ok = 0;
-    for (const arq of arquivos) {
-      if (arq.size > 50 * 1024 * 1024) { avisar(`"${arq.name}" passa de 50 MB e não foi enviado.`, "erro"); continue; }
-      let nome = nomeSeguro(arq.name);
-      if (/^(RDO|OCORRENCIA)_/.test(nome)) nome = `DOC_${nome}`; // o prefixo RDO_ é reservado para os PDFs gerados
-      if (existentes.has(nome)) nome = nome.replace(/(\.[^.]*)?$/, `_${Date.now()}$1`);
+    let ok = 0, atas = 0;
+    for (const { arquivo: arq, prefixo, base } of lista) {
+      // mantém o prefixo da classificação mesmo que o nome tenha sido editado
+      let semExt = nomeSeguro(`${base || sugerirNome(prefixo, resultado.pi)}.x`).replace(/\.x$/, "");
+      if (!semExt.toUpperCase().startsWith(`${prefixo}_`)) semExt = `${prefixo}_${semExt}`;
+      let nome = `${semExt}${extensao(arq.name)}`;
+      if (/^(RDO|OCORRENCIA)_/.test(nome)) nome = `DOC_${nome}`; // prefixos reservados para os PDFs gerados
+      for (let n = 2; existentes.has(nome); n++) nome = `${semExt}_${n}${extensao(arq.name)}`;
       const { error } = await supabase.storage.from(BUCKET_DOCUMENTOS).upload(`${resultado.pi.id}/${nome}`, arq, { contentType: arq.type || undefined });
       if (error) { avisar(`Falha ao enviar "${arq.name}": ${error.message}`, "erro", 6000); continue; }
       existentes.add(nome); ok++;
-      await registrarLog(usuario, "Enviou documento", `${resultado.pi.codigo} — ${nome}`);
+      if (prefixo === "ATA_REUNIAO") atas++;
+      await registrarLog(usuario, "Enviou documento", `${resultado.pi.codigo} — ${nome} (${CLASSIFICACOES.find(([p]) => p === prefixo)?.[1]})`);
     }
     setEnviando(false);
+    setPendentes(null);
+    if (atas) chamarApi("/api/clientes/avisar", { piId: resultado.pi.id, tipo: "ata", detalhe: `${atas} nova(s) ata(s) de reunião.` });
     if (ok) { avisar(`${ok} arquivo(s) enviado(s).`); buscar(resultado.pi.id); }
   };
 
@@ -173,7 +207,7 @@ export default function DocumentosPage() {
                     {enviando ? <><Spinner /> Enviando...</> : <><Icone nome="upload" className="w-4 h-4" /> Enviar arquivo</>}
                   </button>
                   <input ref={inputArquivoRef} type="file" multiple className="hidden"
-                    onChange={(e) => { enviarArquivos(Array.from(e.target.files || [])); e.target.value = ""; }} />
+                    onChange={(e) => { prepararEnvio(Array.from(e.target.files || [])); e.target.value = ""; }} />
                 </>
               )}
             </div>
@@ -223,6 +257,7 @@ export default function DocumentosPage() {
                       <button onClick={() => abrir(i)} className="font-semibold text-sm text-left hover:text-cyan hover:underline break-all">{i.nome}</button>
                       <div className="text-xs text-muted truncate">
                         {TIPOS.find(([v]) => v === i.tipo)?.[1]} · {i.data ? formatarDataHora(i.data) : "—"}{i.tamanho ? ` · ${tamanhoLegivel(i.tamanho)}` : ""}
+                        {i.classificacao && i.tipo === "arquivo" ? ` · ${i.classificacao}` : ""}
                         {i.detalhe ? ` · ${i.detalhe}` : ""}
                       </div>
                     </div>
@@ -255,6 +290,41 @@ export default function DocumentosPage() {
           </>
         )}
       </div>
+      {pendentes && (
+        <Modal titulo={`Enviar ${pendentes.length} arquivo(s) — ${resultado?.pi?.codigo}`} onFechar={() => !enviando && setPendentes(null)} largura="max-w-2xl"
+          rodape={<>
+            <button onClick={() => setPendentes(null)} disabled={enviando} className="btn btn-fantasma">Cancelar</button>
+            <button onClick={() => enviarArquivos(pendentes)} disabled={enviando || pendentes.some((p) => !p.base.trim())} className="btn btn-primario">
+              {enviando ? <><Spinner /> Enviando...</> : <><Icone nome="upload" className="w-4 h-4" /> Enviar</>}
+            </button>
+          </>}>
+          <div className="flex flex-col gap-3">
+            {pendentes.map((p, i) => (
+              <div key={i} className="rounded-xl border border-line p-3 flex flex-col gap-2.5">
+                <div className="text-sm text-muted truncate">Arquivo: <strong className="text-textmain">{p.arquivo.name}</strong> · {tamanhoLegivel(p.arquivo.size)}</div>
+                <div className="grid grid-cols-1 sm:grid-cols-[200px_1fr] gap-2">
+                  <label className="block">
+                    <span className="rotulo">Classificação</span>
+                    <select value={p.prefixo} className="input"
+                      onChange={(e) => alterarPendente(i, { prefixo: e.target.value, ...(p.editado ? {} : { base: sugerirNome(e.target.value, resultado.pi) }) })}>
+                      {CLASSIFICACOES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                    </select>
+                  </label>
+                  <label className="block min-w-0">
+                    <span className="rotulo">Nome do arquivo (sugestão — pode editar)</span>
+                    <div className="flex items-center gap-1">
+                      <input value={p.base} onChange={(e) => alterarPendente(i, { base: e.target.value, editado: true })} className="input font-mono !text-xs" />
+                      <span className="text-sm text-muted font-mono shrink-0">{extensao(p.arquivo.name)}</span>
+                    </div>
+                  </label>
+                </div>
+                {p.editado && <button onClick={() => alterarPendente(i, { base: sugerirNome(p.prefixo, resultado.pi), editado: false })} className="self-start text-xs text-cyan hover:underline">Voltar à sugestão</button>}
+              </div>
+            ))}
+            <div className="text-xs text-muteddim">A data do nome é a de hoje (dia do envio). Atas de reunião ficam visíveis aos clientes com acesso a este PI, que recebem um aviso por e-mail.</div>
+          </div>
+        </Modal>
+      )}
       {excluindo && (
         <ConfirmarExclusao titulo="Excluir documento"
           descricao={`O arquivo "${excluindo.nome}" será apagado.${excluindo.rdo || excluindo.ocorrencia ? " O registro (RDO/ocorrência) continua existindo e o PDF pode ser gerado de novo aqui." : ""}`}

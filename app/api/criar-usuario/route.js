@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
-import { exigirMaster, PERFIS_VALIDOS, gerarPinUnico } from "../../../lib/authServidor";
+import { exigirMaster, PERFIS_VALIDOS, gerarPinUnico, registrarSenha } from "../../../lib/authServidor";
 
 export async function POST(req) {
-  const { admin, resposta } = await exigirMaster(req);
+  const { admin, solicitante, resposta } = await exigirMaster(req);
   if (resposta) return resposta;
 
   const body = await req.json().catch(() => ({}));
@@ -65,5 +65,6 @@ export async function POST(req) {
     return NextResponse.json({ error: erroInsert.message }, { status: 400 });
   }
 
+  if (authUserId) await registrarSenha(admin, { authUserId, nome, email, tipo: "usuario", senha, definidaPor: solicitante.nome, origem: "criacao" });
   return NextResponse.json({ usuario });
 }

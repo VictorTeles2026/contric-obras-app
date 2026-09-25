@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { exigirMaster, PERFIS_VALIDOS, gerarPinUnico } from "../../../lib/authServidor";
+import { exigirMaster, PERFIS_VALIDOS, gerarPinUnico, registrarSenha } from "../../../lib/authServidor";
 
 const BANIDO = "876000h"; // ~100 anos = efetivamente desabilitado
 
@@ -93,5 +93,8 @@ export async function POST(req) {
     });
   }
 
+  if (novaSenha && usuario.auth_user_id) {
+    await registrarSenha(admin, { authUserId: usuario.auth_user_id, nome: usuario.nome, email: usuario.email, tipo: "usuario", senha: novaSenha, definidaPor: solicitante.nome, origem: "master" });
+  }
   return NextResponse.json({ usuario });
 }

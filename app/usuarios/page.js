@@ -7,6 +7,7 @@ import { useToast } from "../../lib/Toast";
 import PainelShell from "../../components/PainelShell";
 import { CabecalhoPagina, Modal, Campo, Aviso, Esqueleto, EstadoVazio, Spinner } from "../../components/ui";
 import Icone from "../../components/Icone";
+import VerSenhas from "../../components/VerSenhas";
 
 const PERFIS = [
   ["master", "Master (acesso total)"],
@@ -43,6 +44,7 @@ export default function UsuariosPage() {
   const [filtroPerfil, setFiltroPerfil] = useState("");
   const [mostrarInativos, setMostrarInativos] = useState(true);
   const [alternando, setAlternando] = useState(null);
+  const [vendoSenha, setVendoSenha] = useState(null);
 
   const abrirNovo = () => { setEditando(null); setModalAberto(true); };
   const abrirEdicao = (u) => { setEditando(u); setModalAberto(true); };
@@ -116,6 +118,9 @@ export default function UsuariosPage() {
                 ) : (u.email || "—")}
               </div>
               <div className="flex items-center gap-2 ml-auto">
+                {souMaster && u.auth_user_id && (
+                  <button onClick={() => setVendoSenha(u)} className="btn btn-contorno btn-sm" title="Ver senha registrada (somente Master)"><Icone nome="chave" className="w-4 h-4" /> Senha</button>
+                )}
                 {souMaster && (
                   <button onClick={() => abrirEdicao(u)} className="btn btn-contorno btn-sm">Editar</button>
                 )}
@@ -133,6 +138,7 @@ export default function UsuariosPage() {
           ))}
         </div>
 
+        {vendoSenha && <VerSenhas authUserId={vendoSenha.auth_user_id} nome={vendoSenha.nome} onFechar={() => setVendoSenha(null)} />}
         {modalAberto && (
           <ModalUsuario
             usuarioInicial={editando}

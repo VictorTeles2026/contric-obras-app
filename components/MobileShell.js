@@ -9,6 +9,7 @@ import { TelaCarregando } from "./ui";
 import TelaAcessoNegado from "./TelaAcessoNegado";
 import Icone from "./Icone";
 import SinoNotificacoes from "./SinoNotificacoes";
+import AlterarSenha from "./AlterarSenha";
 
 function iniciais(nome) {
   return (nome || "?").split(" ").filter(Boolean).slice(0, 2).map((p) => p[0]).join("").toUpperCase();
@@ -21,6 +22,7 @@ export default function MobileShell({ children, nav, perfis, titulo }) {
   const router = useRouter();
   const pathname = usePathname();
   const [confirmarSaida, setConfirmarSaida] = useState(false);
+  const [trocandoSenha, setTrocandoSenha] = useState(false);
 
   const permitido = !usuario || !perfis || perfis.includes(usuario.perfil) || podeAcessarDesktop(usuario);
 
@@ -55,6 +57,9 @@ export default function MobileShell({ children, nav, perfis, titulo }) {
           </div>
           <div className="flex items-center gap-1 shrink-0">
             <SinoNotificacoes usuario={usuario} />
+            <button onClick={() => setTrocandoSenha(true)} className="p-2.5 rounded-lg text-slate-200 hover:bg-white/10" aria-label="Alterar minha senha" title="Alterar minha senha">
+              <Icone nome="chave" className="w-5 h-5" />
+            </button>
             {podeAcessarDesktop(usuario) && (
               <Link href="/dashboard" className="text-sm font-semibold text-slate-200 px-3 py-2.5 rounded-lg hover:bg-white/10">Painel</Link>
             )}
@@ -76,6 +81,7 @@ export default function MobileShell({ children, nav, perfis, titulo }) {
         <div key={pathname} className="animar-pagina">{children}</div>
       </main>
 
+      {trocandoSenha && <AlterarSenha onFechar={() => setTrocandoSenha(false)} />}
       <nav
         className="fixed bottom-0 left-0 right-0 z-30 bg-white/95 backdrop-blur border-t border-line"
         style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
