@@ -307,7 +307,8 @@ export default function LinhaDoTempoPage() {
 
         {pisSelecionados.length > 0 && (
           <div ref={rolagemRef} onScroll={(e) => setRolagem(e.currentTarget.scrollLeft)}
-            className="cartao overflow-x-auto rolagem-linha-tempo">
+            className="cartao overflow-auto rolagem-linha-tempo overscroll-contain"
+            style={{ maxHeight: "max(360px, calc(100dvh - 230px))" }}>
             <div style={{ minWidth: LABEL_W + largura }}>
               {/* cabeçalho: rótulo vazio (fixo) + régua de datas */}
               <div className="flex sticky top-0 bg-white z-20 border-b border-line">

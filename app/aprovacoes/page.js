@@ -13,6 +13,7 @@ import PainelShell from "../../components/PainelShell";
 import { EditorRdo, EditorHoras, EditorSolicitacao } from "../../components/Editores";
 import { CabecalhoPagina, EstadoVazio, Esqueleto, Aviso, Spinner } from "../../components/ui";
 import Icone from "../../components/Icone";
+import CartaoOcorrencia from "../../components/CartaoOcorrencia";
 
 const ROTULO_CAMPO = { data_prevista_inicio: "Data de início", data_prevista_fim: "Data de término", nome: "Nome da etapa", outro: "Outro" };
 const CAMPOS_APLICAVEIS = ["data_prevista_inicio", "data_prevista_fim", "nome"];
@@ -30,6 +31,11 @@ export default function AprovacoesPage() {
   const { dados: rdosPendentes, carregando: c1, recarregar: recarregarRdos } = useTabela("rdos", { order: { coluna: "created_at" }, filtro: [["status", "pendente"]] });
   const { dados: horasPendentes, carregando: c2, recarregar: recarregarHoras } = useTabela("apontamentos_horas", { order: { coluna: "created_at" }, filtro: [["status", "pendente"]] });
   const { dados: solicitacoes, carregando: c3, recarregar: recarregarSolicitacoes } = useTabela("solicitacoes_alteracao_cronograma", { order: { coluna: "created_at" } });
+  const ocorrenciasPendentes = ocorrencias.filter((o) => o.status === "pendente" && !o.rdo_id);
+  // ocorrências registradas dentro do RDO seguem a decisão do RDO
+  const decidirOcorrenciasDoRdo = (rdo, status, motivo) => supabase.from("ocorrencias")
+    .update({ status, decidido_por: usuario.id, decidido_em: agora(), motivo_rejeicao: motivo || null }).eq("rdo_id", rdo.id)
+    .then(() => {}, () => {});
   const solicitacoesPendentes = solicitacoes.filter((s) => s.status === "pendente_coordenador" || s.status === "pendente_gerente");
 
   const piInfo = (id) => pis.find((p) => p.id === id);
@@ -50,6 +56,7 @@ export default function AprovacoesPage() {
         supabase.from("etapas").update({ status: a.status, percentual: a.status === "concluida" ? 100 : Number(a.percentual) || 0 }).eq("id", a.etapa_id)));
       aplicadas = resultados.filter((r) => !r.error).length;
     }
+    await decidirOcorrenciasDoRdo(rdo, "aprovada");
     const pi = piInfo(rdo.pi_id);
     await registrarLog(usuario, "Aprovou RDO", `${pi?.codigo} — ${rdo.data}${aplicadas ? ` · ${aplicadas} etapa(s) atualizada(s)` : ""}`);
     await notificar(rdo.lider_id, `RDO aprovado — ${pi?.codigo} (${formatarData(rdo.data)})`, `Aprovado por ${usuario.nome}.`, "/lider");
@@ -60,6 +67,7 @@ export default function AprovacoesPage() {
   const reprovarRdo = async (rdo, motivo) => {
     const { error } = await supabase.from("rdos").update({ status: "rejeitado", decidido_por: usuario.id, decidido_em: agora(), motivo_rejeicao: motivo }).eq("id", rdo.id);
     if (error) { avisar(`Erro ao reprovar: ${error.message}`, "erro", 6000); return; }
+    await decidirOcorrenciasDoRdo(rdo, "rejeitada", motivo);
     const pi = piInfo(rdo.pi_id);
     await registrarLog(usuario, "Reprovou RDO", `${pi?.codigo} · motivo: ${motivo}`);
     await notificar(rdo.lider_id, `RDO reprovado — ${pi?.codigo} (${formatarData(rdo.data)})`, `Reprovado por ${usuario.nome}.\nMotivo: ${motivo}`, "/lider/rdo");
@@ -131,6 +139,7 @@ export default function AprovacoesPage() {
   const abas = [
     ["rdos", "RDOs", rdosPendentes.length],
     ["horas", "Horas", horasPendentes.length],
+    ["ocorrencias", "Ocorrências", ocorrenciasPendentes.length],
     ["solicitacoes", "Solicitações", solicitacoesPendentes.length],
   ];
 
@@ -175,6 +184,18 @@ export default function AprovacoesPage() {
                 <HorasCard key={`${h.id}-${h.horas_totais}`} registro={h} pi={piInfo(h.pi_id)} pessoa={nomeUsuario(h.usuario_id)} editavel={editavel}
                   editadoPor={h.editado_por ? nomeUsuario(h.editado_por) : null}
                   onAprovar={aprovarHoras} onReprovar={(m) => reprovarHoras(h, m)} onEditar={() => setEditando({ tipo: "horas", item: h })} />
+              ))}
+            </div>
+          </div>
+        )}
+
+        {aba === "ocorrencias" && (
+          <div className="flex flex-col gap-3">
+            {ocorrenciasPendentes.length === 0 && <EstadoVazio icone="alerta" titulo="Nenhuma ocorrência pendente" texto="Ocorrências registradas pela equipe no celular aparecem aqui (as de dentro de um RDO são aprovadas junto com o RDO)." />}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {ocorrenciasPendentes.map((o) => (
+                <CartaoOcorrencia key={`${o.id}-${o.editado_em || ""}`} oc={o} pi={piInfo(o.pi_id)} pis={pis} podeDecidir={editavel}
+                  pessoa={usuarios.find((u) => u.id === o.registrado_por)} onMudou={recarregarOcorrencias} />
               ))}
             </div>
           </div>
@@ -319,7 +340,7 @@ function RdoCard({ rdo, pi, lider, editadoPor, ocorrencias, editavel, onAprovar,
         <div className="mt-3 text-sm">
           {rdo.assinatura_cliente_imagem ? (
             <button onClick={() => setVerAssinatura((v) => !v)} className="text-cyan font-semibold hover:underline py-2 text-left">
-              ✓ Assinado pelo cliente — {verAssinatura ? "ocultar" : "ver assinatura"}
+              ✓ Assinado por {rdo.assinatura_cliente_nome || "cliente"} — {verAssinatura ? "ocultar" : "ver assinatura"}
             </button>
           ) : <span className="text-muted">Assinatura do cliente solicitada</span>}
           {verAssinatura && <img src={rdo.assinatura_cliente_imagem} alt="Assinatura do cliente" className="mt-2 max-h-32 border border-line rounded-lg bg-white" />}

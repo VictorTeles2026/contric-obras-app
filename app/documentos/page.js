@@ -4,16 +4,16 @@ import { useState, useRef } from "react";
 import { useTabela, registrarLog } from "../../lib/dados";
 import { useAuth, podeEditar } from "../../lib/AuthContext";
 import { supabase } from "../../lib/supabase";
-import { BUCKET_DOCUMENTOS, gerarPdfRdo, linkTemporario } from "../../lib/pdfRdo";
+import { BUCKET_DOCUMENTOS, gerarPdfRdo, gerarPdfOcorrencia, linkTemporario } from "../../lib/pdfRdo";
 import { formatarDataHora } from "../../lib/datas";
 import { useToast } from "../../lib/Toast";
 import PainelShell from "../../components/PainelShell";
 import { CabecalhoPagina, EstadoVazio, Esqueleto, Aviso, Spinner } from "../../components/ui";
 import Icone from "../../components/Icone";
 
-const TIPOS = [["", "Todos"], ["rdo", "RDOs (PDF)"], ["arquivo", "Documentos"], ["foto", "Fotos"], ["video", "Vídeos"]];
-const ICONE_TIPO = { rdo: "pdf", arquivo: "pasta", foto: "camera", video: "video" };
-const COR_TIPO = { rdo: "bg-red/10 text-red", arquivo: "bg-cyan/10 text-cyan", foto: "bg-green/10 text-green", video: "bg-[#8E5CD9]/10 text-[#8E5CD9]" };
+const TIPOS = [["", "Todos"], ["rdo", "RDOs (PDF)"], ["ocorrencia", "Ocorrências (PDF)"], ["arquivo", "Documentos"], ["foto", "Fotos"], ["video", "Vídeos"]];
+const ICONE_TIPO = { rdo: "pdf", ocorrencia: "alerta", arquivo: "pasta", foto: "camera", video: "video" };
+const COR_TIPO = { rdo: "bg-red/10 text-red", ocorrencia: "bg-amber/10 text-amber", arquivo: "bg-cyan/10 text-cyan", foto: "bg-green/10 text-green", video: "bg-[#8E5CD9]/10 text-[#8E5CD9]" };
 
 function tamanhoLegivel(bytes) {
   if (!bytes && bytes !== 0) return "—";
@@ -48,13 +48,13 @@ export default function DocumentosPage() {
     const pi = pis.find((p) => p.id === id);
     const [lista, { data: ocorrencias }, { data: rdos }] = await Promise.all([
       supabase.storage.from(BUCKET_DOCUMENTOS).list(id, { limit: 1000, sortBy: { column: "created_at", order: "desc" } }),
-      supabase.from("ocorrencias").select("id,categoria,descricao,midias,created_at").eq("pi_id", id),
+      supabase.from("ocorrencias").select("*").eq("pi_id", id),
       supabase.from("rdos").select("id,data,pdf_path").eq("pi_id", id),
     ]);
     const itens = [];
     (lista.data || []).filter((f) => f.id && !f.name.startsWith(".")).forEach((f) => {
       itens.push({
-        chave: `s-${f.name}`, tipo: f.name.startsWith("RDO_") ? "rdo" : "arquivo", nome: f.name,
+        chave: `s-${f.name}`, tipo: f.name.startsWith("RDO_") ? "rdo" : f.name.startsWith("OCORRENCIA_") ? "ocorrencia" : "arquivo", nome: f.name,
         data: f.created_at || f.updated_at, tamanho: f.metadata?.size, caminho: `${id}/${f.name}`,
       });
     });
@@ -65,7 +65,8 @@ export default function DocumentosPage() {
       });
     }));
     itens.sort((a, b) => String(b.data || "").localeCompare(String(a.data || "")));
-    setResultado({ pi, itens, rdosSemPdf: (rdos || []).filter((r) => !r.pdf_path), erro: lista.error?.message });
+    setResultado({ pi, itens, rdosSemPdf: (rdos || []).filter((r) => !r.pdf_path),
+      ocorrenciasSemPdf: (ocorrencias || []).filter((o) => !o.rdo_id && !o.pdf_path), erro: lista.error?.message });
     setBuscando(false);
   };
 
@@ -100,7 +101,7 @@ export default function DocumentosPage() {
     for (const arq of arquivos) {
       if (arq.size > 50 * 1024 * 1024) { avisar(`"${arq.name}" passa de 50 MB e não foi enviado.`, "erro"); continue; }
       let nome = nomeSeguro(arq.name);
-      if (nome.startsWith("RDO_")) nome = `DOC_${nome}`; // o prefixo RDO_ é reservado para os PDFs gerados
+      if (/^(RDO|OCORRENCIA)_/.test(nome)) nome = `DOC_${nome}`; // o prefixo RDO_ é reservado para os PDFs gerados
       if (existentes.has(nome)) nome = nome.replace(/(\.[^.]*)?$/, `_${Date.now()}$1`);
       const { error } = await supabase.storage.from(BUCKET_DOCUMENTOS).upload(`${resultado.pi.id}/${nome}`, arq, { contentType: arq.type || undefined });
       if (error) { avisar(`Falha ao enviar "${arq.name}": ${error.message}`, "erro", 6000); continue; }
@@ -116,6 +117,9 @@ export default function DocumentosPage() {
     let ok = 0, falhas = 0;
     for (const r of resultado.rdosSemPdf) {
       try { await gerarPdfRdo(r.id); ok++; } catch { falhas++; }
+    }
+    for (const o of resultado.ocorrenciasSemPdf) {
+      try { await gerarPdfOcorrencia(o.id); ok++; } catch { falhas++; }
     }
     setGerando(false);
     avisar(`${ok} PDF(s) gerado(s)${falhas ? ` · ${falhas} com erro` : ""}.`, falhas ? "erro" : "sucesso");
@@ -171,10 +175,10 @@ export default function DocumentosPage() {
                 Não foi possível ler os arquivos salvos ({resultado.erro}). Confira se o script <strong>documentos-notificacoes.sql</strong> foi rodado no Supabase.
               </Aviso>
             )}
-            {resultado.rdosSemPdf.length > 0 && (
+            {(resultado.rdosSemPdf.length + resultado.ocorrenciasSemPdf.length) > 0 && (
               <Aviso tipo="alerta" className="mb-3">
                 <div className="flex flex-wrap items-center justify-between gap-2">
-                  <span>{resultado.rdosSemPdf.length} RDO(s) deste PI ainda sem PDF (enviados antes desta função existir).</span>
+                  <span>{[resultado.rdosSemPdf.length && `${resultado.rdosSemPdf.length} RDO(s)`, resultado.ocorrenciasSemPdf.length && `${resultado.ocorrenciasSemPdf.length} ocorrência(s)`].filter(Boolean).join(" e ")} deste PI ainda sem PDF.</span>
                   {editavel && (
                     <button onClick={gerarFaltantes} disabled={gerando} className="btn btn-alerta btn-sm">
                       {gerando ? <><Spinner /> Gerando...</> : "Gerar PDFs"}
@@ -232,7 +236,7 @@ export default function DocumentosPage() {
               </div>
             )}
             <div className="text-xs text-muteddim mt-2">
-              Os PDFs de RDO são gerados automaticamente ao enviar, editar, aprovar ou reprovar um RDO.
+              Os PDFs de RDO e de ocorrência são gerados automaticamente ao enviar, editar, aprovar ou reprovar.
             </div>
           </>
         )}

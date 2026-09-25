@@ -8,6 +8,7 @@ import { hojeISO as todayISO, addDias, isoLocal } from "../../lib/datas";
 import { LISTA_STATUS_ETAPA as STATUS, AREAS, STATUS_PI, COR_STATUS_PI, STATUS_ETAPA } from "../../lib/constantes";
 import { useToast } from "../../lib/Toast";
 import PainelShell from "../../components/PainelShell";
+import AbasCronograma from "../../components/AbasCronograma";
 import { Modal, Campo, EstadoVazio, Spinner } from "../../components/ui";
 import Icone from "../../components/Icone";
 
@@ -124,6 +125,7 @@ export default function CronogramaPage() {
   const { dados: etapas, recarregar: recarregarEtapas } = useTabela("etapas", { order: { coluna: "created_at" } });
   const { dados: dependencias, recarregar: recarregarDependencias } = useTabela("etapa_dependencias");
   const { dados: alocacoesRecurso, recarregar: recarregarAlocacoesRecurso } = useTabela("alocacoes_recurso");
+  const { dados: solicitacoesPendentes } = useTabela("solicitacoes_alteracao_cronograma", { select: "id,etapa_id,status" });
 
   const porOrdem = (a, b) => (a.ordem ?? 999999) - (b.ordem ?? 999999);
   const etapasDoPi = useMemo(() => etapas.filter((e) => e.pi_id === (piAtual && piAtual.id)), [etapas, piAtual]);
@@ -404,6 +406,9 @@ export default function CronogramaPage() {
           </div>
         )}
       </div>
+
+      <AbasCronograma piId={piAtual?.id}
+        qtdPendentes={solicitacoesPendentes.filter((s) => s.status?.startsWith("pendente") && etapasDoPi.some((e) => e.id === s.etapa_id)).length} />
 
       {erro && (
         <div className="flex items-center gap-3 px-4 py-2.5 bg-red/10 border-b border-red/30 text-sm text-red animar-fade" role="alert">

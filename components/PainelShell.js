@@ -45,7 +45,7 @@ export default function PainelShell({ children }) {
   if (!podeAcessarDesktop(usuario)) return <TelaCarregando texto="Redirecionando..." />;
 
   const itemMenu = (item, compacto = false) => {
-    const ativo = pathname === item.href;
+    const ativo = pathname === item.href || pathname.startsWith(`${item.href}/`);
     return (
       <Link key={item.href} href={item.href} aria-current={ativo ? "page" : undefined}
         className={`group flex items-center gap-3 rounded-lg px-3 ${compacto ? "py-3" : "py-2"} text-sm transition-colors ${
@@ -107,7 +107,7 @@ export default function PainelShell({ children }) {
       <nav className="md:hidden print:hidden fixed bottom-0 left-0 right-0 z-30 bg-white/95 backdrop-blur border-t border-line" style={{ paddingBottom: "env(safe-area-inset-bottom)" }}>
         <div className="flex justify-around px-1">
           {principais.map((item) => {
-            const ativo = pathname === item.href;
+            const ativo = pathname === item.href || pathname.startsWith(`${item.href}/`);
             return (
               <Link key={item.href} href={item.href}
                 className={`relative flex-1 flex flex-col items-center gap-1 pt-2.5 pb-2 min-h-[58px] text-[11px] font-medium ${ativo ? "text-cyan" : "text-muteddim"}`}>

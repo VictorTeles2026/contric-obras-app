@@ -11,6 +11,7 @@ import MobileShell from "../../components/MobileShell";
 import { Esqueleto, EstadoVazio } from "../../components/ui";
 import Icone from "../../components/Icone";
 import { EditorRdo } from "../../components/Editores";
+import CartaoOcorrencia from "../../components/CartaoOcorrencia";
 import { supabase } from "../../lib/supabase";
 import { linkTemporario } from "../../lib/pdfRdo";
 import { formatarData } from "../../lib/datas";
@@ -24,6 +25,10 @@ export default function LiderHomePage() {
   const { dados: etapas } = useTabela("etapas");
   const { dados: meusRdos, recarregar: recarregarRdos } = useTabela("rdos", { filtro: [["lider_id", usuario?.id]] });
   const { avisar } = useToast();
+  // ocorrências da equipe (fora de RDO) nas minhas obras, aguardando a minha aprovação
+  const { dados: ocorrenciasPendentes, recarregar: recarregarOcorrencias } = useTabela("ocorrencias", { filtro: [["status", "pendente"]], order: { coluna: "created_at" } });
+  const { dados: pessoas } = useTabela("usuarios");
+  const paraAprovar = ocorrenciasPendentes.filter((o) => !o.rdo_id && o.registrado_por !== usuario?.id && meusPis.some((p) => p.id === o.pi_id));
   const [editando, setEditando] = useState(null); // { rdo, ocorrencias }
   const abrirEdicao = async (rdo) => {
     const { data } = await supabase.from("ocorrencias").select("*").eq("rdo_id", rdo.id);
@@ -105,6 +110,17 @@ export default function LiderHomePage() {
                 extra={solicitacoesAbertas > 0 ? `${solicitacoesAbertas} em análise` : null} />
               <AcaoRapida href="/lider/rdo" icone="rdo" titulo="Novo RDO" cor="text-green bg-green/10" />
             </div>
+
+            {/* ocorrências da equipe para aprovar */}
+            {paraAprovar.length > 0 && (
+              <div className="flex flex-col gap-2">
+                <div className="titulo-secao flex items-center gap-2">Ocorrências para aprovar <span className="selo bg-amber text-white">{paraAprovar.length}</span></div>
+                {paraAprovar.map((o) => (
+                  <CartaoOcorrencia key={`${o.id}-${o.editado_em || ""}`} oc={o} pi={meusPis.find((p) => p.id === o.pi_id)} pis={meusPis}
+                    pessoa={pessoas.find((u) => u.id === o.registrado_por)} compacto onMudou={recarregarOcorrencias} />
+                ))}
+              </div>
+            )}
 
             {/* meus RDOs */}
             {rdosRecentes.length > 0 && (

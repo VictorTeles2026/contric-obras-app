@@ -11,6 +11,9 @@ export default function AssinaturaCanvas({ onMudar }) {
   const desenhandoRef = useRef(false);
   const temTracoRef = useRef(false);
   const [vazio, setVazio] = useState(true);
+  // referência estável: se o pai recriar a função a cada render, o canvas não pode ser reconfigurado (isso apagaria o desenho)
+  const onMudarRef = useRef(onMudar);
+  onMudarRef.current = onMudar;
 
   const configurar = useCallback(() => {
     const canvas = canvasRef.current;
@@ -38,7 +41,7 @@ export default function AssinaturaCanvas({ onMudar }) {
       larguraAnterior = largura;
       // redimensionar apaga o desenho; avisa o formulário para pedir de novo
       configurar();
-      if (temTracoRef.current) { temTracoRef.current = false; setVazio(true); onMudar(null); }
+      if (temTracoRef.current) { temTracoRef.current = false; setVazio(true); onMudarRef.current(null); }
     };
     window.addEventListener("orientationchange", aoRedimensionar);
     window.addEventListener("resize", aoRedimensionar);
@@ -46,7 +49,7 @@ export default function AssinaturaCanvas({ onMudar }) {
       window.removeEventListener("orientationchange", aoRedimensionar);
       window.removeEventListener("resize", aoRedimensionar);
     };
-  }, [configurar, onMudar]);
+  }, [configurar]);
 
   const posicao = (e) => {
     const rect = canvasRef.current.getBoundingClientRect();
@@ -75,7 +78,7 @@ export default function AssinaturaCanvas({ onMudar }) {
   const finalizar = () => {
     if (!desenhandoRef.current) return;
     desenhandoRef.current = false;
-    if (temTracoRef.current) onMudar(canvasRef.current.toDataURL("image/png"));
+    if (temTracoRef.current) onMudarRef.current(canvasRef.current.toDataURL("image/png"));
   };
   const limpar = () => {
     const canvas = canvasRef.current;
@@ -86,7 +89,7 @@ export default function AssinaturaCanvas({ onMudar }) {
     ctx.restore();
     temTracoRef.current = false;
     setVazio(true);
-    onMudar(null);
+    onMudarRef.current(null);
   };
 
   return (

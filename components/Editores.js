@@ -5,7 +5,7 @@ import { useAuth } from "../lib/AuthContext";
 import { useToast } from "../lib/Toast";
 import { LISTA_STATUS_ETAPA, CATEGORIAS_OCORRENCIA } from "../lib/constantes";
 import { horasEntreHorarios, hojeISO, isoLocal } from "../lib/datas";
-import { salvarEdicaoRdo, salvarEdicaoHoras, salvarEdicaoSolicitacao } from "../lib/edicoes";
+import { salvarEdicaoRdo, salvarEdicaoHoras, salvarEdicaoSolicitacao, salvarEdicaoOcorrencia } from "../lib/edicoes";
 import { Modal, Campo, Aviso, Spinner } from "./ui";
 import CapturaMidia from "./CapturaMidia";
 import Icone from "./Icone";
@@ -237,6 +237,53 @@ export function EditorSolicitacao({ s, etapas, comoAprovador, onFechar, onSalvo 
           <textarea value={justificativa} onChange={(e) => setJustificativa(e.target.value)} rows={3} className="input" />
         </Campo>
         {comoAprovador && <Aviso tipo="info">O solicitante receberá uma notificação com o que foi alterado.</Aviso>}
+        {erro && <Aviso tipo="erro">{erro}</Aviso>}
+      </div>
+    </Modal>
+  );
+}
+
+// ---------------- Ocorrência ----------------
+export function EditorOcorrencia({ oc, pis, comoAprovador, onFechar, onSalvo }) {
+  const { usuario } = useAuth();
+  const { avisar } = useToast();
+  const [categoria, setCategoria] = useState(oc.categoria);
+  const [descricao, setDescricao] = useState(oc.descricao || "");
+  const [midias, setMidias] = useState(oc.midias || []);
+  const [salvando, setSalvando] = useState(false);
+  const [erro, setErro] = useState("");
+
+  const salvar = async () => {
+    setSalvando(true); setErro("");
+    const r = await salvarEdicaoOcorrencia({ oc, pis, usuario, comoAprovador, avisar, novo: { categoria, descricao: descricao.trim(), midias } });
+    setSalvando(false);
+    if (r.erro) { setErro(r.erro); return; }
+    avisar(comoAprovador && r.mudancas?.length ? "Ocorrência editada — quem registrou foi notificado." : "Ocorrência atualizada.");
+    onSalvo?.();
+    onFechar();
+  };
+
+  return (
+    <Modal titulo="Editar ocorrência" onFechar={onFechar} largura="max-w-md"
+      rodape={<Rodape onFechar={onFechar} onSalvar={salvar} salvando={salvando} />}>
+      <div className="flex flex-col gap-4">
+        <div>
+          <span className="rotulo">Tipo</span>
+          <div className="flex flex-wrap gap-2">
+            {CATEGORIAS_OCORRENCIA.map((c) => (
+              <button key={c} type="button" onClick={() => setCategoria(c)}
+                className={`px-4 py-2 rounded-full text-sm font-medium border ${categoria === c ? "bg-amber text-white border-amber" : "border-line text-muted bg-white"}`}>{c}</button>
+            ))}
+          </div>
+        </div>
+        <Campo rotulo="Descrição">
+          <textarea value={descricao} onChange={(e) => setDescricao(e.target.value)} rows={3} className="input" />
+        </Campo>
+        <div>
+          <span className="rotulo">Fotos e vídeos</span>
+          <CapturaMidia value={midias} onChange={setMidias} />
+        </div>
+        {comoAprovador && <Aviso tipo="info">Quem registrou receberá uma notificação com o que foi alterado. O PDF é atualizado automaticamente.</Aviso>}
         {erro && <Aviso tipo="erro">{erro}</Aviso>}
       </div>
     </Modal>

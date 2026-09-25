@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { useTabela, registrarLog } from "../../../lib/dados";
+import { useTabela, registrarLog, gravarTolerante } from "../../../lib/dados";
+import CapturaMidia from "../../../components/CapturaMidia";
 import { useAuth } from "../../../lib/AuthContext";
 import { supabase } from "../../../lib/supabase";
 import { useMinhasPis } from "../../../lib/minhasPis";
@@ -32,6 +33,7 @@ export default function LiderSolicitarPage() {
   const [campo, setCampo] = useState("data_prevista_fim");
   const [valorProposto, setValorProposto] = useState("");
   const [justificativa, setJustificativa] = useState("");
+  const [midias, setMidias] = useState([]);
   const [enviando, setEnviando] = useState(false);
   const [editando, setEditando] = useState(null);
 
@@ -42,15 +44,15 @@ export default function LiderSolicitarPage() {
   const enviar = async () => {
     if (!podeEnviar) return;
     setEnviando(true);
-    const { error } = await supabase.from("solicitacoes_alteracao_cronograma").insert({
+    const { error } = await gravarTolerante({
       etapa_id: etapaId, solicitado_por: usuario.id, campo_alterado: campo,
       valor_atual: valorAtual, valor_proposto: valorProposto.trim(),
-      justificativa: justificativa.trim(), status: "pendente_coordenador",
-    });
+      justificativa: justificativa.trim(), status: "pendente_coordenador", midias,
+    }, (d) => supabase.from("solicitacoes_alteracao_cronograma").insert(d));
     setEnviando(false);
     if (error) { avisar(`Não foi possível enviar: ${error.message}`, "erro", 6000); return; }
     await registrarLog(usuario, "Solicitou alteração de cronograma", `${etapaSelecionada?.nome} — ${ROTULO_CAMPO[campo]}`);
-    setEtapaId(""); setValorProposto(""); setJustificativa("");
+    setEtapaId(""); setValorProposto(""); setJustificativa(""); setMidias([]);
     avisar("Solicitação enviada para o Coordenador.");
     recarregar();
   };
@@ -111,6 +113,10 @@ export default function LiderSolicitarPage() {
               <textarea value={justificativa} onChange={(e) => setJustificativa(e.target.value)} rows={3} className="input input-lg"
                 placeholder="Por que precisa mudar?" />
             </label>
+            <div>
+              <span className="rotulo">Fotos ou vídeos (opcional)</span>
+              <CapturaMidia value={midias} onChange={setMidias} />
+            </div>
             <button onClick={enviar} disabled={!podeEnviar} className="btn btn-primario btn-lg w-full">
               {enviando ? <><Spinner /> Enviando...</> : "Enviar solicitação"}
             </button>

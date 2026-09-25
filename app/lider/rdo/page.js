@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import Link from "next/link";
-import { useTabela, registrarLog } from "../../../lib/dados";
+import { useTabela, registrarLog, gravarTolerante } from "../../../lib/dados";
 import { useAuth } from "../../../lib/AuthContext";
 import { supabase } from "../../../lib/supabase";
 import { useMinhasPis, agruparPorCliente } from "../../../lib/minhasPis";
@@ -12,7 +12,7 @@ import { STATUS_ETAPA, LISTA_STATUS_ETAPA, CATEGORIAS_OCORRENCIA, etapasEmArvore
 import { useToast } from "../../../lib/Toast";
 import { gerarPdfRdoSeguro } from "../../../lib/pdfRdo";
 import MobileShell from "../../../components/MobileShell";
-import AssinaturaCanvas from "../../../components/AssinaturaCanvas";
+import ColetaAssinatura, { assinaturaValida, faltaNaAssinatura } from "../../../components/ColetaAssinatura";
 import CapturaMidia from "../../../components/CapturaMidia";
 import { Esqueleto, EstadoVazio, TelaSucesso, Aviso, Spinner } from "../../../components/ui";
 import Icone from "../../../components/Icone";
@@ -40,10 +40,14 @@ export default function LiderRdoPage() {
   const [enviado, setEnviado] = useState(false);
   const [enviando, setEnviando] = useState(false);
   const [etapaEnvio, setEtapaEnvio] = useState("");
-  const [pedirAssinatura, setPedirAssinatura] = useState(false);
-  const [assinaturaImagem, setAssinaturaImagem] = useState(null);
+  const [assinatura, setAssinatura] = useState({ ativo: false, nome: "", imagem: null });
 
   useEffect(() => { window.scrollTo({ top: 0, behavior: "smooth" }); }, [passo]);
+  // ao escolher o tipo de ocorrência, traz o formulário para o meio da tela (não fica escondido atrás dos botões)
+  const formOcRef = useRef(null);
+  useEffect(() => {
+    if (novaCategoria) setTimeout(() => formOcRef.current?.scrollIntoView({ behavior: "smooth", block: "center" }), 80);
+  }, [novaCategoria]);
 
   const hoje = hojeISO();
   const jaEnviouHoje = piAtivo && meusRdos.some((r) => r.pi_id === piAtivo.id && r.data === hoje && r.status !== "rejeitado");
@@ -60,7 +64,7 @@ export default function LiderRdoPage() {
 
   const trocarPi = (id) => {
     setPiEscolhidoId(id); setPasso(1); setStatusPorEtapa({}); setOcorrencias([]);
-    setPedirAssinatura(false); setAssinaturaImagem(null);
+    setAssinatura({ ativo: false, nome: "", imagem: null });
   };
 
   const adicionarOcorrencia = () => {
@@ -80,19 +84,21 @@ export default function LiderRdoPage() {
       const v = valorDe(e);
       return { etapa_id: e.id, nome: e.nome, status: v.status, percentual: v.status === "concluida" ? 100 : limitar(v.percentual) };
     });
-    const { data: rdo, error } = await supabase.from("rdos").insert({
+    const { data: rdo, error } = await gravarTolerante({
       pi_id: piAtivo.id, lider_id: usuario.id, data: hoje, atividades, status: "pendente",
-      assinatura_cliente: pedirAssinatura, assinatura_cliente_imagem: pedirAssinatura ? assinaturaImagem : null,
-    }).select().single();
+      assinatura_cliente: assinatura.ativo, assinatura_cliente_imagem: assinatura.ativo ? assinatura.imagem : null,
+      assinatura_cliente_nome: assinatura.ativo ? assinatura.nome.trim() : null,
+    }, (d) => supabase.from("rdos").insert(d).select().single());
     if (error) {
       setEnviando(false);
       avisar(`Não foi possível enviar o RDO: ${error.message}`, "erro", 7000);
       return;
     }
     if (listaOcorrencias.length > 0) {
-      const { error: erroOc } = await supabase.from("ocorrencias").insert(listaOcorrencias.map((o) => ({
-        pi_id: piAtivo.id, rdo_id: rdo.id, categoria: o.categoria, descricao: o.descricao || null, midias: o.midias || [], registrado_por: usuario.id,
-      })));
+      // ocorrências do RDO são aprovadas/reprovadas junto com o RDO
+      const { error: erroOc } = await gravarTolerante(listaOcorrencias.map((o) => ({
+        pi_id: piAtivo.id, rdo_id: rdo.id, categoria: o.categoria, descricao: o.descricao || null, midias: o.midias || [], registrado_por: usuario.id, status: "pendente",
+      })), (d) => supabase.from("ocorrencias").insert(d));
       if (erroOc) avisar(`RDO enviado, mas as ocorrências falharam: ${erroOc.message}`, "erro", 7000);
     }
     await registrarLog(usuario, "Registrou RDO", `${usuario.nome} — ${piAtivo.codigo}`);
@@ -233,7 +239,7 @@ export default function LiderRdoPage() {
                 ))}
               </div>
               {novaCategoria && (
-                <div className="animar-fade">
+                <div className="animar-fade scroll-mb-40" ref={formOcRef}>
                   <textarea placeholder="Descreva o que aconteceu (opcional)" value={novaDesc} onChange={(e) => setNovaDesc(e.target.value)} rows={2}
                     className="input input-lg mb-3" />
                   <CapturaMidia value={novasMidias} onChange={setNovasMidias} />
@@ -276,26 +282,15 @@ export default function LiderRdoPage() {
               )}
             </div>
 
-            <label className="cartao p-4 flex items-center gap-3 text-base cursor-pointer">
-              <input type="checkbox" className="w-5 h-5 accent-cyan" checked={pedirAssinatura}
-                onChange={(e) => { setPedirAssinatura(e.target.checked); if (!e.target.checked) setAssinaturaImagem(null); }} />
-              <Icone nome="assinatura" className="w-5 h-5 text-muted" />
-              <span className="flex-1">Coletar assinatura do cliente</span>
-            </label>
-
-            {pedirAssinatura && (
-              <div className="cartao p-4 animar-fade">
-                <AssinaturaCanvas onMudar={setAssinaturaImagem} />
-              </div>
-            )}
+            <ColetaAssinatura value={assinatura} onChange={setAssinatura} />
 
             <BarraAcoes>
               <button onClick={() => setPasso(2)} className="btn btn-contorno btn-lg" disabled={enviando}><Icone nome="voltar" className="w-5 h-5" /></button>
-              <button onClick={enviar} disabled={enviando || (pedirAssinatura && !assinaturaImagem)} className="btn btn-sucesso btn-lg flex-1">
+              <button onClick={enviar} disabled={enviando || !assinaturaValida(assinatura)} className="btn btn-sucesso btn-lg flex-1">
                 {enviando ? <><Spinner /> {etapaEnvio || "Enviando..."}</> : <><Icone nome="aprovar" className="w-5 h-5" strokeWidth={2.4} /> Enviar RDO</>}
               </button>
             </BarraAcoes>
-            {pedirAssinatura && !assinaturaImagem && <div className="text-xs text-center text-muteddim">Falta a assinatura do cliente.</div>}
+            {faltaNaAssinatura(assinatura) && <div className="text-xs text-center text-amber font-semibold">{faltaNaAssinatura(assinatura)}</div>}
           </div>
         )}
       </div>

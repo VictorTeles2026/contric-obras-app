@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import Icone from "./Icone";
 
 export function Logo({ tamanho = "md", claro = false }) {
@@ -92,6 +92,17 @@ export function Aviso({ tipo = "info", children, className = "" }) {
 
 // Modal que vira "bottom sheet" no celular (mais fácil de alcançar com o polegar).
 export function Modal({ titulo, onFechar, children, rodape, largura = "max-w-lg" }) {
+  // no celular, acompanha a área visível (o teclado encolhe a tela): a janela nunca fica atrás dele
+  const [area, setArea] = useState(null);
+  useEffect(() => {
+    const vv = window.visualViewport;
+    if (!vv) return;
+    const medir = () => setArea({ altura: vv.height, topo: vv.offsetTop });
+    medir();
+    vv.addEventListener("resize", medir);
+    vv.addEventListener("scroll", medir);
+    return () => { vv.removeEventListener("resize", medir); vv.removeEventListener("scroll", medir); };
+  }, []);
   useEffect(() => {
     const onKey = (e) => e.key === "Escape" && onFechar?.();
     window.addEventListener("keydown", onKey);
@@ -101,9 +112,10 @@ export function Modal({ titulo, onFechar, children, rodape, largura = "max-w-lg"
   }, [onFechar]);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:p-4 animar-fade" role="dialog" aria-modal="true">
+    <div className="fixed inset-x-0 top-0 z-50 flex items-end sm:items-center justify-center sm:p-4 animar-fade" role="dialog" aria-modal="true"
+      style={{ height: area ? area.altura : "100dvh", top: area ? area.topo : 0 }}>
       <div className="absolute inset-0 bg-navy/50 backdrop-blur-[2px]" onClick={onFechar} />
-      <div className={`relative w-full ${largura} bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl flex flex-col max-h-[92dvh] animar-modal`}>
+      <div className={`relative w-full ${largura} bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl flex flex-col max-h-[94%] animar-modal`}>
         <div className="sm:hidden mx-auto mt-2 h-1.5 w-10 rounded-full bg-line" />
         <div className="flex items-center justify-between gap-3 px-5 pt-4 pb-3 border-b border-line">
           <div className="font-head font-bold text-lg leading-tight min-w-0 truncate">{titulo}</div>
@@ -111,7 +123,10 @@ export function Modal({ titulo, onFechar, children, rodape, largura = "max-w-lg"
             <Icone nome="fechar" className="w-5 h-5" />
           </button>
         </div>
-        <div className="px-5 py-4 overflow-y-auto rolagem-fina flex-1">{children}</div>
+        <div className="px-5 py-4 overflow-y-auto overscroll-contain rolagem-fina flex-1 min-h-0"
+          onFocus={(e) => { if (/INPUT|TEXTAREA|SELECT/.test(e.target.tagName)) setTimeout(() => e.target.scrollIntoView({ block: "center", behavior: "smooth" }), 250); }}>
+          {children}
+        </div>
         {rodape && (
           <div className="px-5 py-3 border-t border-line flex flex-wrap justify-end gap-2" style={{ paddingBottom: "max(0.75rem, env(safe-area-inset-bottom))" }}>
             {rodape}
