@@ -9,6 +9,7 @@ import { LISTA_STATUS_ETAPA as STATUS, AREAS, STATUS_PI, COR_STATUS_PI, STATUS_E
 import { useToast } from "../../lib/Toast";
 import PainelShell from "../../components/PainelShell";
 import AbasCronograma from "../../components/AbasCronograma";
+import PainelSuspenso from "../../components/PainelSuspenso";
 import { Modal, Campo, EstadoVazio, Spinner } from "../../components/ui";
 import Icone from "../../components/Icone";
 
@@ -588,8 +589,11 @@ function EtapaRow({ etapa, editavel, onChange, onDelete, deps, onRemoverDep, anc
   const isDragOverRow = dragOverRowId === etapa.id;
   const depsComSobreposicao = deps.filter((d) => d.data_prevista_fim && etapa.data_prevista_inicio && d.data_prevista_fim > etapa.data_prevista_inicio);
   const areas = etapa.areas || [];
-  const equipeRef = useFecharAoClicarFora(equipeAberta, useCallback(() => setEquipeAberta(false), []));
-  const alocRef = useFecharAoClicarFora(alocAberta, useCallback(() => setAlocAberta(false), []));
+  // listas "Equipe" e "Alocação": abrem em primeiro plano (PainelSuspenso), presas ao botão
+  const equipeRef = useRef(null);
+  const alocRef = useRef(null);
+  const fecharEquipe = useCallback(() => setEquipeAberta(false), []);
+  const fecharAloc = useCallback(() => setAlocAberta(false), []);
   // nome em branco não é salvo (a etapa ficaria "invisível"); data apagada vira null (e não "", que o banco recusa)
   const [nomeLocal, setNomeLocal] = useCampoDebounced(etapa.nome, (v) => v.trim() && onChange(etapa.id, { nome: v.trim() }));
   const [inicioLocal, setInicioLocal] = useCampoDebounced(etapa.data_prevista_inicio || "", (v) => onChange(etapa.id, { data_prevista_inicio: v || null }), 300);
@@ -669,16 +673,14 @@ function EtapaRow({ etapa, editavel, onChange, onDelete, deps, onRemoverDep, anc
           className={`btn btn-sm !px-2.5 border ${areas.length ? "border-cyan/40 text-cyan bg-cyan/5" : "border-line text-muted bg-white"}`}>
           Equipe{areas.length > 0 ? ` (${areas.length})` : ""} ▾
         </button>
-        {equipeAberta && (
-          <div className="absolute z-30 mt-1 right-0 sm:right-auto bg-white border border-line rounded-xl shadow-xl p-1.5 w-60 max-h-64 overflow-auto rolagem-fina animar-fade">
+        <PainelSuspenso ancoraRef={equipeRef} aberto={equipeAberta} onFechar={fecharEquipe} largura={240}>
             {AREAS.map((a) => (
               <label key={a} className="flex items-center gap-2 px-2 py-1.5 text-sm cursor-pointer rounded-lg hover:bg-panel">
                 <input type="checkbox" className="accent-cyan" checked={areas.includes(a)} disabled={!editavel} onChange={() => onToggleArea(etapa, a)} />
                 {a}
               </label>
             ))}
-          </div>
-        )}
+        </PainelSuspenso>
       </div>
 
       <div className="relative" ref={alocRef}>
@@ -686,8 +688,7 @@ function EtapaRow({ etapa, editavel, onChange, onDelete, deps, onRemoverDep, anc
           className={`btn btn-sm !px-2.5 border ${alocs.length ? "border-cyan/40 text-cyan bg-cyan/5" : "border-line text-muted bg-white"}`}>
           Alocação{alocs.length > 0 ? ` (${alocs.length})` : ""} ▾
         </button>
-        {alocAberta && (
-          <div className="absolute z-30 mt-1 right-0 sm:right-auto bg-white border border-line rounded-xl shadow-xl p-1.5 w-64 max-h-64 overflow-auto rolagem-fina animar-fade">
+        <PainelSuspenso ancoraRef={alocRef} aberto={alocAberta} onFechar={fecharAloc} largura={272}>
             {recursos.length === 0 && <div className="text-sm text-muteddim px-2 py-1.5">Nenhum recurso cadastrado.</div>}
             {recursos.map((r) => (
               <label key={r.id} className="flex items-center gap-2 px-2 py-1.5 text-sm cursor-pointer rounded-lg hover:bg-panel">
@@ -695,8 +696,7 @@ function EtapaRow({ etapa, editavel, onChange, onDelete, deps, onRemoverDep, anc
                 <span className="truncate">{r.nome}</span>
               </label>
             ))}
-          </div>
-        )}
+        </PainelSuspenso>
       </div>
 
       <div className="flex items-center gap-1.5">

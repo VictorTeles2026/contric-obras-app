@@ -8,7 +8,7 @@ import { useMinhasPis } from "../../lib/minhasPis";
 import { hojeISO } from "../../lib/datas";
 import { STATUS_ETAPA, LISTA_STATUS_ETAPA, CATEGORIAS_OCORRENCIA, etapasEmArvore } from "../../lib/constantes";
 import { useToast } from "../../lib/Toast";
-import { gerarPdfRdoSeguro } from "../../lib/pdfRdo";
+import { gerarPdfRdoSeguro, nomeBaseAnexo } from "../../lib/pdfRdo";
 import PainelShell from "../../components/PainelShell";
 import CapturaMidia from "../../components/CapturaMidia";
 import FormHoras from "../../components/FormHoras";
@@ -165,7 +165,7 @@ export default function RdoPage() {
                           onKeyDown={(e) => e.key === "Enter" && adicionarOcorrencia()} />
                         <button onClick={adicionarOcorrencia} className="btn btn-alerta shrink-0">+ Adicionar</button>
                       </div>
-                      <CapturaMidia value={novasMidias} onChange={setNovasMidias} compacto />
+                      <CapturaMidia value={novasMidias} onChange={setNovasMidias} compacto baseNome={nomeBaseAnexo("RDO", hojeISO(), piAtual)} />
                     </div>
                   )}
                 </>

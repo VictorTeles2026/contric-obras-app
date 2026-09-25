@@ -16,6 +16,7 @@ import Icone from "../../../components/Icone";
 import AcoesMaster from "../../../components/AcoesMaster";
 import { EditorSolicitacao } from "../../../components/Editores";
 import { excluirSolicitacao } from "../../../lib/exclusoes";
+import { nomeBaseAnexo } from "../../../lib/pdfRdo";
 
 const CAMPOS = [["data_prevista_inicio", "Data de início"], ["data_prevista_fim", "Data de término"], ["nome", "Nome da etapa"], ["outro", "Outro"]];
 const ROTULO_CAMPO = Object.fromEntries(CAMPOS);
@@ -216,7 +217,7 @@ function NovaSolicitacao({ pi, etapas, usuario, onFechar, onSalvo }) {
         </Campo>
         <div>
           <span className="rotulo">Fotos ou vídeos (opcional)</span>
-          <CapturaMidia value={midias} onChange={setMidias} compacto />
+          <CapturaMidia value={midias} onChange={setMidias} compacto baseNome={nomeBaseAnexo("SOLICITACAO", null, pi)} />
         </div>
         <Aviso tipo="info">A solicitação segue o fluxo normal: Coordenador e depois Gerente, em Aprovações.</Aviso>
       </div>

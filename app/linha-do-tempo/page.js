@@ -7,6 +7,7 @@ import { AREAS, STATUS_ETAPA } from "../../lib/constantes";
 import PainelShell from "../../components/PainelShell";
 import { CabecalhoPagina, EstadoVazio, Modal } from "../../components/ui";
 import Icone from "../../components/Icone";
+import PainelSuspenso from "../../components/PainelSuspenso";
 
 const STATUS_COR = Object.fromEntries(Object.entries(STATUS_ETAPA).map(([k, v]) => [k, v.barra]));
 const LABEL_W = 240;
@@ -68,8 +69,9 @@ export default function LinhaDoTempoPage() {
   const [filtroAtivo, setFiltroAtivo] = useState({ equipes: [], recursos: [] });
   const toggleEquipeDraft = (a) => setEquipesDraft((p) => p.includes(a) ? p.filter((x) => x !== a) : [...p, a]);
   const toggleRecursoDraft = (id) => setRecursosDraft((p) => p.includes(id) ? p.filter((x) => x !== id) : [...p, id]);
-  const equipesRef = useFecharAoClicarFora(equipesDropdownAberto, () => setEquipesDropdownAberto(false));
-  const recursosRef = useFecharAoClicarFora(recursosDropdownAberto, () => setRecursosDropdownAberto(false));
+  // listas de filtro: abrem em primeiro plano (PainelSuspenso), presas ao botão
+  const equipesRef = useRef(null);
+  const recursosRef = useRef(null);
   const aplicarFiltro = () => { setFiltroAtivo({ equipes: equipesDraft, recursos: recursosDraft }); setEquipesDropdownAberto(false); setRecursosDropdownAberto(false); };
   const limparFiltro = () => { setEquipesDraft([]); setRecursosDraft([]); setFiltroAtivo({ equipes: [], recursos: [] }); };
 
@@ -213,24 +215,21 @@ export default function LinhaDoTempoPage() {
             <button onClick={() => { setEquipesDropdownAberto((o) => !o); setRecursosDropdownAberto(false); }} className={`btn btn-sm !py-2 border ${equipesDraft.length ? "border-cyan/40 text-cyan bg-cyan/5" : "border-line bg-white text-muted"}`}>
               Equipes{equipesDraft.length > 0 ? ` (${equipesDraft.length})` : ""} ▾
             </button>
-            {equipesDropdownAberto && (
-              <div className="absolute z-30 mt-1 bg-white border border-line rounded-xl shadow-xl p-1.5 w-64 max-h-72 overflow-auto rolagem-fina animar-fade">
+            <PainelSuspenso ancoraRef={equipesRef} aberto={equipesDropdownAberto} onFechar={() => setEquipesDropdownAberto(false)}>
                 {AREAS.map((a) => (
                   <label key={a} className="flex items-center gap-2 px-2 py-1.5 text-sm cursor-pointer rounded-lg hover:bg-panel">
                     <input type="checkbox" className="accent-cyan" checked={equipesDraft.includes(a)} onChange={() => toggleEquipeDraft(a)} />
                     {a}
                   </label>
                 ))}
-              </div>
-            )}
+              </PainelSuspenso>
           </div>
 
           <div className="relative" ref={recursosRef}>
             <button onClick={() => { setRecursosDropdownAberto((o) => !o); setEquipesDropdownAberto(false); }} className={`btn btn-sm !py-2 border ${recursosDraft.length ? "border-cyan/40 text-cyan bg-cyan/5" : "border-line bg-white text-muted"}`}>
               Recursos{recursosDraft.length > 0 ? ` (${recursosDraft.length})` : ""} ▾
             </button>
-            {recursosDropdownAberto && (
-              <div className="absolute z-30 mt-1 bg-white border border-line rounded-xl shadow-xl p-1.5 w-64 max-h-72 overflow-auto rolagem-fina animar-fade">
+            <PainelSuspenso ancoraRef={recursosRef} aberto={recursosDropdownAberto} onFechar={() => setRecursosDropdownAberto(false)}>
                 {recursos.length === 0 && <div className="text-sm text-muteddim px-2 py-1.5">Nenhum recurso cadastrado.</div>}
                 {recursos.map((r) => (
                   <label key={r.id} className="flex items-center gap-2 px-2 py-1.5 text-sm cursor-pointer rounded-lg hover:bg-panel">
@@ -238,8 +237,7 @@ export default function LinhaDoTempoPage() {
                     <span className="truncate">{r.nome}</span>
                   </label>
                 ))}
-              </div>
-            )}
+              </PainelSuspenso>
           </div>
 
           <button onClick={aplicarFiltro} className="btn btn-primario btn-sm !py-2">Filtrar</button>

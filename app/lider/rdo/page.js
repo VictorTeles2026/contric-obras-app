@@ -10,7 +10,7 @@ import { NAV_LIDER } from "../../../lib/nav";
 import { hojeISO } from "../../../lib/datas";
 import { STATUS_ETAPA, LISTA_STATUS_ETAPA, CATEGORIAS_OCORRENCIA, etapasEmArvore } from "../../../lib/constantes";
 import { useToast } from "../../../lib/Toast";
-import { gerarPdfRdoSeguro } from "../../../lib/pdfRdo";
+import { gerarPdfRdoSeguro, nomeBaseAnexo } from "../../../lib/pdfRdo";
 import MobileShell from "../../../components/MobileShell";
 import ColetaAssinatura, { assinaturaValida, faltaNaAssinatura } from "../../../components/ColetaAssinatura";
 import CapturaMidia from "../../../components/CapturaMidia";
@@ -242,7 +242,7 @@ export default function LiderRdoPage() {
                 <div className="animar-fade scroll-mb-40" ref={formOcRef}>
                   <textarea placeholder="Descreva o que aconteceu (opcional)" value={novaDesc} onChange={(e) => setNovaDesc(e.target.value)} rows={2}
                     className="input input-lg mb-3" />
-                  <CapturaMidia value={novasMidias} onChange={setNovasMidias} />
+                  <CapturaMidia value={novasMidias} onChange={setNovasMidias} baseNome={nomeBaseAnexo("RDO", hoje, piAtivo)} />
                   <button onClick={adicionarOcorrencia} className="btn btn-alerta w-full mt-3">+ Adicionar ocorrência</button>
                 </div>
               )}

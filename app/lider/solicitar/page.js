@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useTabela, registrarLog, gravarTolerante } from "../../../lib/dados";
 import CapturaMidia from "../../../components/CapturaMidia";
+import { nomeBaseAnexo } from "../../../lib/pdfRdo";
 import { useAuth } from "../../../lib/AuthContext";
 import { supabase } from "../../../lib/supabase";
 import { useMinhasPis } from "../../../lib/minhasPis";
@@ -115,7 +116,7 @@ export default function LiderSolicitarPage() {
             </label>
             <div>
               <span className="rotulo">Fotos ou vídeos (opcional)</span>
-              <CapturaMidia value={midias} onChange={setMidias} />
+              <CapturaMidia value={midias} onChange={setMidias} baseNome={nomeBaseAnexo("SOLICITACAO", null, meusPis.find((p) => p.id === etapaSelecionada?.pi_id))} />
             </div>
             <button onClick={enviar} disabled={!podeEnviar} className="btn btn-primario btn-lg w-full">
               {enviando ? <><Spinner /> Enviando...</> : "Enviar solicitação"}

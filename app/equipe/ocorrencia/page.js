@@ -8,7 +8,7 @@ import { useMinhasPis, agruparPorCliente } from "../../../lib/minhasPis";
 import { NAV_EQUIPE } from "../../../lib/nav";
 import { CATEGORIAS_OCORRENCIA } from "../../../lib/constantes";
 import { formatarDataHora } from "../../../lib/datas";
-import { gerarPdfOcorrenciaSeguro } from "../../../lib/pdfRdo";
+import { gerarPdfOcorrenciaSeguro, nomeBaseAnexo } from "../../../lib/pdfRdo";
 import { useToast } from "../../../lib/Toast";
 import MobileShell from "../../../components/MobileShell";
 import CapturaMidia from "../../../components/CapturaMidia";
@@ -101,7 +101,7 @@ export default function EquipeOcorrenciaPage() {
               </label>
               <div>
                 <span className="rotulo">Foto ou vídeo (opcional)</span>
-                <CapturaMidia value={midias} onChange={setMidias} />
+                <CapturaMidia value={midias} onChange={setMidias} baseNome={nomeBaseAnexo("OCORRENCIA", null, meusPis.find((p) => p.id === piId))} />
               </div>
             </div>
 

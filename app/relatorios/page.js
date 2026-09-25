@@ -10,6 +10,8 @@ import { CabecalhoPagina, EstadoVazio, Aviso, Spinner } from "../../components/u
 import Icone from "../../components/Icone";
 import { formatarData, horaCurta } from "../../lib/datas";
 import AcoesMaster from "../../components/AcoesMaster";
+import AbasRelatorios from "../../components/AbasRelatorios";
+import { horasDoLancamento, fmtH } from "../../lib/horas";
 import { EditorHoras } from "../../components/Editores";
 import { excluirHoras, limparRealizados } from "../../lib/exclusoes";
 
@@ -81,7 +83,8 @@ export default function RelatoriosPage() {
   return (
     <PainelShell>
       <div className="p-4 md:p-8 max-w-6xl mx-auto">
-        <CabecalhoPagina titulo="Relatórios" subtitulo="Orçado × realizado de cada PI — custos e horas." />
+        <CabecalhoPagina titulo="Relatórios" subtitulo="Orçado × realizado de cada PI e controle das horas lançadas." />
+        <AbasRelatorios />
 
         <div className="cartao p-4 mb-5 flex flex-col lg:flex-row lg:items-end gap-4 print:hidden">
           <label className="block flex-1 min-w-0">
@@ -139,14 +142,7 @@ export default function RelatoriosPage() {
   );
 }
 
-// horas normais / extras de um lançamento: aprovado usa o que o aprovador definiu;
-// pendente conta tudo como normal; check-in ainda aberto não soma nada
-function horasDoLancamento(a) {
-  if (a.entrada && !a.saida) return { normais: 0, extras: 0, aberto: true };
-  if (a.status === "aprovado") return { normais: Number(a.horas_normais ?? a.horas_totais) || 0, extras: Number(a.horas_extras) || 0 };
-  return { normais: Number(a.horas_totais) || 0, extras: 0 };
-}
-const fmtH = (n) => `${(Number(n) || 0).toLocaleString("pt-BR", { maximumFractionDigits: 2 })} h`;
+
 
 function LancamentosHoras({ lancamentos, usuarios, categorias, pis, pi, editavel, usuario, onSalvo }) {
   const { avisar } = useToast();

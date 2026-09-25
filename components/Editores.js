@@ -5,6 +5,7 @@ import { useAuth } from "../lib/AuthContext";
 import { useToast } from "../lib/Toast";
 import { LISTA_STATUS_ETAPA, CATEGORIAS_OCORRENCIA } from "../lib/constantes";
 import { horasEntreHorarios, hojeISO, isoLocal } from "../lib/datas";
+import { nomeBaseAnexo } from "../lib/pdfRdo";
 import { salvarEdicaoRdo, salvarEdicaoHoras, salvarEdicaoSolicitacao, salvarEdicaoOcorrencia } from "../lib/edicoes";
 import { Modal, Campo, Aviso, Spinner } from "./ui";
 import CapturaMidia from "./CapturaMidia";
@@ -103,7 +104,7 @@ export function EditorRdo({ rdo, pi, pis, ocorrenciasOriginais, comoAprovador, o
                   </button>
                 </div>
                 <textarea value={o.descricao || ""} onChange={(e) => alterarOc(i, { descricao: e.target.value })} rows={2} className="input" placeholder="Descrição" />
-                <CapturaMidia value={o.midias} onChange={(m) => alterarOc(i, { midias: m })} compacto />
+                <CapturaMidia value={o.midias} onChange={(m) => alterarOc(i, { midias: m })} compacto baseNome={nomeBaseAnexo("RDO", data, pi)} />
               </div>
             ))}
             {ocorrencias.length === 0 && <div className="text-sm text-muteddim">Nenhuma ocorrência.</div>}
@@ -281,7 +282,8 @@ export function EditorOcorrencia({ oc, pis, comoAprovador, onFechar, onSalvo }) 
         </Campo>
         <div>
           <span className="rotulo">Fotos e vídeos</span>
-          <CapturaMidia value={midias} onChange={setMidias} />
+          <CapturaMidia value={midias} onChange={setMidias}
+            baseNome={nomeBaseAnexo("OCORRENCIA", oc.created_at ? isoLocal(new Date(oc.created_at)) : null, pis.find((p) => p.id === oc.pi_id))} />
         </div>
         {comoAprovador && <Aviso tipo="info">Quem registrou receberá uma notificação com o que foi alterado. O PDF é atualizado automaticamente.</Aviso>}
         {erro && <Aviso tipo="erro">{erro}</Aviso>}

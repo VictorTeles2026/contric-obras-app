@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useMemo, useRef, useEffect } from "react";
-import { useTabela, registrarLog } from "../../lib/dados";
+import { useTabela, registrarLog, gravarTolerante } from "../../lib/dados";
+import EmpresasTerceiras from "../../components/EmpresasTerceiras";
 import { useAuth, podeEditar } from "../../lib/AuthContext";
 import { supabase } from "../../lib/supabase";
 import { hojeISO, formatarData } from "../../lib/datas";
@@ -31,6 +32,9 @@ export default function RecursosPage() {
   const { dados: usuarios } = useTabela("usuarios");
   const { dados: recursos, carregando: carregandoRecursos, recarregar: recarregarRecursos } = useTabela("recursos", { order: { coluna: "nome" } });
   const { dados: alocacoes, recarregar: recarregarAlocacoes } = useTabela("alocacoes_recurso");
+  const { dados: empresas, carregando: carregandoEmpresas, erro: erroEmpresas, recarregar: recarregarEmpresas } = useTabela("empresas_terceiras", { order: { coluna: "nome" } });
+  const empresasAtivas = empresas.filter((e) => e.ativa);
+  const nomeEmpresa = (id) => empresas.find((e) => e.id === id)?.nome;
 
   const [selecionadosIds, setSelecionadosIds] = useState([]);
   const [ancoraId, setAncoraId] = useState(null);
@@ -97,12 +101,13 @@ export default function RecursosPage() {
   };
 
   const criarRecurso = async (dados) => {
-    const { data, error } = await supabase.from("recursos").insert({
+    const { data, error } = await gravarTolerante({
       nome: dados.nome, tipo: dados.tipo, custo_unidade: dados.unidade,
       usuario_id: dados.usuarioId || null, atributos: { funcao: dados.funcao || null },
-    }).select().single();
+      empresa_terceira_id: dados.tipo === "mao_obra_terceira" ? dados.empresaId || null : null,
+    }, (d) => supabase.from("recursos").insert(d).select().single());
     if (error) { avisar(`Não foi possível criar: ${error.message}`, "erro", 6000); return; }
-    await registrarLog(usuario, "Criou recurso", dados.nome);
+    await registrarLog(usuario, "Criou recurso", `${dados.nome}${dados.empresaId ? ` — ${nomeEmpresa(dados.empresaId)}` : ""}`);
     avisar(`Recurso "${dados.nome}" criado.`);
     setNovoOpen(false);
     setSelecionadosIds([data.id]);
@@ -112,12 +117,13 @@ export default function RecursosPage() {
 
   const salvarEdicao = async (dados) => {
     if (!selecionado) return;
-    const { error } = await supabase.from("recursos").update({
+    const { error } = await gravarTolerante({
       nome: dados.nome, tipo: dados.tipo, custo_unidade: dados.unidade,
       usuario_id: dados.usuarioId || null, atributos: { ...(selecionado.atributos || {}), funcao: dados.funcao || null },
-    }).eq("id", selecionado.id);
+      empresa_terceira_id: dados.tipo === "mao_obra_terceira" ? dados.empresaId || null : null,
+    }, (d) => supabase.from("recursos").update(d).eq("id", selecionado.id));
     if (error) { avisar(`Não foi possível salvar: ${error.message}`, "erro", 6000); return; }
-    await registrarLog(usuario, "Editou recurso", dados.nome);
+    await registrarLog(usuario, "Editou recurso", `${dados.nome}${dados.empresaId ? ` — ${nomeEmpresa(dados.empresaId)}` : ""}`);
     avisar("Recurso atualizado.");
     setEditarOpen(false);
     recarregarRecursos();
@@ -183,12 +189,13 @@ export default function RecursosPage() {
   // abas: cadastro/alocação e o gráfico de utilização (que antes era uma página separada)
   const [aba, setAbaEstado] = useState("cadastro");
   useEffect(() => {
-    if (new URLSearchParams(window.location.search).get("aba") === "utilizacao") setAbaEstado("utilizacao");
+    const abaUrl = new URLSearchParams(window.location.search).get("aba");
+    if (abaUrl === "utilizacao" || abaUrl === "empresas") setAbaEstado(abaUrl);
   }, []);
   const setAba = (v) => {
     setAbaEstado(v);
     const url = new URL(window.location.href);
-    if (v === "utilizacao") url.searchParams.set("aba", v); else url.searchParams.delete("aba");
+    if (v !== "cadastro") url.searchParams.set("aba", v); else url.searchParams.delete("aba");
     window.history.replaceState(null, "", url.toString());
   };
   const sobrealocados = useMemo(() => recursos.filter((r) => {
@@ -212,7 +219,7 @@ export default function RecursosPage() {
           <span className="text-xs text-muted">{recursos.length} cadastrados · {alocacoes.length} alocações</span>
         </div>
         <div className="flex gap-1 overflow-x-auto" role="tablist">
-          {[["cadastro", "Recursos e alocações", null], ["utilizacao", "Utilização", sobrealocados]].map(([v, l, n]) => (
+          {[["cadastro", "Recursos e alocações", null], ["utilizacao", "Utilização", sobrealocados], ["empresas", "Empresas terceiras", null]].map(([v, l, n]) => (
             <button key={v} role="tab" aria-selected={aba === v} onClick={() => setAba(v)}
               className={`relative px-4 py-2.5 text-sm font-semibold whitespace-nowrap transition-colors ${aba === v ? "text-cyan" : "text-muted hover:text-textmain"}`}>
               {l}
@@ -223,7 +230,12 @@ export default function RecursosPage() {
         </div>
       </div>
 
-      {aba === "utilizacao" ? (
+      {aba === "empresas" ? (
+        <div className="flex-1 min-h-0 p-4 md:p-6 md:overflow-y-auto rolagem-fina">
+          <EmpresasTerceiras empresas={empresas} carregando={carregandoEmpresas} recursos={recursos} editavel={editavel} usuario={usuario}
+            onMudou={() => { recarregarEmpresas(); recarregarRecursos(); }} erroTabela={!!erroEmpresas} />
+        </div>
+      ) : aba === "utilizacao" ? (
         <div className="flex-1 min-h-0 p-4 md:p-6 md:overflow-y-auto rolagem-fina">
           <GraficoUtilizacao recursos={recursos} alocacoes={alocacoes} pis={pis} carregando={carregandoRecursos}
             onSelecionarRecurso={(id) => { setAba("cadastro"); setSelecionadosIds([id]); setAncoraId(id); setEditandoAlocId(null); fecharTudoMenos(null); }} />
@@ -242,7 +254,7 @@ export default function RecursosPage() {
                 ⚡ Alocar vários
               </button>
             </div>
-            {novoOpen && <div className="animar-fade"><RecursoForm usuarios={usuariosElegiveis} onSalvar={criarRecurso} rotuloBotao="Criar recurso" onCancelar={() => setNovoOpen(false)} /></div>}
+            {novoOpen && <div className="animar-fade"><RecursoForm usuarios={usuariosElegiveis} empresas={empresasAtivas} onIrParaEmpresas={() => setAba("empresas")} onSalvar={criarRecurso} rotuloBotao="Criar recurso" onCancelar={() => setNovoOpen(false)} /></div>}
           </div>
         )}
 
@@ -274,7 +286,7 @@ export default function RecursosPage() {
                           {qtdAlocs > 0 && <span className="selo bg-panel text-muted shrink-0">{qtdAlocs}</span>}
                         </div>
                         <div className="text-muted text-xs truncate">
-                          {r.atributos?.funcao ? `${r.atributos.funcao} · ` : ""}por {rotuloUnidade(r.custo_unidade).toLowerCase()}
+                          {r.empresa_terceira_id ? `${nomeEmpresa(r.empresa_terceira_id) || "empresa"} · ` : ""}{r.atributos?.funcao ? `${r.atributos.funcao} · ` : ""}por {rotuloUnidade(r.custo_unidade).toLowerCase()}
                         </div>
                       </button>
                     );
@@ -314,6 +326,7 @@ export default function RecursosPage() {
                 <div className="text-sm text-muted mt-0.5">
                   {rotuloTipo(selecionado.tipo)} · apropriação por {rotuloUnidade(selecionado.custo_unidade).toLowerCase()}
                   {selecionado.atributos?.funcao && <> · {selecionado.atributos.funcao}</>}
+                  {selecionado.empresa_terceira_id && <> · <strong className="text-textmain">{nomeEmpresa(selecionado.empresa_terceira_id)}</strong></>}
                 </div>
                 {selecionado.usuario_id && (
                   <div className="text-sm text-cyan mt-1 flex items-center gap-1.5"><Icone nome="usuarios" className="w-4 h-4" /> Vinculado a {usuarios.find((u) => u.id === selecionado.usuario_id)?.nome}</div>
@@ -337,8 +350,8 @@ export default function RecursosPage() {
 
             {editarOpen && editavel && (
               <div className="mb-4 max-w-md animar-fade">
-                <RecursoForm usuarios={usuariosElegiveis} onSalvar={salvarEdicao} rotuloBotao="Salvar alterações" onCancelar={() => setEditarOpen(false)}
-                  valoresIniciais={{ nome: selecionado.nome, tipo: selecionado.tipo, unidade: selecionado.custo_unidade, usuarioId: selecionado.usuario_id || "", funcao: selecionado.atributos?.funcao || "" }} />
+                <RecursoForm usuarios={usuariosElegiveis} empresas={empresasAtivas.concat(empresas.filter((e) => !e.ativa && e.id === selecionado.empresa_terceira_id))} onIrParaEmpresas={() => setAba("empresas")} onSalvar={salvarEdicao} rotuloBotao="Salvar alterações" onCancelar={() => setEditarOpen(false)}
+                  valoresIniciais={{ nome: selecionado.nome, tipo: selecionado.tipo, unidade: selecionado.custo_unidade, usuarioId: selecionado.usuario_id || "", funcao: selecionado.atributos?.funcao || "", empresaId: selecionado.empresa_terceira_id || "" }} />
               </div>
             )}
 
@@ -426,12 +439,15 @@ export default function RecursosPage() {
     </PainelShell>
   );
 }
-function RecursoForm({ usuarios, onSalvar, rotuloBotao, onCancelar, valoresIniciais }) {
+function RecursoForm({ usuarios, empresas = [], onIrParaEmpresas, onSalvar, rotuloBotao, onCancelar, valoresIniciais }) {
   const [nome, setNome] = useState(valoresIniciais?.nome || "");
   const [tipo, setTipo] = useState(valoresIniciais?.tipo || "mao_obra_propria");
   const [unidade, setUnidade] = useState(valoresIniciais?.unidade || "hora");
   const [usuarioId, setUsuarioId] = useState(valoresIniciais?.usuarioId || "");
   const [funcao, setFuncao] = useState(valoresIniciais?.funcao || "");
+  const [empresaId, setEmpresaId] = useState(valoresIniciais?.empresaId || "");
+  const ehTerceira = tipo === "mao_obra_terceira";
+  const faltaEmpresa = ehTerceira && !empresaId;
 
   const ehMaoDeObra = (t) => t === "mao_obra_propria" || t === "mao_obra_terceira";
   const bloqueadoPorVinculo = !!usuarioId;
@@ -443,11 +459,14 @@ function RecursoForm({ usuarios, onSalvar, rotuloBotao, onCancelar, valoresInici
       setTipo(tipoParaPerfil(u.perfil));
       setFuncao(u.funcao || "");
       setNome(u.nome);
+      // terceiro com empresa informada no cadastro de usuário: já sugere a empresa de mesmo nome
+      const sugerida = u.empresa_terceira && empresas.find((e) => e.nome.trim().toLowerCase() === u.empresa_terceira.trim().toLowerCase());
+      if (sugerida) setEmpresaId(sugerida.id);
     }
   };
 
   return (
-    <form onSubmit={(e) => { e.preventDefault(); if (nome.trim()) onSalvar({ nome: nome.trim(), tipo, unidade, usuarioId, funcao }); }}
+    <form onSubmit={(e) => { e.preventDefault(); if (nome.trim() && !faltaEmpresa) onSalvar({ nome: nome.trim(), tipo, unidade, usuarioId, funcao, empresaId }); }}
       className="bg-panel border border-line rounded-xl p-3.5 flex flex-col gap-3">
       <Campo rotulo="Vincular a um usuário (opcional)">
         <select value={usuarioId} onChange={(e) => onSelecionarUsuario(e.target.value)} className="input">
@@ -461,6 +480,19 @@ function RecursoForm({ usuarios, onSalvar, rotuloBotao, onCancelar, valoresInici
           {TIPOS_RECURSO.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
         </select>
       </Campo>
+      {ehTerceira && (
+        <Campo rotulo="Empresa terceira (obrigatório)">
+          <select value={empresaId} onChange={(e) => setEmpresaId(e.target.value)} className={`input ${faltaEmpresa ? "!border-amber" : ""}`}>
+            <option value="">Selecione a empresa...</option>
+            {empresas.map((e) => <option key={e.id} value={e.id}>{e.nome}{e.cnpj ? ` — ${e.cnpj}` : ""}{e.ativa ? "" : " (inativa)"}</option>)}
+          </select>
+          {empresas.length === 0 && (
+            <span className="block text-xs text-amber mt-1">
+              Nenhuma empresa ativa cadastrada. <button type="button" onClick={onIrParaEmpresas} className="underline font-semibold">Cadastrar em Empresas terceiras</button>
+            </span>
+          )}
+        </Campo>
+      )}
       {ehMaoDeObra(tipo) && (
         <Campo rotulo="Função">
           <input value={funcao} onChange={(e) => setFuncao(e.target.value)} disabled={bloqueadoPorVinculo}
@@ -473,7 +505,7 @@ function RecursoForm({ usuarios, onSalvar, rotuloBotao, onCancelar, valoresInici
         </select>
       </Campo>
       <div className="flex gap-2">
-        <button type="submit" disabled={!nome.trim()} className="btn btn-escuro flex-1">{rotuloBotao}</button>
+        <button type="submit" disabled={!nome.trim() || faltaEmpresa} className="btn btn-escuro flex-1">{rotuloBotao}</button>
         {onCancelar && <button type="button" onClick={onCancelar} className="btn btn-fantasma">Cancelar</button>}
       </div>
     </form>
