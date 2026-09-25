@@ -8,6 +8,7 @@ import { useToast } from "../../lib/Toast";
 import PainelShell from "../../components/PainelShell";
 import { CabecalhoPagina, EstadoVazio, Aviso, Spinner } from "../../components/ui";
 import Icone from "../../components/Icone";
+import { formatarData, horaCurta } from "../../lib/datas";
 
 const VERDE_ESCURO = "#1B6E2D";
 const VERMELHO = "#D64545";
@@ -60,6 +61,19 @@ export default function RelatoriosPage() {
   const visualizar = () => podeVisualizar && setVisualizando({ piId, custo: comCusto, horas: comHoras });
   const piVisto = pis.find((p) => p.id === visualizando?.piId);
   const itensDoPi = orcamentos.filter((o) => o.pi_id === visualizando?.piId);
+  const categoriasHoras = categorias.filter((c) => c.grupo === "moi_horas");
+
+  // lançamentos de horas do PI (reprovados ficam de fora) e quanto cada código acumula
+  const { dados: usuarios } = useTabela("usuarios");
+  const { dados: apontamentosPi, recarregar: recarregarApontamentos } = useTabela("apontamentos_horas", {
+    filtro: visualizando?.horas ? [["pi_id", visualizando.piId]] : [["pi_id", undefined]], order: { coluna: "data", asc: false },
+  });
+  const lancamentos = apontamentosPi.filter((a) => a.status !== "rejeitado").map((a) => ({ ...a, ...horasDoLancamento(a) }));
+  const apontadoPorCodigo = {};
+  lancamentos.forEach((l) => {
+    if (l.categoria_normal_id) apontadoPorCodigo[l.categoria_normal_id] = (apontadoPorCodigo[l.categoria_normal_id] || 0) + l.normais;
+    if (l.categoria_extra_id) apontadoPorCodigo[l.categoria_extra_id] = (apontadoPorCodigo[l.categoria_extra_id] || 0) + l.extras;
+  });
 
   return (
     <PainelShell>
@@ -107,14 +121,129 @@ export default function RelatoriosPage() {
               {visualizando.horas && (
                 <TabelaOrcadoRealizado key={`horas-${piVisto.id}`} tipo="horas" titulo="MOI + Contric (horas)"
                   colOrcado="Horas Orçadas" colRealizado="Horas Realizadas"
-                  categorias={categorias.filter((c) => c.grupo === "moi_horas")}
+                  categorias={categoriasHoras} apontado={apontadoPorCodigo}
                   itens={itensDoPi} pi={piVisto} editavel={editavel} usuario={usuario} onSalvo={recarregarOrcamentos} />
+              )}
+              {visualizando.horas && (
+                <LancamentosHoras key={`lanc-${piVisto.id}`} lancamentos={lancamentos} usuarios={usuarios} categorias={categoriasHoras}
+                  pi={piVisto} editavel={editavel} usuario={usuario} onSalvo={recarregarApontamentos} />
               )}
             </div>
           </>
         )}
       </div>
     </PainelShell>
+  );
+}
+
+// horas normais / extras de um lançamento: aprovado usa o que o aprovador definiu;
+// pendente conta tudo como normal; check-in ainda aberto não soma nada
+function horasDoLancamento(a) {
+  if (a.entrada && !a.saida) return { normais: 0, extras: 0, aberto: true };
+  if (a.status === "aprovado") return { normais: Number(a.horas_normais ?? a.horas_totais) || 0, extras: Number(a.horas_extras) || 0 };
+  return { normais: Number(a.horas_totais) || 0, extras: 0 };
+}
+const fmtH = (n) => `${(Number(n) || 0).toLocaleString("pt-BR", { maximumFractionDigits: 2 })} h`;
+
+function LancamentosHoras({ lancamentos, usuarios, categorias, pi, editavel, usuario, onSalvo }) {
+  const { avisar } = useToast();
+  const [salvando, setSalvando] = useState({});
+  const pessoa = (id) => usuarios.find((u) => u.id === id);
+  const inicio = (l) => (l.entrada ? horaCurta(l.entrada) : l.hora_inicio || "—");
+  const fim = (l) => (l.saida ? horaCurta(l.saida) : l.entrada ? "em aberto" : l.hora_fim || "—");
+  const semCodigo = lancamentos.filter((l) => (l.normais > 0 && !l.categoria_normal_id) || (l.extras > 0 && !l.categoria_extra_id)).length;
+  const totalN = lancamentos.reduce((s, l) => s + l.normais, 0);
+  const totalE = lancamentos.reduce((s, l) => s + l.extras, 0);
+
+  const classificar = async (l, campo, catId) => {
+    const chave = `${l.id}-${campo}`;
+    setSalvando((p) => ({ ...p, [chave]: true }));
+    const { error } = await supabase.from("apontamentos_horas").update({ [campo]: catId || null }).eq("id", l.id);
+    setSalvando((p) => ({ ...p, [chave]: false }));
+    if (error) {
+      avisar(/categoria_/.test(error.message)
+        ? "O banco ainda não tem os campos de código. Rode o script horas-por-codigo.sql no Supabase."
+        : `Não foi possível salvar: ${error.message}`, "erro", 8000);
+      return;
+    }
+    const cat = categorias.find((c) => c.id === catId);
+    registrarLog(usuario, "Classificou horas", `${pi.codigo} — ${pessoa(l.usuario_id)?.nome} ${formatarData(l.data)} · ${campo === "categoria_normal_id" ? "normais" : "extras"} → ${cat?.codigo || "sem código"}`);
+    onSalvo?.();
+  };
+
+  const SeletorCodigo = ({ l, campo, horas }) => (
+    <div className="flex items-center gap-1.5">
+      <select value={l[campo] || ""} disabled={!editavel || horas <= 0} onChange={(e) => classificar(l, campo, e.target.value)}
+        className={`input !py-1 !px-2 !text-xs !w-[92px] font-mono ${horas > 0 && !l[campo] ? "!border-amber" : ""}`}
+        aria-label={`Código das horas ${campo === "categoria_normal_id" ? "normais" : "extras"}`} title={categorias.find((c) => c.id === l[campo])?.nome || "Escolha o código"}>
+        <option value="">—</option>
+        {categorias.map((c) => <option key={c.id} value={c.id}>{c.codigo}</option>)}
+      </select>
+      {salvando[`${l.id}-${campo}`] && <Spinner className="w-3.5 h-3.5 text-muted" />}
+    </div>
+  );
+
+  return (
+    <section className="cartao overflow-hidden">
+      <div className="px-4 md:px-5 py-3 border-b border-line flex flex-wrap items-center justify-between gap-2">
+        <h2 className="font-head font-bold text-base text-cyan">Lançamentos de horas do PI</h2>
+        <span className="text-xs text-muted">{lancamentos.length} lançamento(s){semCodigo ? <span className="text-amber font-semibold"> · {semCodigo} sem código</span> : ""}</span>
+      </div>
+      {lancamentos.length === 0 ? (
+        <div className="p-6 text-sm text-muteddim">Nenhum lançamento de horas neste PI.</div>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm min-w-[900px]">
+            <thead>
+              <tr className="bg-panel text-left">
+                <th className="px-3 py-2.5 titulo-secao">Nome</th>
+                <th className="px-3 py-2.5 titulo-secao">Função</th>
+                <th className="px-3 py-2.5 titulo-secao">Data</th>
+                <th className="px-3 py-2.5 titulo-secao">Início</th>
+                <th className="px-3 py-2.5 titulo-secao">Fim</th>
+                <th className="px-3 py-2.5 titulo-secao text-right">Normais</th>
+                <th className="px-3 py-2.5 titulo-secao">Cód. normais</th>
+                <th className="px-3 py-2.5 titulo-secao text-right">Extras</th>
+                <th className="px-3 py-2.5 titulo-secao">Cód. extras</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-line/70">
+              {lancamentos.map((l) => {
+                const p = pessoa(l.usuario_id);
+                return (
+                  <tr key={l.id} className="hover:bg-panel/50">
+                    <td className="px-3 py-2 font-medium">
+                      {p?.nome || "—"}
+                      {l.status === "pendente" && <span className="selo bg-amber/10 text-amber ml-1.5" title="Ainda não aprovado — conta como horas normais">pendente</span>}
+                    </td>
+                    <td className="px-3 py-2 text-muted">{p?.funcao || "—"}</td>
+                    <td className="px-3 py-2 whitespace-nowrap">{formatarData(l.data)}</td>
+                    <td className="px-3 py-2 font-mono text-xs">{inicio(l)}</td>
+                    <td className="px-3 py-2 font-mono text-xs">{fim(l)}</td>
+                    <td className="px-3 py-2 text-right font-mono whitespace-nowrap">{fmtH(l.normais)}</td>
+                    <td className="px-3 py-1.5"><SeletorCodigo l={l} campo="categoria_normal_id" horas={l.normais} /></td>
+                    <td className="px-3 py-2 text-right font-mono whitespace-nowrap">{fmtH(l.extras)}</td>
+                    <td className="px-3 py-1.5"><SeletorCodigo l={l} campo="categoria_extra_id" horas={l.extras} /></td>
+                  </tr>
+                );
+              })}
+            </tbody>
+            <tfoot>
+              <tr className="bg-panel border-t-2 border-line">
+                <td className="px-3 py-3 font-head font-bold" colSpan={5}>Total</td>
+                <td className="px-3 py-3 text-right font-mono font-bold whitespace-nowrap">{fmtH(totalN)}</td>
+                <td />
+                <td className="px-3 py-3 text-right font-mono font-bold whitespace-nowrap">{fmtH(totalE)}</td>
+                <td />
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      )}
+      <div className="px-4 md:px-5 py-2.5 text-xs text-muted border-t border-line print:hidden">
+        Escolha o código de cada lançamento: as horas são somadas na coluna “Horas Realizadas” daquele código, na tabela acima. Lançamentos reprovados não aparecem.
+      </div>
+    </section>
   );
 }
 
@@ -127,12 +256,20 @@ function Flag({ rotulo, marcado, onChange }) {
   );
 }
 
-function TabelaOrcadoRealizado({ tipo, titulo, colOrcado, colRealizado, categorias, itens, pi, editavel, usuario, onSalvo }) {
+// apontado: horas classificadas nos lançamentos por código (só na tabela de horas).
+// O campo "Realizado" mostra ajuste manual (salvo em valor_realizado) + apontado.
+function TabelaOrcadoRealizado({ tipo, titulo, colOrcado, colRealizado, categorias, itens, pi, editavel, usuario, onSalvo, apontado = {} }) {
   const { avisar } = useToast();
   const itemDa = (catId) => itens.find((o) => o.categoria_id === catId);
 
   // valores digitados (texto, para aceitar vírgula) — iniciam com o que está salvo
   const [digitados, setDigitados] = useState({});
+  const manualDe = (catId) => itemDa(catId)?.valor_realizado;
+  const totalTexto = (catId) => {
+    const m = manualDe(catId), a = apontado[catId] || 0;
+    if ((m === null || m === undefined) && !a) return "";
+    return paraTexto((Number(m) || 0) + a, tipo);
+  };
   const [salvando, setSalvando] = useState({});
   const [erroColuna, setErroColuna] = useState(false);
   // campos que o usuário está editando e ainda não salvou — não são sobrescritos pelo banco
@@ -140,10 +277,10 @@ function TabelaOrcadoRealizado({ tipo, titulo, colOrcado, colRealizado, categori
   useEffect(() => {
     // sincroniza com o banco (carga inicial, recarga e alterações feitas por outra pessoa)
     setDigitados((prev) => Object.fromEntries(categorias.map((c) => [
-      c.id, sujosRef.current.has(c.id) ? prev[c.id] : paraTexto(itemDa(c.id)?.valor_realizado, tipo),
+      c.id, sujosRef.current.has(c.id) ? prev[c.id] : totalTexto(c.id),
     ])));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [categorias, itens]);
+  }, [categorias, itens, JSON.stringify(apontado)]);
 
   const linhas = useMemo(() => categorias.map((c) => {
     const orcado = Number(itemDa(c.id)?.valor_orcado) || 0;
@@ -159,8 +296,11 @@ function TabelaOrcadoRealizado({ tipo, titulo, colOrcado, colRealizado, categori
   const total = calcular(totalOrcado, totalRealizado);
 
   const salvar = async (catId) => {
-    const valor = lerNumero(digitados[catId]);
-    if (Number.isNaN(valor)) { avisar("Valor inválido — use apenas números (ex: 1.250,50).", "erro"); return; }
+    const digitado = lerNumero(digitados[catId]);
+    if (Number.isNaN(digitado)) { avisar("Valor inválido — use apenas números (ex: 1.250,50).", "erro"); return; }
+    // guarda só a parte manual: total digitado − horas já apontadas nos lançamentos
+    const a = apontado[catId] || 0;
+    const valor = digitado === null ? (a ? 0 : null) : Math.round((digitado - a) * 100) / 100;
     const anterior = itemDa(catId)?.valor_realizado ?? null;
     if ((anterior === null ? null : Number(anterior)) === valor) { sujosRef.current.delete(catId); return; } // nada mudou
     setSalvando((p) => ({ ...p, [catId]: true }));
@@ -230,6 +370,11 @@ function TabelaOrcadoRealizado({ tipo, titulo, colOrcado, colRealizado, categori
                         {salvando[l.cat.id] ? <Spinner className="w-3.5 h-3.5" /> : null}
                       </span>
                     </div>
+                    {apontado[l.cat.id] > 0 && (
+                      <div className="text-[11px] text-cyan mt-0.5 whitespace-nowrap" title="Horas classificadas nos lançamentos abaixo">
+                        inclui {fmtValor(apontado[l.cat.id], tipo)} lançadas
+                      </div>
+                    )}
                   </td>
                   <Dif valor={l.dif} perc={l.perc} />
                 </tr>

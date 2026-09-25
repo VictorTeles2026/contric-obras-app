@@ -28,12 +28,16 @@ export default function FormHoras({ usuario, pis, onEnviado, compacto = false })
   const enviar = async () => {
     if (!podeEnviar) return;
     setEnviando(true);
-    const { error } = await supabase.from("apontamentos_horas").insert(
-      pisSelecionados.map((pid) => ({
-        usuario_id: usuario.id, pi_id: pid, data,
-        horas_totais: Math.round(horasPorPi * 100) / 100, status: "pendente",
-      }))
-    );
+    const linhas = pisSelecionados.map((pid) => ({
+      usuario_id: usuario.id, pi_id: pid, data,
+      horas_totais: Math.round(horasPorPi * 100) / 100, status: "pendente",
+      hora_inicio: horaInicio, hora_fim: horaFim,
+    }));
+    let { error } = await supabase.from("apontamentos_horas").insert(linhas);
+    // banco ainda sem as colunas de horário (script horas-por-codigo.sql): envia sem elas
+    if (error && /hora_inicio|hora_fim/.test(error.message)) {
+      ({ error } = await supabase.from("apontamentos_horas").insert(linhas.map(({ hora_inicio, hora_fim, ...resto }) => resto)));
+    }
     setEnviando(false);
     if (error) { avisar(`Não foi possível enviar: ${error.message}`, "erro", 6000); return; }
     await registrarLog(usuario, "Enviou horas do dia", `${data} — ${pisSelecionados.length} PI(s) — ${horasTotais.toFixed(1)}h`);
