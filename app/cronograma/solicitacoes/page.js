@@ -13,6 +13,9 @@ import AbasCronograma from "../../../components/AbasCronograma";
 import CapturaMidia from "../../../components/CapturaMidia";
 import { EstadoVazio, Esqueleto, Modal, Campo, Aviso, Spinner } from "../../../components/ui";
 import Icone from "../../../components/Icone";
+import AcoesMaster from "../../../components/AcoesMaster";
+import { EditorSolicitacao } from "../../../components/Editores";
+import { excluirSolicitacao } from "../../../lib/exclusoes";
 
 const CAMPOS = [["data_prevista_inicio", "Data de início"], ["data_prevista_fim", "Data de término"], ["nome", "Nome da etapa"], ["outro", "Outro"]];
 const ROTULO_CAMPO = Object.fromEntries(CAMPOS);
@@ -32,6 +35,7 @@ export default function SolicitacoesCronogramaPage() {
   const [piId, setPiIdEstado] = useState("");
   const [filtro, setFiltro] = useState("");
   const [novaAberta, setNovaAberta] = useState(false);
+  const [editando, setEditando] = useState(null);
 
   useEffect(() => {
     const doLink = new URLSearchParams(window.location.search).get("pi");
@@ -123,12 +127,18 @@ export default function SolicitacoesCronogramaPage() {
                       naoChegou={s.status === "pendente_coordenador" || s.status === "rejeitada_coordenador"} />
                   </div>
                   {s.editado_por && <div className="text-xs text-muteddim mt-2">Editada por {nome(s.editado_por)} em {formatarDataHora(s.editado_em)}</div>}
+                  <div className="flex justify-end mt-3">
+                    <AcoesMaster onEditar={() => setEditando(s)} onExcluido={recarregar}
+                      excluir={(motivo) => excluirSolicitacao({ s, etapa, usuario, motivo })}
+                      tituloExclusao="Excluir solicitação" descricaoExclusao="A solicitação será apagada do registro (o cronograma não muda)." />
+                  </div>
                 </article>
               );
             })}
           </div>
         </div>
       </div>
+      {editando && <EditorSolicitacao s={editando} etapas={etapas} comoAprovador onFechar={() => setEditando(null)} onSalvo={recarregar} />}
       {novaAberta && pi && (
         <NovaSolicitacao pi={pi} etapas={etapasDoPi} usuario={usuario} onFechar={() => setNovaAberta(false)} onSalvo={recarregar} />
       )}

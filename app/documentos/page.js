@@ -10,6 +10,9 @@ import { useToast } from "../../lib/Toast";
 import PainelShell from "../../components/PainelShell";
 import { CabecalhoPagina, EstadoVazio, Esqueleto, Aviso, Spinner } from "../../components/ui";
 import Icone from "../../components/Icone";
+import { ConfirmarExclusao } from "../../components/AcoesMaster";
+import { EditorRdo, EditorOcorrencia } from "../../components/Editores";
+import { ehMaster, excluirDocumento } from "../../lib/exclusoes";
 
 const TIPOS = [["", "Todos"], ["rdo", "RDOs (PDF)"], ["ocorrencia", "Ocorrências (PDF)"], ["arquivo", "Documentos"], ["foto", "Fotos"], ["video", "Vídeos"]];
 const ICONE_TIPO = { rdo: "pdf", ocorrencia: "alerta", arquivo: "pasta", foto: "camera", video: "video" };
@@ -49,13 +52,16 @@ export default function DocumentosPage() {
     const [lista, { data: ocorrencias }, { data: rdos }] = await Promise.all([
       supabase.storage.from(BUCKET_DOCUMENTOS).list(id, { limit: 1000, sortBy: { column: "created_at", order: "desc" } }),
       supabase.from("ocorrencias").select("*").eq("pi_id", id),
-      supabase.from("rdos").select("id,data,pdf_path").eq("pi_id", id),
+      supabase.from("rdos").select("*").eq("pi_id", id),
     ]);
     const itens = [];
     (lista.data || []).filter((f) => f.id && !f.name.startsWith(".")).forEach((f) => {
       itens.push({
         chave: `s-${f.name}`, tipo: f.name.startsWith("RDO_") ? "rdo" : f.name.startsWith("OCORRENCIA_") ? "ocorrencia" : "arquivo", nome: f.name,
         data: f.created_at || f.updated_at, tamanho: f.metadata?.size, caminho: `${id}/${f.name}`,
+        // registro de origem do PDF (para o Master poder editá-lo; o PDF é refeito ao salvar)
+        rdo: (rdos || []).find((r) => r.pdf_path === `${id}/${f.name}`),
+        ocorrencia: (ocorrencias || []).find((o) => o.pdf_path === `${id}/${f.name}`),
       });
     });
     (ocorrencias || []).forEach((o) => (o.midias || []).forEach((m, i) => {
@@ -84,13 +90,15 @@ export default function DocumentosPage() {
     }
   };
 
-  const excluir = async (item) => {
-    if (!window.confirm(`Excluir "${item.nome}"? Esta ação não pode ser desfeita.`)) return;
-    const { error } = await supabase.storage.from(BUCKET_DOCUMENTOS).remove([item.caminho]);
-    if (error) { avisar(`Não foi possível excluir: ${error.message}`, "erro"); return; }
-    await registrarLog(usuario, "Excluiu documento", `${resultado.pi?.codigo} — ${item.nome}`);
-    avisar("Arquivo excluído.");
-    buscar(resultado.pi.id);
+  // exclusão e edição de documentos: somente Master (registrado na Auditoria)
+  const master = ehMaster(usuario);
+  const [excluindo, setExcluindo] = useState(null);
+  const [editandoRegistro, setEditandoRegistro] = useState(null); // { tipo, item, ocorrencias? }
+  const editarRegistro = async (item) => {
+    if (item.rdo) {
+      const { data } = await supabase.from("ocorrencias").select("*").eq("rdo_id", item.rdo.id);
+      setEditandoRegistro({ tipo: "rdo", item: item.rdo, ocorrencias: data || [] });
+    } else if (item.ocorrencia) setEditandoRegistro({ tipo: "ocorrencia", item: item.ocorrencia });
   };
 
   const enviarArquivos = async (arquivos) => {
@@ -225,8 +233,14 @@ export default function DocumentosPage() {
                           <Icone nome="download" className="w-4 h-4" />
                         </button>
                       )}
-                      {editavel && i.tipo === "arquivo" && (
-                        <button onClick={() => excluir(i)} className="p-2 rounded-lg text-muteddim hover:text-red hover:bg-red/5" aria-label={`Excluir ${i.nome}`} title="Excluir">
+                      {master && (i.rdo || i.ocorrencia) && (
+                        <button onClick={() => editarRegistro(i)} className="p-2 rounded-lg text-muted hover:bg-panel" aria-label={`Editar o registro de ${i.nome}`}
+                          title={i.rdo ? "Editar o RDO (o PDF é refeito)" : "Editar a ocorrência (o PDF é refeito)"}>
+                          <Icone nome="editar" className="w-4 h-4" />
+                        </button>
+                      )}
+                      {master && i.caminho && (
+                        <button onClick={() => setExcluindo(i)} className="p-2 rounded-lg text-muteddim hover:text-red hover:bg-red/5" aria-label={`Excluir ${i.nome}`} title="Excluir">
                           <Icone nome="lixo" className="w-4 h-4" />
                         </button>
                       )}
@@ -241,6 +255,23 @@ export default function DocumentosPage() {
           </>
         )}
       </div>
+      {excluindo && (
+        <ConfirmarExclusao titulo="Excluir documento"
+          descricao={`O arquivo "${excluindo.nome}" será apagado.${excluindo.rdo || excluindo.ocorrencia ? " O registro (RDO/ocorrência) continua existindo e o PDF pode ser gerado de novo aqui." : ""}`}
+          onFechar={() => setExcluindo(null)}
+          onConfirmar={async (motivo) => {
+            const r = await excluirDocumento({ caminho: excluindo.caminho, pi: resultado.pi, usuario, motivo });
+            if (r.ok) { avisar("Documento excluído — registrado na Auditoria.", "info"); buscar(resultado.pi.id); }
+            return r;
+          }} />
+      )}
+      {editandoRegistro?.tipo === "rdo" && (
+        <EditorRdo rdo={editandoRegistro.item} pi={resultado?.pi} pis={pis} comoAprovador ocorrenciasOriginais={editandoRegistro.ocorrencias}
+          onFechar={() => setEditandoRegistro(null)} onSalvo={() => buscar(resultado.pi.id)} />
+      )}
+      {editandoRegistro?.tipo === "ocorrencia" && (
+        <EditorOcorrencia oc={editandoRegistro.item} pis={pis} comoAprovador onFechar={() => setEditandoRegistro(null)} onSalvo={() => buscar(resultado.pi.id)} />
+      )}
     </PainelShell>
   );
 }

@@ -14,6 +14,8 @@ import { EditorRdo, EditorHoras, EditorSolicitacao } from "../../components/Edit
 import { CabecalhoPagina, EstadoVazio, Esqueleto, Aviso, Spinner } from "../../components/ui";
 import Icone from "../../components/Icone";
 import CartaoOcorrencia from "../../components/CartaoOcorrencia";
+import AcoesMaster from "../../components/AcoesMaster";
+import { excluirRdo, excluirHoras, excluirOcorrencia, excluirSolicitacao } from "../../lib/exclusoes";
 
 const ROTULO_CAMPO = { data_prevista_inicio: "Data de início", data_prevista_fim: "Data de término", nome: "Nome da etapa", outro: "Outro" };
 const CAMPOS_APLICAVEIS = ["data_prevista_inicio", "data_prevista_fim", "nome"];
@@ -169,7 +171,9 @@ export default function AprovacoesPage() {
                 editadoPor={rdo.editado_por ? nomeUsuario(rdo.editado_por) : null}
                 ocorrencias={ocorrencias.filter((o) => o.rdo_id === rdo.id)}
                 onAprovar={(aplicar) => aprovarRdo(rdo, aplicar)} onReprovar={(m) => reprovarRdo(rdo, m)}
-                onEditar={() => setEditando({ tipo: "rdo", item: rdo })} />
+                onEditar={() => setEditando({ tipo: "rdo", item: rdo })}
+                rodapeMaster={<AcoesMaster excluir={(motivo) => excluirRdo({ rdo, pi: piInfo(rdo.pi_id), usuario, motivo })} onExcluido={recarregarRdos}
+                  tituloExclusao="Excluir RDO" descricaoExclusao="O RDO, as ocorrências registradas nele e o PDF serão apagados." />} />
             ))}
           </div>
         )}
@@ -183,7 +187,9 @@ export default function AprovacoesPage() {
                 // a chave inclui o total: quando o check-out ou uma edição chega, o card reinicia os campos com o valor novo
                 <HorasCard key={`${h.id}-${h.horas_totais}`} registro={h} pi={piInfo(h.pi_id)} pessoa={nomeUsuario(h.usuario_id)} editavel={editavel}
                   editadoPor={h.editado_por ? nomeUsuario(h.editado_por) : null}
-                  onAprovar={aprovarHoras} onReprovar={(m) => reprovarHoras(h, m)} onEditar={() => setEditando({ tipo: "horas", item: h })} />
+                  onAprovar={aprovarHoras} onReprovar={(m) => reprovarHoras(h, m)} onEditar={() => setEditando({ tipo: "horas", item: h })}
+                  rodapeMaster={<AcoesMaster excluir={(motivo) => excluirHoras({ registro: h, pi: piInfo(h.pi_id), pessoa: usuarios.find((u) => u.id === h.usuario_id), usuario, motivo })}
+                    onExcluido={recarregarHoras} tituloExclusao="Excluir lançamento de horas" descricaoExclusao="O lançamento de horas será apagado." />} />
               ))}
             </div>
           </div>
@@ -195,7 +201,9 @@ export default function AprovacoesPage() {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               {ocorrenciasPendentes.map((o) => (
                 <CartaoOcorrencia key={`${o.id}-${o.editado_em || ""}`} oc={o} pi={piInfo(o.pi_id)} pis={pis} podeDecidir={editavel}
-                  pessoa={usuarios.find((u) => u.id === o.registrado_por)} onMudou={recarregarOcorrencias} />
+                  pessoa={usuarios.find((u) => u.id === o.registrado_por)} onMudou={recarregarOcorrencias}
+                  rodapeMaster={<AcoesMaster excluir={(motivo) => excluirOcorrencia({ oc: o, pi: piInfo(o.pi_id), usuario, motivo })} onExcluido={recarregarOcorrencias}
+                    tituloExclusao="Excluir ocorrência" descricaoExclusao="A ocorrência e o PDF serão apagados." />} />
               ))}
             </div>
           </div>
@@ -212,7 +220,9 @@ export default function AprovacoesPage() {
                   editadoPor={s.editado_por ? nomeUsuario(s.editado_por) : null}
                   editavel={editavel} podeDecidir={podeDecidirSolicitacao(s)} finalizaDireto={usuario?.perfil === "master"}
                   onDecidir={(aprovar, motivo) => decidirSolicitacao(s, aprovar, motivo)}
-                  onEditar={() => setEditando({ tipo: "solicitacao", item: s })} />
+                  onEditar={() => setEditando({ tipo: "solicitacao", item: s })}
+                  rodapeMaster={<AcoesMaster excluir={(motivo) => excluirSolicitacao({ s, etapa, usuario, motivo })} onExcluido={recarregarSolicitacoes}
+                    tituloExclusao="Excluir solicitação" descricaoExclusao="A solicitação de alteração será apagada (o cronograma não muda)." />} />
               );
             })}
           </div>
@@ -288,7 +298,7 @@ function SeloEditado({ nome }) {
   return nome ? <span className="selo bg-cyan/10 text-cyan">editado por {nome}</span> : null;
 }
 
-function RdoCard({ rdo, pi, lider, editadoPor, ocorrencias, editavel, onAprovar, onReprovar, onEditar }) {
+function RdoCard({ rdo, pi, lider, editadoPor, ocorrencias, editavel, onAprovar, onReprovar, onEditar, rodapeMaster }) {
   const [aplicar, setAplicar] = useState(true);
   const [verAssinatura, setVerAssinatura] = useState(false);
   return (
@@ -351,11 +361,12 @@ function RdoCard({ rdo, pi, lider, editadoPor, ocorrencias, editavel, onAprovar,
         Atualizar o andamento das etapas no cronograma ao aprovar
       </label>
       <BotoesDecisao habilitado={editavel} onAprovar={() => onAprovar(aplicar)} onEditar={onEditar} onReprovar={onReprovar} />
+      {rodapeMaster && <div className="flex justify-end mt-3 pt-3 border-t border-line/70">{rodapeMaster}</div>}
     </div>
   );
 }
 
-function HorasCard({ registro, pi, pessoa, editadoPor, editavel, onAprovar, onReprovar, onEditar }) {
+function HorasCard({ registro, pi, pessoa, editadoPor, editavel, onAprovar, onReprovar, onEditar, rodapeMaster }) {
   const total = Number(registro.horas_totais) || 0;
   const emAberto = registro.entrada && !registro.saida;
   const [normais, setNormais] = useState(total);
@@ -399,12 +410,13 @@ function HorasCard({ registro, pi, pessoa, editadoPor, editavel, onAprovar, onRe
         <BotoesDecisao habilitado={editavel}
           aprovarBloqueado={emAberto ? "Aguardando o check-out — use Editar para informar a saída." : null}
           onAprovar={() => onAprovar(registro, Number(normais), Number(extras))} onEditar={onEditar} onReprovar={onReprovar} />
+        {rodapeMaster && <div className="flex justify-end mt-3 pt-3 border-t border-line/70">{rodapeMaster}</div>}
       </div>
     </div>
   );
 }
 
-function SolicitacaoCard({ s, etapa, pi, solicitante, editadoPor, editavel, podeDecidir, finalizaDireto, onDecidir, onEditar }) {
+function SolicitacaoCard({ s, etapa, pi, solicitante, editadoPor, editavel, podeDecidir, finalizaDireto, onDecidir, onEditar, rodapeMaster }) {
   const st = STATUS_SOLICITACAO[s.status] || { rotulo: s.status, classe: "bg-panel text-muted" };
   const ehData = s.campo_alterado === "data_prevista_inicio" || s.campo_alterado === "data_prevista_fim";
   const mostrar = (v) => (!v ? "—" : ehData && /^\d{4}-\d{2}-\d{2}/.test(v) ? formatarData(v) : v);
@@ -433,6 +445,7 @@ function SolicitacaoCard({ s, etapa, pi, solicitante, editadoPor, editavel, pode
         dica={s.status === "pendente_coordenador" && !finalizaDireto ? "Ao aprovar, segue para o Gerente." : null}
         onAprovar={() => onDecidir(true)} onEditar={onEditar} onReprovar={(m) => onDecidir(false, m)} />
       {editavel && !podeDecidir && <div className="text-xs text-muteddim mt-1">{aguardando}</div>}
+      {rodapeMaster && <div className="flex justify-end mt-3 pt-3 border-t border-line/70">{rodapeMaster}</div>}
     </div>
   );
 }

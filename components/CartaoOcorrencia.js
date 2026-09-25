@@ -11,7 +11,7 @@ import Icone from "./Icone";
 
 // Ocorrência aguardando aprovação: Aprovar · Editar · Reprovar (motivo obrigatório).
 // Usado pelo líder (celular) e pelo coordenador/gerente (Aprovações, no painel).
-export default function CartaoOcorrencia({ oc, pi, pessoa, pis, podeDecidir = true, compacto = false, onMudou }) {
+export default function CartaoOcorrencia({ oc, pi, pessoa, pis, podeDecidir = true, compacto = false, onMudou, rodapeMaster }) {
   const { usuario } = useAuth();
   const { avisar } = useToast();
   const [editando, setEditando] = useState(false);
@@ -79,6 +79,7 @@ export default function CartaoOcorrencia({ oc, pi, pessoa, pis, podeDecidir = tr
           <button onClick={() => setReprovando(true)} disabled={!podeDecidir || ocupado} className={`${botao} btn-contorno-perigo`}><Icone nome="fechar" className="w-4 h-4" /> Reprovar</button>
         </div>
       )}
+      {rodapeMaster && <div className="flex justify-end mt-3 pt-3 border-t border-line/70">{rodapeMaster}</div>}
       {editando && <EditorOcorrencia oc={oc} pis={pis} comoAprovador onFechar={() => setEditando(false)} onSalvo={onMudou} />}
     </div>
   );

@@ -9,6 +9,9 @@ import PainelShell from "../../components/PainelShell";
 import { CabecalhoPagina, EstadoVazio, Aviso, Spinner } from "../../components/ui";
 import Icone from "../../components/Icone";
 import { formatarData, horaCurta } from "../../lib/datas";
+import AcoesMaster from "../../components/AcoesMaster";
+import { EditorHoras } from "../../components/Editores";
+import { excluirHoras, limparRealizados } from "../../lib/exclusoes";
 
 const VERDE_ESCURO = "#1B6E2D";
 const VERMELHO = "#D64545";
@@ -125,7 +128,7 @@ export default function RelatoriosPage() {
                   itens={itensDoPi} pi={piVisto} editavel={editavel} usuario={usuario} onSalvo={recarregarOrcamentos} />
               )}
               {visualizando.horas && (
-                <LancamentosHoras key={`lanc-${piVisto.id}`} lancamentos={lancamentos} usuarios={usuarios} categorias={categoriasHoras}
+                <LancamentosHoras key={`lanc-${piVisto.id}`} lancamentos={lancamentos} usuarios={usuarios} categorias={categoriasHoras} pis={pis}
                   pi={piVisto} editavel={editavel} usuario={usuario} onSalvo={recarregarApontamentos} />
               )}
             </div>
@@ -145,8 +148,10 @@ function horasDoLancamento(a) {
 }
 const fmtH = (n) => `${(Number(n) || 0).toLocaleString("pt-BR", { maximumFractionDigits: 2 })} h`;
 
-function LancamentosHoras({ lancamentos, usuarios, categorias, pi, editavel, usuario, onSalvo }) {
+function LancamentosHoras({ lancamentos, usuarios, categorias, pis, pi, editavel, usuario, onSalvo }) {
   const { avisar } = useToast();
+  const [editando, setEditando] = useState(null);
+  const master = usuario?.perfil === "master";
   const [salvando, setSalvando] = useState({});
   const pessoa = (id) => usuarios.find((u) => u.id === id);
   const inicio = (l) => (l.entrada ? horaCurta(l.entrada) : l.hora_inicio || "—");
@@ -205,6 +210,7 @@ function LancamentosHoras({ lancamentos, usuarios, categorias, pi, editavel, usu
                 <th className="px-3 py-2.5 titulo-secao">Cód. normais</th>
                 <th className="px-3 py-2.5 titulo-secao text-right">Extras</th>
                 <th className="px-3 py-2.5 titulo-secao">Cód. extras</th>
+                {master && <th className="px-3 py-2.5 titulo-secao">Master</th>}
               </tr>
             </thead>
             <tbody className="divide-y divide-line/70">
@@ -224,6 +230,15 @@ function LancamentosHoras({ lancamentos, usuarios, categorias, pi, editavel, usu
                     <td className="px-3 py-1.5"><SeletorCodigo l={l} campo="categoria_normal_id" horas={l.normais} /></td>
                     <td className="px-3 py-2 text-right font-mono whitespace-nowrap">{fmtH(l.extras)}</td>
                     <td className="px-3 py-1.5"><SeletorCodigo l={l} campo="categoria_extra_id" horas={l.extras} /></td>
+                    {master && (
+                      <td className="px-3 py-1.5">
+                        <div className="[&_.selo]:hidden">
+                          <AcoesMaster onEditar={() => setEditando(l)} onExcluido={onSalvo}
+                            excluir={(motivo) => excluirHoras({ registro: l, pi, pessoa: p, usuario, motivo })}
+                            tituloExclusao="Excluir lançamento de horas" descricaoExclusao={`Lançamento de ${p?.nome || "—"} em ${formatarData(l.data)} será apagado.`} />
+                        </div>
+                      </td>
+                    )}
                   </tr>
                 );
               })}
@@ -235,6 +250,7 @@ function LancamentosHoras({ lancamentos, usuarios, categorias, pi, editavel, usu
                 <td />
                 <td className="px-3 py-3 text-right font-mono font-bold whitespace-nowrap">{fmtH(totalE)}</td>
                 <td />
+                {master && <td />}
               </tr>
             </tfoot>
           </table>
@@ -243,6 +259,7 @@ function LancamentosHoras({ lancamentos, usuarios, categorias, pi, editavel, usu
       <div className="px-4 md:px-5 py-2.5 text-xs text-muted border-t border-line print:hidden">
         Escolha o código de cada lançamento: as horas são somadas na coluna “Horas Realizadas” daquele código, na tabela acima. Lançamentos reprovados não aparecem.
       </div>
+      {editando && <EditorHoras registro={editando} pis={pis} comoAprovador onFechar={() => setEditando(null)} onSalvo={onSalvo} />}
     </section>
   );
 }
@@ -314,7 +331,7 @@ function TabelaOrcadoRealizado({ tipo, titulo, colOrcado, colRealizado, categori
     }
     sujosRef.current.delete(catId);
     const cat = categorias.find((c) => c.id === catId);
-    registrarLog(usuario, `Lançou ${tipo === "custo" ? "custo" : "horas"} realizado`, `${pi.codigo} — ${cat?.codigo} ${cat?.nome}: ${valor ?? "—"}`);
+    registrarLog(usuario, `${usuario?.perfil === "master" ? "Editou" : "Lançou"} ${tipo === "custo" ? "custo" : "horas"} realizado${usuario?.perfil === "master" ? " (Master)" : ""}`, `${pi.codigo} — ${cat?.codigo} ${cat?.nome}: ajuste manual ${anterior ?? "—"} → ${valor ?? "—"}`);
     onSalvo?.();
   };
 
@@ -329,7 +346,15 @@ function TabelaOrcadoRealizado({ tipo, titulo, colOrcado, colRealizado, categori
     <section className="cartao overflow-hidden">
       <div className="px-4 md:px-5 py-3 border-b border-line flex items-center justify-between gap-2">
         <h2 className="font-head font-bold text-base text-cyan">{titulo}</h2>
-        <span className="text-xs text-muted">{tipo === "custo" ? "Valores em R$" : "Valores em horas"}</span>
+        <div className="flex items-center gap-3">
+          <span className="text-xs text-muted">{tipo === "custo" ? "Valores em R$" : "Valores em horas"}</span>
+          <div className="print:hidden">
+            <AcoesMaster onExcluido={() => { sujosRef.current.clear(); onSalvo?.(); }}
+              excluir={(motivo) => limparRealizados({ pi, categoriaIds: categorias.map((c) => c.id), grupo: titulo, usuario, motivo })}
+              tituloExclusao="Apagar valores realizados"
+              descricaoExclusao={`Todos os valores realizados digitados em "${titulo}" deste PI serão apagados (os valores orçados e os lançamentos de horas não mudam).`} />
+          </div>
+        </div>
       </div>
       {erroColuna && (
         <Aviso tipo="erro" className="m-4">
