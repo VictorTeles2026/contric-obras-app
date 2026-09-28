@@ -88,7 +88,7 @@ export default function PainelShell({ children }) {
     <div className="min-h-[100dvh] flex flex-col md:flex-row bg-panel">
       {/* Sidebar — desktop */}
       <aside className="hidden md:flex md:flex-col print:!hidden w-60 shrink-0 bg-navy text-white p-4 sticky top-0 h-screen">
-        <div className="mb-7 px-1 flex items-center justify-between"><Logo claro /><SinoNotificacoes usuario={usuario} /></div>
+        <div className="mb-6 px-1 flex items-center justify-between"><Logo tamanho="lg" claro /><SinoNotificacoes usuario={usuario} /></div>
         <nav className="flex flex-col gap-0.5 overflow-y-auto rolagem-fina -mx-1 px-1">
           {navVisivel.map((item) => itemMenu(item))}
         </nav>

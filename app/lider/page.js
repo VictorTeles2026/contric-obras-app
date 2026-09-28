@@ -76,7 +76,7 @@ export default function LiderHomePage() {
           <>
             {/* status do dia */}
             {pisSemRdoHoje.length > 0 ? (
-              <Link href="/lider/rdo" className="block rounded-2xl bg-gradient-to-br from-cyan to-[#0a6a86] text-white p-5 shadow-md active:scale-[0.99] transition-transform">
+              <Link href="/lider/rdo" className="block rounded-2xl bg-gradient-to-br from-cyan to-navysoft text-white p-5 shadow-md active:scale-[0.99] transition-transform">
                 <div className="flex items-start gap-3">
                   <div className="w-11 h-11 rounded-xl bg-white/15 flex items-center justify-center shrink-0"><Icone nome="rdo" className="w-6 h-6" /></div>
                   <div className="flex-1 min-w-0">

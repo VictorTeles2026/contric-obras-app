@@ -5,9 +5,9 @@ module.exports = {
   theme: {
     extend: {
       colors: {
-        navy: "#0E1B3D",
-        navysoft: "#16264F",
-        cyan: "#0B84A5",
+        navy: "#0B2E44", // cores do logo Contric
+        navysoft: "#13435E",
+        cyan: "#1780AE",
         green: "#2E9E44",
         amber: "#C97A21",
         red: "#D64545",

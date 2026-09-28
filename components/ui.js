@@ -4,20 +4,15 @@ import { useEffect, useState } from "react";
 import Icone from "./Icone";
 
 export function Logo({ tamanho = "md", claro = false }) {
-  const t = tamanho === "lg" ? "w-10 h-10 text-lg" : tamanho === "sm" ? "w-7 h-7 text-sm" : "w-8 h-8 text-base";
-  return (
-    <div className="flex items-center gap-2.5">
-      <div className={`${t} rounded-xl bg-gradient-to-br from-cyan to-[#0a6a86] flex items-center justify-center font-head font-bold text-white shadow-sm`}>C</div>
-      <span className={`font-head font-bold ${tamanho === "lg" ? "text-xl" : "text-[15px]"} ${claro ? "text-white" : "text-textmain"}`}>Contric</span>
-    </div>
-  );
+  // logo oficial: versão "claro" (texto branco) para fundos escuros
+  const h = tamanho === "xl" ? "h-28" : tamanho === "lg" ? "h-16" : tamanho === "sm" ? "h-10" : "h-12";
+  return <img src={claro ? "/logo-claro.png" : "/logo.png"} alt="Contric" className={`${h} w-auto select-none`} draggable={false} />;
 }
 
 export function TelaCarregando({ texto = "Carregando..." }) {
   return (
     <div className="min-h-[100dvh] flex flex-col items-center justify-center gap-4 bg-panel">
-      <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-cyan to-[#0a6a86] flex items-center justify-center font-head font-bold text-white text-lg animate-pulse">C</div>
-      <div className="text-sm text-muted">{texto}</div>
+      <img src="/simbolo.png" alt="Contric" className="h-12 w-auto animate-pulse" /><div className="text-sm text-muted">{texto}</div>
     </div>
   );
 }
@@ -76,7 +71,7 @@ export function Campo({ rotulo, dica, children, className = "" }) {
 
 export function Aviso({ tipo = "info", children, className = "" }) {
   const estilos = {
-    info: "bg-cyan/5 border-cyan/25 text-[#0a6a86]",
+    info: "bg-cyan/5 border-cyan/25 text-navysoft",
     alerta: "bg-amber/10 border-amber/30 text-[#9a5a14]",
     erro: "bg-red/10 border-red/30 text-red",
     sucesso: "bg-green/10 border-green/30 text-[#23793a]",

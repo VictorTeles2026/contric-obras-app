@@ -7,11 +7,11 @@ export const metadata = {
   description: "Sistema de gestão de obras da Contric",
   manifest: "/manifest.json",
   appleWebApp: { capable: true, title: "Contric", statusBarStyle: "black-translucent" },
-  icons: { apple: "/icon-192.png" },
+  icons: { icon: "/favicon.png", apple: "/apple-touch-icon.png" },
 };
 
 export const viewport = {
-  themeColor: "#0E1B3D",
+  themeColor: "#0B2E44",
   width: "device-width",
   initialScale: 1,
   viewportFit: "cover",

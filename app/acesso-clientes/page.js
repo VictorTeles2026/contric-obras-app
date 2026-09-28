@@ -37,7 +37,7 @@ export default function AcessoClientesLogin() {
       <div className="relative flex-1 flex items-center justify-center p-5" style={{ paddingTop: "max(1.25rem, env(safe-area-inset-top))" }}>
         <div className="w-full max-w-sm">
           <div className="flex items-center gap-3 mb-8">
-            <div className="w-11 h-11 rounded-xl bg-zinc-100 text-zinc-900 flex items-center justify-center font-head font-bold text-lg">C</div>
+            <img src="/logo-claro.png" alt="Contric" className="h-14 w-auto" />
             <div>
               <div className="font-head font-bold text-lg leading-tight">Acesso Clientes</div>
               <div className="text-sm text-zinc-400 leading-tight">Contric — Gestão de Obras</div>

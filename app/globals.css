@@ -35,7 +35,7 @@ input[type="date"], input[type="time"] {
 }
 
 :focus-visible {
-  outline: 2px solid #0B84A5;
+  outline: 2px solid #1780AE;
   outline-offset: 2px;
 }
 
@@ -169,7 +169,7 @@ input[type="date"], input[type="time"] {
 .dashboard-grade .react-draggable-dragging { cursor: grabbing; z-index: 40; }
 .dashboard-grade .react-draggable-dragging > * { box-shadow: 0 18px 40px rgba(14, 27, 61, 0.22); }
 .dashboard-grade .react-grid-item.react-grid-placeholder {
-  background: #0B84A5; opacity: 0.12; border-radius: 12px; border: 2px dashed #0B84A5;
+  background: #1780AE; opacity: 0.12; border-radius: 12px; border: 2px dashed #1780AE;
 }
 /* alças: a borda inteira de cada lado é "pegável" (não só um ícone no canto) */
 .dashboard-grade .react-resizable-handle { background-image: none; padding: 0; margin: 0; transform: none; z-index: 5; }

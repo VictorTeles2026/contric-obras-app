@@ -49,7 +49,7 @@ export default function PortalCliente() {
       <header className="sticky top-0 z-30 bg-zinc-900 text-zinc-100 shadow-lg" style={{ paddingTop: "env(safe-area-inset-top)" }}>
         <div className="max-w-5xl mx-auto px-4 h-16 flex items-center justify-between gap-3">
           <div className="flex items-center gap-3 min-w-0">
-            <div className="w-10 h-10 rounded-xl bg-zinc-100 text-zinc-900 flex items-center justify-center font-head font-bold shrink-0">C</div>
+            <img src="/logo-claro.png" alt="Contric" className="h-11 w-auto shrink-0" />
             <div className="min-w-0">
               <div className="font-head font-bold leading-tight truncate">Acesso Clientes Contric</div>
               <div className="text-xs text-zinc-400 truncate">{usuario.nome}{usuario.empresa ? ` · ${usuario.empresa}` : ""}</div>

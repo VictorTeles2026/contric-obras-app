@@ -40,14 +40,12 @@ export default function MobileShell({ children, nav, perfis, titulo }) {
   return (
     <div className="min-h-[100dvh] bg-panel flex flex-col">
       <header
-        className="sticky top-0 z-30 bg-navy text-white shrink-0 shadow-[0_2px_12px_rgba(14,27,61,0.18)]"
+        className="sticky top-0 z-30 bg-navy text-white shrink-0 shadow-[0_2px_12px_rgba(11,46,68,0.18)]"
         style={{ paddingTop: "env(safe-area-inset-top)" }}
       >
         <div className="flex items-center justify-between gap-3 px-4 h-16 max-w-2xl mx-auto">
           <div className="flex items-center gap-3 min-w-0">
-            <div className="w-10 h-10 rounded-full bg-gradient-to-br from-cyan to-[#0a6a86] flex items-center justify-center font-head font-bold text-sm shrink-0 ring-2 ring-white/15">
-              {iniciais(usuario.nome)}
-            </div>
+            <img src="/logo-claro.png" alt="Contric" className="h-11 w-auto shrink-0" />
             <div className="min-w-0">
               <div className="font-head font-bold text-[15px] leading-tight truncate">{titulo || usuario.nome}</div>
               <div className="text-xs text-slate-300 leading-tight mt-0.5 truncate">

@@ -44,24 +44,12 @@ export default function LoginPage() {
   const logadoSemCadastro = !carregandoAuth && sessao && !usuario && erroCadastro;
 
   return (
-    <div className="min-h-[100dvh] flex flex-col lg:flex-row bg-panel">
-      {/* painel da marca (desktop) / faixa (mobile) */}
-      <div className="relative overflow-hidden bg-navy text-white lg:w-[44%] px-6 pt-[max(2rem,env(safe-area-inset-top))] pb-10 lg:p-12 flex flex-col justify-between">
-        <div className="absolute -right-24 -top-24 w-72 h-72 rounded-full bg-cyan/20 blur-3xl" />
-        <div className="absolute -left-16 bottom-0 w-60 h-60 rounded-full bg-cyan/10 blur-3xl" />
-        <div className="relative"><Logo tamanho="lg" claro /></div>
-        <div className="relative mt-8 lg:mt-0">
-          <h2 className="font-head font-bold text-2xl lg:text-4xl leading-tight">Gestão de obras,<br className="hidden lg:block" /> do escritório ao canteiro.</h2>
-          <p className="text-slate-300 mt-3 text-sm lg:text-base max-w-md">Cronograma, RDO, horas e recursos em um só lugar — no computador e no celular.</p>
-        </div>
-        <div className="relative hidden lg:block text-xs text-slate-400">© Contric</div>
-      </div>
-
-      <div className="flex-1 flex items-start lg:items-center justify-center px-4 -mt-6 lg:mt-0 pb-10">
-        <div className="w-full max-w-sm cartao p-6 sm:p-8 shadow-xl lg:shadow-sm animar-surgir">
-          <h1 className="font-head font-bold text-2xl mb-1">Entrar</h1>
-          <p className="text-sm text-muted mb-6">Acesso restrito à equipe Contric.</p>
-
+    <div className="relative min-h-[100dvh] flex items-center justify-center lg:justify-end px-4 py-10 lg:px-16 bg-navy bg-cover bg-center"
+      style={{ backgroundImage: "url(/fundo-login.webp)", paddingTop: "max(2.5rem, env(safe-area-inset-top))" }}>
+      <div className="absolute inset-0 bg-gradient-to-t from-navy/70 via-navy/20 to-transparent lg:bg-gradient-to-l lg:from-navy/50 lg:via-transparent" />
+      <div className="relative w-full max-w-sm">
+        <div className="cartao p-6 sm:p-8 shadow-2xl animar-surgir bg-white/95 backdrop-blur">
+          <div className="flex justify-center mb-6"><Logo tamanho="xl" /></div>
           {logadoSemCadastro ? (
             <div className="flex flex-col gap-3">
               <Aviso tipo="alerta">{erroCadastro}</Aviso>
