@@ -11,7 +11,10 @@ import PainelSuspenso from "../../components/PainelSuspenso";
 
 const STATUS_COR = Object.fromEntries(Object.entries(STATUS_ETAPA).map(([k, v]) => [k, v.barra]));
 const LABEL_W = 240;
-const PALETA_FILTRO = ["#0B84A5", "#2E9E44", "#C97A21", "#8E5CD9", "#D64545", "#3D8FB5", "#B5752E", "#5C8E5C"];
+// listas de filtro (clientes, equipes, recursos) com o mesmo visual de um campo de seleção
+const ESTILO_LISTA = "input !w-auto !py-2 !text-sm max-w-[220px] truncate text-left cursor-pointer";
+const ESTILO_LISTA_ATIVA = "!border-cyan/40 !text-cyan";
+const PALETA_FILTRO =["#0B84A5", "#2E9E44", "#C97A21", "#8E5CD9", "#D64545", "#3D8FB5", "#B5752E", "#5C8E5C"];
 
 function formatarData(ts) {
   return new Date(ts).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
@@ -72,8 +75,23 @@ export default function LinhaDoTempoPage() {
   // listas de filtro: abrem em primeiro plano (PainelSuspenso), presas ao botão
   const equipesRef = useRef(null);
   const recursosRef = useRef(null);
-  const aplicarFiltro = () => { setFiltroAtivo({ equipes: equipesDraft, recursos: recursosDraft }); setEquipesDropdownAberto(false); setRecursosDropdownAberto(false); };
-  const limparFiltro = () => { setEquipesDraft([]); setRecursosDraft([]); setFiltroAtivo({ equipes: [], recursos: [] }); };
+  // ---- filtro por cliente (texto, sem diferenciar maiúsculas/minúsculas) ----
+  const chaveCliente = (c) => (c || "").trim().toLocaleLowerCase("pt-BR");
+  const [clientesDropdownAberto, setClientesDropdownAberto] = useState(false);
+  const [clientesDraft, setClientesDraft] = useState([]); // chaves normalizadas
+  const [clientesAtivos, setClientesAtivos] = useState([]);
+  const toggleClienteDraft = (k) => setClientesDraft((p) => p.includes(k) ? p.filter((x) => x !== k) : [...p, k]);
+  const clientesRef = useRef(null);
+  // uma opção por cliente (agrupa grafias como "ACME" e "Acme"), exibindo a primeira grafia encontrada
+  const clientes = useMemo(() => {
+    const mapa = new Map();
+    pis.forEach((p) => { const k = chaveCliente(p.cliente); if (k && !mapa.has(k)) mapa.set(k, p.cliente.trim()); });
+    return [...mapa].map(([chave, nome]) => ({ chave, nome })).sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR", { sensitivity: "base" }));
+  }, [pis]);
+  const fecharListas = () => { setEquipesDropdownAberto(false); setRecursosDropdownAberto(false); setClientesDropdownAberto(false); };
+
+  const aplicarFiltro = () => { setFiltroAtivo({ equipes: equipesDraft, recursos: recursosDraft }); setClientesAtivos(clientesDraft); fecharListas(); };
+  const limparFiltro = () => { setEquipesDraft([]); setRecursosDraft([]); setClientesDraft([]); setClientesAtivos([]); setFiltroAtivo({ equipes: [], recursos: [] }); };
 
   // cada equipe/recurso selecionado no filtro ganha uma cor fixa (mesma ordem: equipes depois recursos)
   const itensFiltro = useMemo(() => {
@@ -99,11 +117,7 @@ export default function LinhaDoTempoPage() {
       : recursoBateNaEtapa(it.valor, etapa)
   );
 
-  // ---- filtro por cliente ----
-  const [clienteFiltro, setClienteFiltro] = useState("");
-  const clientes = useMemo(() => [...new Set(pis.map((p) => p.cliente).filter(Boolean))].sort((a, b) => a.localeCompare(b, "pt-BR")), [pis]);
-
-  const pisSelecionados = pis.filter((p) => piIds.includes(p.id) && (!clienteFiltro || p.cliente === clienteFiltro));
+  const pisSelecionados = pis.filter((p) => piIds.includes(p.id) && (clientesAtivos.length === 0 || clientesAtivos.includes(chaveCliente(p.cliente))));
   const idsVisiveis = pisSelecionados.map((p) => p.id);
   const etapasDosPis = etapas.filter((e) => idsVisiveis.includes(e.pi_id));
   // monta a lista na mesma ordem de criação do Cronograma: cada macro-etapa
@@ -216,14 +230,24 @@ export default function LinhaDoTempoPage() {
 
         {/* ---- filtro por equipe / recurso ---- */}
         <div className="cartao flex flex-wrap items-center gap-2 mb-4 p-3">
-          <select value={clienteFiltro} onChange={(e) => setClienteFiltro(e.target.value)}
-            className={`input !w-auto !py-2 !text-sm max-w-[220px] ${clienteFiltro ? "!border-cyan/40 !text-cyan" : ""}`} aria-label="Filtrar por cliente">
-            <option value="">Todos os clientes</option>
-            {clientes.map((c) => <option key={c} value={c}>{c}</option>)}
-          </select>
+          <div className="relative" ref={clientesRef}>
+            <button onClick={() => { const abrir = !clientesDropdownAberto; fecharListas(); setClientesDropdownAberto(abrir); }} className={`${ESTILO_LISTA} ${clientesDraft.length ? ESTILO_LISTA_ATIVA : ""}`}>
+              {clientesDraft.length > 0 ? `Clientes (${clientesDraft.length})` : "Todos os clientes"} ▾
+            </button>
+            <PainelSuspenso ancoraRef={clientesRef} aberto={clientesDropdownAberto} onFechar={() => setClientesDropdownAberto(false)}>
+                {clientes.length === 0 && <div className="text-sm text-muteddim px-2 py-1.5">Nenhum cliente cadastrado.</div>}
+                {clientes.map((c) => (
+                  <label key={c.chave} className="flex items-center gap-2 px-2 py-1.5 text-sm cursor-pointer rounded-lg hover:bg-panel">
+                    <input type="checkbox" className="accent-cyan" checked={clientesDraft.includes(c.chave)} onChange={() => toggleClienteDraft(c.chave)} />
+                    <span className="truncate">{c.nome}</span>
+                  </label>
+                ))}
+              </PainelSuspenso>
+          </div>
+
           <div className="relative" ref={equipesRef}>
-            <button onClick={() => { setEquipesDropdownAberto((o) => !o); setRecursosDropdownAberto(false); }} className={`btn btn-sm !py-2 border ${equipesDraft.length ? "border-cyan/40 text-cyan bg-cyan/5" : "border-line bg-white text-muted"}`}>
-              Equipes{equipesDraft.length > 0 ? ` (${equipesDraft.length})` : ""} ▾
+            <button onClick={() => { const abrir = !equipesDropdownAberto; fecharListas(); setEquipesDropdownAberto(abrir); }} className={`${ESTILO_LISTA} ${equipesDraft.length ? ESTILO_LISTA_ATIVA : ""}`}>
+              {equipesDraft.length > 0 ? `Equipes (${equipesDraft.length})` : "Todas as equipes"} ▾
             </button>
             <PainelSuspenso ancoraRef={equipesRef} aberto={equipesDropdownAberto} onFechar={() => setEquipesDropdownAberto(false)}>
                 {AREAS.map((a) => (
@@ -236,8 +260,8 @@ export default function LinhaDoTempoPage() {
           </div>
 
           <div className="relative" ref={recursosRef}>
-            <button onClick={() => { setRecursosDropdownAberto((o) => !o); setEquipesDropdownAberto(false); }} className={`btn btn-sm !py-2 border ${recursosDraft.length ? "border-cyan/40 text-cyan bg-cyan/5" : "border-line bg-white text-muted"}`}>
-              Recursos{recursosDraft.length > 0 ? ` (${recursosDraft.length})` : ""} ▾
+            <button onClick={() => { const abrir = !recursosDropdownAberto; fecharListas(); setRecursosDropdownAberto(abrir); }} className={`${ESTILO_LISTA} ${recursosDraft.length ? ESTILO_LISTA_ATIVA : ""}`}>
+              {recursosDraft.length > 0 ? `Recursos (${recursosDraft.length})` : "Todos os recursos"} ▾
             </button>
             <PainelSuspenso ancoraRef={recursosRef} aberto={recursosDropdownAberto} onFechar={() => setRecursosDropdownAberto(false)}>
                 {recursos.length === 0 && <div className="text-sm text-muteddim px-2 py-1.5">Nenhum recurso cadastrado.</div>}
@@ -251,7 +275,7 @@ export default function LinhaDoTempoPage() {
           </div>
 
           <button onClick={aplicarFiltro} className="btn btn-primario btn-sm !py-2">Filtrar</button>
-          {(itensFiltro.length > 0 || equipesDraft.length > 0 || recursosDraft.length > 0) && (
+          {(itensFiltro.length > 0 || clientesAtivos.length > 0 || clientesDraft.length > 0 || equipesDraft.length > 0 || recursosDraft.length > 0) && (
             <button onClick={limparFiltro} className="btn btn-fantasma btn-sm !py-2">Limpar filtro</button>
           )}
 
