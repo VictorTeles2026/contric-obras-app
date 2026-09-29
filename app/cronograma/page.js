@@ -136,6 +136,7 @@ export default function CronogramaPage() {
   const alocsDaEtapa = (etapaId) => alocacoesRecurso.filter((a) => a.etapa_id === etapaId);
 
   const [pisModalAberto, setPisModalAberto] = useState(false);
+  const [excluindoPi, setExcluindoPi] = useState(null);
   const [pisModalModo, setPisModalModo] = useState("create");
   const [erro, setErro] = useState("");
 
@@ -389,6 +390,11 @@ export default function CronogramaPage() {
               <Icone nome="editar" className="w-4 h-4" /> Editar PI
             </button>
           )}
+          {usuario?.perfil === "master" && piAtual && (
+            <button onClick={() => setExcluindoPi(piAtual)} className="btn btn-contorno-perigo btn-sm !py-2" title="Apagar o PI e tudo o que está associado a ele (somente Master)">
+              <Icone nome="lixo" className="w-4 h-4" /> Excluir PI
+            </button>
+          )}
           {editavel && piAtual && (
             <button onClick={salvarCronogramaBase}
               title={piAtual.baseline_definida_em ? `Salvo em ${new Date(piAtual.baseline_definida_em).toLocaleString("pt-BR")} — clique para atualizar` : "Congela a versão atual como referência"}
@@ -423,6 +429,10 @@ export default function CronogramaPage() {
         </div>
       )}
 
+      {excluindoPi && (
+        <ExcluirPiModal pi={excluindoPi} onFechar={() => setExcluindoPi(null)}
+          onExcluido={() => { setExcluindoPi(null); setPiSelecionadoId(pis.find((p) => p.id !== excluindoPi.id)?.id || ""); window.location.reload(); }} />
+      )}
       {pisModalAberto && (
         <PiModal
           modo={pisModalModo} piInicial={pisModalModo === "edit" ? piAtual : null}
@@ -823,6 +833,53 @@ function PiModal({ modo, piInicial, categorias, valoresIniciais, onSalvar, onCan
         <div className="text-xs text-muted">Total: <strong className="text-textmain">{soma(moiCats).toLocaleString("pt-BR")} h</strong></div>
       </div>
       {tabela(moiCats, "Horas", "0.5")}
+    </Modal>
+  );
+}
+
+// Exclusão completa do PI (Master): duas confirmações; a segunda avisa que é irreversível
+// e pede para digitar o número do PI.
+function ExcluirPiModal({ pi, onFechar, onExcluido }) {
+  const [passo, setPasso] = useState(1);
+  const [digitado, setDigitado] = useState("");
+  const [excluindo, setExcluindo] = useState(false);
+  const [erro, setErro] = useState("");
+  const confere = digitado.trim() === pi.codigo;
+
+  const excluir = async () => {
+    setExcluindo(true); setErro("");
+    const { ok, json } = await chamarApi("/api/excluir-pi", { piId: pi.id, confirmacao: digitado.trim() });
+    setExcluindo(false);
+    if (!ok) { setErro(json.error || "Não foi possível excluir."); return; }
+    onExcluido();
+  };
+
+  return (
+    <Modal titulo={passo === 1 ? "Excluir PI" : "Confirmação final"} onFechar={() => !excluindo && onFechar()} largura="max-w-md"
+      rodape={passo === 1 ? <>
+        <button onClick={onFechar} className="btn btn-fantasma">Cancelar</button>
+        <button onClick={() => setPasso(2)} className="btn btn-perigo">Sim, quero excluir</button>
+      </> : <>
+        <button onClick={onFechar} disabled={excluindo} className="btn btn-fantasma">Cancelar</button>
+        <button onClick={excluir} disabled={!confere || excluindo} className="btn btn-perigo">
+          {excluindo ? <><Spinner /> Excluindo...</> : "Apagar tudo definitivamente"}
+        </button>
+      </>}>
+      {passo === 1 ? (
+        <p className="text-sm">Tem certeza que deseja excluir o PI <strong className="font-mono text-cyan">{pi.codigo}</strong> — {pi.cliente}{pi.projeto ? ` · ${pi.projeto}` : ""}?</p>
+      ) : (
+        <div className="flex flex-col gap-3 text-sm">
+          <div className="rounded-xl border border-red/40 bg-red/5 text-red p-3.5">
+            <strong>Atenção: esta ação é IRREVERSÍVEL.</strong> Serão apagados definitivamente o PI e <strong>tudo</strong> o que está associado a ele:
+            cronograma e etapas, alocações de recursos, RDOs, ocorrências, lançamentos de horas, orçamento, materiais, acessos de clientes e todos os documentos e PDFs.
+          </div>
+          <label className="block">
+            <span className="rotulo">Para confirmar, digite o número do PI: <strong className="font-mono">{pi.codigo}</strong></span>
+            <input value={digitado} onChange={(e) => setDigitado(e.target.value)} className="input font-mono" autoFocus autoComplete="off" />
+          </label>
+          {erro && <div className="text-red">{erro}</div>}
+        </div>
+      )}
     </Modal>
   );
 }

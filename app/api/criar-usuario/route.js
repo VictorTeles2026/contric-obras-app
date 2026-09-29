@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { exigirMaster, PERFIS_VALIDOS, gerarPinUnico, registrarSenha } from "../../../lib/authServidor";
 
+const equipesValidas = (v) => Array.isArray(v) ? [...new Set(v.map((x) => String(x).trim()).filter(Boolean))] : undefined;
+
 export async function POST(req) {
   const { admin, solicitante, resposta } = await exigirMaster(req);
   if (resposta) return resposta;
@@ -64,6 +66,9 @@ export async function POST(req) {
     if (authUserId) await admin.auth.admin.deleteUser(authUserId);
     return NextResponse.json({ error: erroInsert.message }, { status: 400 });
   }
+
+  const equipes = equipesValidas(body.equipes);
+  if (equipes?.length) await admin.from("usuarios").update({ equipes }).eq("id", usuario.id); // tolera coluna ausente
 
   if (authUserId) await registrarSenha(admin, { authUserId, nome, email, tipo: "usuario", senha, definidaPor: solicitante.nome, origem: "criacao" });
   return NextResponse.json({ usuario });

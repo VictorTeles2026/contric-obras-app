@@ -12,6 +12,7 @@ import { STATUS_PI, COR_STATUS_PI } from "../../lib/constantes";
 import PainelShell from "../../components/PainelShell";
 import { CabecalhoPagina, Esqueleto, EstadoVazio } from "../../components/ui";
 import Icone from "../../components/Icone";
+import DocumentosNaoAbertos from "../../components/DocumentosNaoAbertos";
 
 const GradeResponsiva = WidthProvider(Responsive);
 
@@ -27,6 +28,7 @@ const LAYOUT_PADRAO = {
     { i: "medicoes-20", x: 9, y: 0, w: 3, h: 2, minW: 2, minH: 2 },
     { i: "lista-pis", x: 0, y: 2, w: 5, h: 9, minW: 3, minH: 4 },
     { i: "medicoes", x: 5, y: 2, w: 7, h: 9, minW: 4, minH: 4 },
+    { i: "docs-nao-abertos", x: 0, y: 11, w: 12, h: 8, minW: 4, minH: 4 },
   ],
   md: [
     { i: "pis-ativos", x: 0, y: 0, w: 6, h: 2, minW: 3, minH: 2 },
@@ -35,6 +37,7 @@ const LAYOUT_PADRAO = {
     { i: "medicoes-20", x: 6, y: 2, w: 6, h: 2, minW: 3, minH: 2 },
     { i: "lista-pis", x: 0, y: 4, w: 12, h: 8, minW: 4, minH: 4 },
     { i: "medicoes", x: 0, y: 12, w: 12, h: 8, minW: 4, minH: 4 },
+    { i: "docs-nao-abertos", x: 0, y: 20, w: 12, h: 8, minW: 4, minH: 4 },
   ],
   sm: [
     { i: "pis-ativos", x: 0, y: 0, w: 1, h: 2 },
@@ -43,6 +46,7 @@ const LAYOUT_PADRAO = {
     { i: "medicoes-20", x: 0, y: 6, w: 1, h: 2 },
     { i: "lista-pis", x: 0, y: 8, w: 1, h: 9 },
     { i: "medicoes", x: 0, y: 17, w: 1, h: 9 },
+    { i: "docs-nao-abertos", x: 0, y: 26, w: 1, h: 9 },
   ],
 };
 const IDS = LAYOUT_PADRAO.lg.map((l) => l.i);
@@ -124,6 +128,7 @@ export default function DashboardPage() {
     (!termo || [p.codigo, p.cliente, p.projeto].some((c) => (c || "").toLowerCase().includes(termo))));
 
   const quadros = {
+    "docs-nao-abertos": <DocumentosNaoAbertos usuario={usuario} pis={pis} />,
     "pis-ativos": <Indicador titulo="PIs ativos" valor={pisAtivos.length} detalhe={`${pis.length} no total`} icone="obra" cor="text-cyan bg-cyan/10" href="/cronograma" />,
     aprovacoes: <Indicador titulo="Aprovações pendentes" valor={pendencias} detalhe={`${rdosPendentes.length} RDO · ${horasPendentes.length} horas`} icone="aprovar"
       cor={pendencias ? "text-amber bg-amber/10" : "text-green bg-green/10"} href="/aprovacoes" destaque={pendencias > 0} />,

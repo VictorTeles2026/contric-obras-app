@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { exigirMaster, PERFIS_VALIDOS, gerarPinUnico, registrarSenha } from "../../../lib/authServidor";
 
 const BANIDO = "876000h"; // ~100 anos = efetivamente desabilitado
+const equipesValidas = (v) => Array.isArray(v) ? [...new Set(v.map((x) => String(x).trim()).filter(Boolean))] : undefined;
 
 export async function POST(req) {
   const { admin, solicitante, resposta } = await exigirMaster(req);
@@ -91,6 +92,13 @@ export async function POST(req) {
     await admin.auth.admin.updateUserById(usuario.auth_user_id, {
       ban_duration: ativo ? "none" : BANIDO,
     });
+  }
+
+  // equipes em gravação separada: se a coluna ainda não existir (script não rodado), não trava o resto
+  const equipes = equipesValidas(body.equipes);
+  if (equipes) {
+    const { error: erroEquipes } = await admin.from("usuarios").update({ equipes }).eq("id", id);
+    if (!erroEquipes) usuario.equipes = equipes;
   }
 
   if (novaSenha && usuario.auth_user_id) {

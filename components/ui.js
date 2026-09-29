@@ -164,3 +164,17 @@ export function Segmentado({ opcoes, valor, onChange, className = "" }) {
     </div>
   );
 }
+
+// Seleção de equipes (áreas) em chips — usado no cadastro de usuários e de recursos
+export function SeletorEquipes({ opcoes, valor = [], onChange }) {
+  const alternar = (a) => onChange(valor.includes(a) ? valor.filter((x) => x !== a) : [...valor, a]);
+  return (
+    <div className="flex flex-wrap gap-1.5">
+      {opcoes.map((a) => (
+        <button key={a} type="button" onClick={() => alternar(a)} className={`chip ${valor.includes(a) ? "chip-ativo" : ""}`}>
+          {valor.includes(a) ? "✓ " : ""}{a}
+        </button>
+      ))}
+    </div>
+  );
+}

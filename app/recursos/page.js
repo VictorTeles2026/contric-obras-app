@@ -6,10 +6,10 @@ import EmpresasTerceiras from "../../components/EmpresasTerceiras";
 import { useAuth, podeEditar } from "../../lib/AuthContext";
 import { supabase } from "../../lib/supabase";
 import { hojeISO, formatarData } from "../../lib/datas";
-import { TIPOS_RECURSO } from "../../lib/constantes";
+import { TIPOS_RECURSO, AREAS } from "../../lib/constantes";
 import { useToast } from "../../lib/Toast";
 import PainelShell from "../../components/PainelShell";
-import { Modal, EstadoVazio, Esqueleto, Aviso, Campo } from "../../components/ui";
+import { Modal, EstadoVazio, Esqueleto, Aviso, Campo, SeletorEquipes } from "../../components/ui";
 import Icone from "../../components/Icone";
 import GraficoUtilizacao from "../../components/GraficoUtilizacao";
 const UNIDADES = [["hora", "Hora"], ["diaria", "Diária"], ["semana", "Semana"], ["quinzena", "Quinzena"], ["mes", "Mês"]];
@@ -48,6 +48,7 @@ export default function RecursosPage() {
   const [massaOpen, setMassaOpen] = useState(false);
   const [busca, setBusca] = useState("");
   const [buscaAplicada, setBuscaAplicada] = useState("");
+  const [filtroEquipe, setFiltroEquipe] = useState("");
   const [gruposFechados, setGruposFechados] = useState([]);
 
   const usuariosElegiveis = usuarios.filter((u) => PERFIS_COM_ALOCACAO.includes(u.perfil));
@@ -60,14 +61,14 @@ export default function RecursosPage() {
 
   const recursosFiltrados = useMemo(() => {
     const termo = buscaAplicada.trim().toLowerCase();
-    if (!termo) return recursos;
-    return recursos.filter((r) =>
+    return recursos.filter((r) => (!filtroEquipe || (r.equipes || []).includes(filtroEquipe)) && (!termo ||
       r.nome.toLowerCase().includes(termo) ||
       rotuloTipo(r.tipo).toLowerCase().includes(termo) ||
       (r.atributos?.funcao || "").toLowerCase().includes(termo) ||
-      (usuarios.find((u) => u.id === r.usuario_id)?.nome || "").toLowerCase().includes(termo)
-    );
-  }, [recursos, buscaAplicada, usuarios]);
+      (usuarios.find((u) => u.id === r.usuario_id)?.nome || "").toLowerCase().includes(termo) ||
+      (r.equipes || []).some((a) => a.toLowerCase().includes(termo))
+    ));
+  }, [recursos, buscaAplicada, filtroEquipe, usuarios]);
 
   const grupos = useMemo(() => {
     const porTipo = {};
@@ -103,7 +104,7 @@ export default function RecursosPage() {
   const criarRecurso = async (dados) => {
     const { data, error } = await gravarTolerante({
       nome: dados.nome, tipo: dados.tipo, custo_unidade: dados.unidade,
-      usuario_id: dados.usuarioId || null, atributos: { funcao: dados.funcao || null },
+      usuario_id: dados.usuarioId || null, atributos: { funcao: dados.funcao || null }, equipes: dados.equipes || [],
       empresa_terceira_id: dados.tipo === "mao_obra_terceira" ? dados.empresaId || null : null,
     }, (d) => supabase.from("recursos").insert(d).select().single());
     if (error) { avisar(`Não foi possível criar: ${error.message}`, "erro", 6000); return; }
@@ -119,7 +120,7 @@ export default function RecursosPage() {
     if (!selecionado) return;
     const { error } = await gravarTolerante({
       nome: dados.nome, tipo: dados.tipo, custo_unidade: dados.unidade,
-      usuario_id: dados.usuarioId || null, atributos: { ...(selecionado.atributos || {}), funcao: dados.funcao || null },
+      usuario_id: dados.usuarioId || null, atributos: { ...(selecionado.atributos || {}), funcao: dados.funcao || null }, equipes: dados.equipes || [],
       empresa_terceira_id: dados.tipo === "mao_obra_terceira" ? dados.empresaId || null : null,
     }, (d) => supabase.from("recursos").update(d).eq("id", selecionado.id));
     if (error) { avisar(`Não foi possível salvar: ${error.message}`, "erro", 6000); return; }
@@ -261,8 +262,12 @@ export default function RecursosPage() {
         <div className="relative mb-2">
           <Icone nome="buscar" className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muteddim" />
           <input value={busca} onChange={(e) => { setBusca(e.target.value); setBuscaAplicada(e.target.value); }}
-            placeholder="Buscar por nome, tipo, função..." className="input pl-9" />
+            placeholder="Buscar por nome, tipo, função, equipe..." className="input pl-9" />
         </div>
+        <select value={filtroEquipe} onChange={(e) => setFiltroEquipe(e.target.value)} className={`input mb-2 !py-2 !text-sm ${filtroEquipe ? "!border-cyan/40 !text-cyan" : ""}`} aria-label="Filtrar por equipe">
+          <option value="">Todas as equipes</option>
+          {AREAS.map((a) => <option key={a} value={a}>{a}</option>)}
+        </select>
         <div className="text-xs text-muteddim mb-3 hidden md:block">Clique para ver detalhes · Shift + clique para selecionar vários</div>
 
         {carregandoRecursos && <Esqueleto linhas={5} altura={52} />}
@@ -286,7 +291,7 @@ export default function RecursosPage() {
                           {qtdAlocs > 0 && <span className="selo bg-panel text-muted shrink-0">{qtdAlocs}</span>}
                         </div>
                         <div className="text-muted text-xs truncate">
-                          {r.empresa_terceira_id ? `${nomeEmpresa(r.empresa_terceira_id) || "empresa"} · ` : ""}{r.atributos?.funcao ? `${r.atributos.funcao} · ` : ""}por {rotuloUnidade(r.custo_unidade).toLowerCase()}
+                          {r.empresa_terceira_id ? `${nomeEmpresa(r.empresa_terceira_id) || "empresa"} · ` : ""}{r.atributos?.funcao ? `${r.atributos.funcao} · ` : ""}{(r.equipes || []).length ? `${r.equipes.join(", ")} · ` : ""}por {rotuloUnidade(r.custo_unidade).toLowerCase()}
                         </div>
                       </button>
                     );
@@ -328,6 +333,9 @@ export default function RecursosPage() {
                   {selecionado.atributos?.funcao && <> · {selecionado.atributos.funcao}</>}
                   {selecionado.empresa_terceira_id && <> · <strong className="text-textmain">{nomeEmpresa(selecionado.empresa_terceira_id)}</strong></>}
                 </div>
+                {(selecionado.equipes || []).length > 0 && (
+                  <div className="flex flex-wrap gap-1 mt-1.5">{selecionado.equipes.map((a) => <span key={a} className="selo bg-cyan/10 text-cyan">{a}</span>)}</div>
+                )}
                 {selecionado.usuario_id && (
                   <div className="text-sm text-cyan mt-1 flex items-center gap-1.5"><Icone nome="usuarios" className="w-4 h-4" /> Vinculado a {usuarios.find((u) => u.id === selecionado.usuario_id)?.nome}</div>
                 )}
@@ -351,7 +359,7 @@ export default function RecursosPage() {
             {editarOpen && editavel && (
               <div className="mb-4 max-w-md animar-fade">
                 <RecursoForm usuarios={usuariosElegiveis} empresas={empresasAtivas.concat(empresas.filter((e) => !e.ativa && e.id === selecionado.empresa_terceira_id))} onIrParaEmpresas={() => setAba("empresas")} onSalvar={salvarEdicao} rotuloBotao="Salvar alterações" onCancelar={() => setEditarOpen(false)}
-                  valoresIniciais={{ nome: selecionado.nome, tipo: selecionado.tipo, unidade: selecionado.custo_unidade, usuarioId: selecionado.usuario_id || "", funcao: selecionado.atributos?.funcao || "", empresaId: selecionado.empresa_terceira_id || "" }} />
+                  valoresIniciais={{ nome: selecionado.nome, tipo: selecionado.tipo, unidade: selecionado.custo_unidade, usuarioId: selecionado.usuario_id || "", funcao: selecionado.atributos?.funcao || "", empresaId: selecionado.empresa_terceira_id || "", equipes: selecionado.equipes || [] }} />
               </div>
             )}
 
@@ -446,6 +454,7 @@ function RecursoForm({ usuarios, empresas = [], onIrParaEmpresas, onSalvar, rotu
   const [usuarioId, setUsuarioId] = useState(valoresIniciais?.usuarioId || "");
   const [funcao, setFuncao] = useState(valoresIniciais?.funcao || "");
   const [empresaId, setEmpresaId] = useState(valoresIniciais?.empresaId || "");
+  const [equipes, setEquipes] = useState(valoresIniciais?.equipes || []);
   const ehTerceira = tipo === "mao_obra_terceira";
   const faltaEmpresa = ehTerceira && !empresaId;
 
@@ -459,6 +468,7 @@ function RecursoForm({ usuarios, empresas = [], onIrParaEmpresas, onSalvar, rotu
       setTipo(tipoParaPerfil(u.perfil));
       setFuncao(u.funcao || "");
       setNome(u.nome);
+      if ((u.equipes || []).length) setEquipes(u.equipes); // herda as equipes do usuário (pode ajustar)
       // terceiro com empresa informada no cadastro de usuário: já sugere a empresa de mesmo nome
       const sugerida = u.empresa_terceira && empresas.find((e) => e.nome.trim().toLowerCase() === u.empresa_terceira.trim().toLowerCase());
       if (sugerida) setEmpresaId(sugerida.id);
@@ -466,7 +476,7 @@ function RecursoForm({ usuarios, empresas = [], onIrParaEmpresas, onSalvar, rotu
   };
 
   return (
-    <form onSubmit={(e) => { e.preventDefault(); if (nome.trim() && !faltaEmpresa) onSalvar({ nome: nome.trim(), tipo, unidade, usuarioId, funcao, empresaId }); }}
+    <form onSubmit={(e) => { e.preventDefault(); if (nome.trim() && !faltaEmpresa) onSalvar({ nome: nome.trim(), tipo, unidade, usuarioId, funcao, empresaId, equipes }); }}
       className="bg-panel border border-line rounded-xl p-3.5 flex flex-col gap-3">
       <Campo rotulo="Vincular a um usuário (opcional)">
         <select value={usuarioId} onChange={(e) => onSelecionarUsuario(e.target.value)} className="input">
@@ -499,6 +509,9 @@ function RecursoForm({ usuarios, empresas = [], onIrParaEmpresas, onSalvar, rotu
             placeholder="Ex: Eletricista, Mecânico..." className="input" />
         </Campo>
       )}
+      <Campo rotulo="Equipes (opcional)">
+        <SeletorEquipes opcoes={AREAS} valor={equipes} onChange={setEquipes} />
+      </Campo>
       <Campo rotulo="Modo de apropriação">
         <select value={unidade} onChange={(e) => setUnidade(e.target.value)} className="input">
           {UNIDADES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
@@ -520,11 +533,12 @@ function AlocacaoEmMassaModal({ pis, recursos, onAplicar, onCancelar, preSelecio
   const [perc, setPerc] = useState(100);
   const [busca, setBusca] = useState("");
   const [filtroTipo, setFiltroTipo] = useState("");
+  const [filtroEquipeM, setFiltroEquipeM] = useState("");
   const [selecionados, setSelecionados] = useState(preSelecionados || []);
   const [aplicando, setAplicando] = useState(false);
 
   const filtrados = recursos.filter((r) =>
-    (!filtroTipo || r.tipo === filtroTipo) &&
+    (!filtroTipo || r.tipo === filtroTipo) && (!filtroEquipeM || (r.equipes || []).includes(filtroEquipeM)) &&
     (!busca.trim() || r.nome.toLowerCase().includes(busca.trim().toLowerCase()))
   );
   const toggle = (id) => setSelecionados((p) => p.includes(id) ? p.filter((x) => x !== id) : [...p, id]);
@@ -573,6 +587,10 @@ function AlocacaoEmMassaModal({ pis, recursos, onAplicar, onCancelar, preSelecio
           <select value={filtroTipo} onChange={(e) => setFiltroTipo(e.target.value)} className="input sm:!w-48">
             <option value="">Todos os tipos</option>
             {TIPOS_RECURSO.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+          </select>
+          <select value={filtroEquipeM} onChange={(e) => setFiltroEquipeM(e.target.value)} className="input sm:!w-48">
+            <option value="">Todas as equipes</option>
+            {AREAS.map((a) => <option key={a} value={a}>{a}</option>)}
           </select>
         </div>
         <div className="flex justify-between items-center mb-2">

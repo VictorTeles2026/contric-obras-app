@@ -5,7 +5,8 @@ import { useTabela, registrarLog, chamarApi } from "../../lib/dados";
 import { useAuth, podeGerenciarUsuarios } from "../../lib/AuthContext";
 import { useToast } from "../../lib/Toast";
 import PainelShell from "../../components/PainelShell";
-import { CabecalhoPagina, Modal, Campo, Aviso, Esqueleto, EstadoVazio, Spinner } from "../../components/ui";
+import { CabecalhoPagina, Modal, Campo, Aviso, Esqueleto, EstadoVazio, Spinner, SeletorEquipes } from "../../components/ui";
+import { AREAS } from "../../lib/constantes";
 import Icone from "../../components/Icone";
 import VerSenhas from "../../components/VerSenhas";
 
@@ -42,6 +43,7 @@ export default function UsuariosPage() {
   const [pinGerado, setPinGerado] = useState(null);
   const [busca, setBusca] = useState("");
   const [filtroPerfil, setFiltroPerfil] = useState("");
+  const [filtroEquipe, setFiltroEquipe] = useState("");
   const [mostrarInativos, setMostrarInativos] = useState(true);
   const [alternando, setAlternando] = useState(null);
   const [vendoSenha, setVendoSenha] = useState(null);
@@ -61,7 +63,7 @@ export default function UsuariosPage() {
 
   const termo = busca.trim().toLowerCase();
   const filtrados = usuarios.filter((u) =>
-    (!filtroPerfil || u.perfil === filtroPerfil) && (mostrarInativos || u.ativo) &&
+    (!filtroPerfil || u.perfil === filtroPerfil) && (!filtroEquipe || (u.equipes || []).includes(filtroEquipe)) && (mostrarInativos || u.ativo) &&
     (!termo || [u.nome, u.email, u.funcao, u.empresa_terceira].some((c) => (c || "").toLowerCase().includes(termo))));
 
   return (
@@ -83,6 +85,10 @@ export default function UsuariosPage() {
           <select value={filtroPerfil} onChange={(e) => setFiltroPerfil(e.target.value)} className="input sm:!w-56">
             <option value="">Todos os perfis</option>
             {PERFIS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+          </select>
+          <select value={filtroEquipe} onChange={(e) => setFiltroEquipe(e.target.value)} className="input sm:!w-52">
+            <option value="">Todas as equipes</option>
+            {AREAS.map((a) => <option key={a} value={a}>{a}</option>)}
           </select>
           <label className="flex items-center gap-2 text-sm text-muted whitespace-nowrap px-1 cursor-pointer">
             <input type="checkbox" className="accent-cyan w-4 h-4" checked={mostrarInativos} onChange={(e) => setMostrarInativos(e.target.checked)} />
@@ -107,6 +113,7 @@ export default function UsuariosPage() {
                 <div className="text-xs text-muted flex items-center gap-1.5 flex-wrap mt-0.5">
                   <span className={`selo ${COR_PERFIL[u.perfil] || "bg-panel text-muted"}`}>{PERFIS.find((p) => p[0] === u.perfil)?.[1]?.split(" (")[0] || u.perfil}</span>
                   {u.funcao && <span>{u.funcao}</span>}
+                  {(u.equipes || []).map((a) => <span key={a} className="selo bg-cyan/10 text-cyan">{a}</span>)}
                 </div>
               </div>
               <div className="text-xs text-muted min-w-[160px] break-all">
@@ -172,6 +179,7 @@ function ModalUsuario({ usuarioInicial, onClose, onSalvo, onPinGerado }) {
   const [senha, setSenha] = useState("");
   const [tipoTerceiro, setTipoTerceiro] = useState(usuarioInicial?.tipo_terceiro || "fixo");
   const [empresaTerceira, setEmpresaTerceira] = useState(usuarioInicial?.empresa_terceira || "");
+  const [equipes, setEquipes] = useState(usuarioInicial?.equipes || []);
   const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState("");
 
@@ -190,7 +198,7 @@ function ModalUsuario({ usuarioInicial, onClose, onSalvo, onPinGerado }) {
       const { ok, json } = await chamarApi("/api/atualizar-usuario", {
         id: usuarioInicial.id, nome, perfil, funcao: mostraFuncao ? funcao : null,
         email: ehTerceiroAvulso ? null : email, novaSenha: senha || undefined,
-        tipoTerceiro, empresaTerceira,
+        tipoTerceiro, empresaTerceira, equipes,
       });
       setSalvando(false);
       if (!ok) { setErro(json.error || "Não foi possível salvar."); return; }
@@ -199,7 +207,7 @@ function ModalUsuario({ usuarioInicial, onClose, onSalvo, onPinGerado }) {
       onSalvo("Alterações salvas.");
     } else {
       const { ok, json } = await chamarApi("/api/criar-usuario", {
-        nome, perfil, funcao: mostraFuncao ? funcao : null, email, senha, tipoTerceiro, empresaTerceira,
+        nome, perfil, funcao: mostraFuncao ? funcao : null, email, senha, tipoTerceiro, empresaTerceira, equipes,
       });
       setSalvando(false);
       if (!ok) { setErro(json.error || "Não foi possível criar."); return; }
@@ -235,6 +243,10 @@ function ModalUsuario({ usuarioInicial, onClose, onSalvo, onPinGerado }) {
             </Campo>
           )}
         </div>
+
+        <Campo rotulo="Equipes (opcional — pode marcar mais de uma)">
+          <SeletorEquipes opcoes={AREAS} valor={equipes} onChange={setEquipes} />
+        </Campo>
 
         {perfil === "terceiro" && (
           <>

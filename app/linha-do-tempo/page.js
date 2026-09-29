@@ -111,11 +111,12 @@ export default function LinhaDoTempoPage() {
     return al.pi_id === etapa.pi_id && sobrepoePeriodo(al.periodo_inicio, al.periodo_fim, etapa.data_prevista_inicio, etapa.data_prevista_fim);
   });
 
-  const itensQueBatemNaEtapa = (etapa) => itensFiltro.filter((it) =>
-    it.tipo === "equipe"
-      ? (etapa.areas || []).includes(it.valor)
-      : recursoBateNaEtapa(it.valor, etapa)
-  );
+  // equipe "bate" na etapa se a etapa é da área OU se tem alocado um recurso daquela equipe
+  const equipeBateNaEtapa = (equipe, etapa) =>
+    (etapa.areas || []).includes(equipe) ||
+    recursos.some((r) => (r.equipes || []).includes(equipe) && recursoBateNaEtapa(r.id, etapa));
+  const itemBateNaEtapa = (it, etapa) => it.tipo === "equipe" ? equipeBateNaEtapa(it.valor, etapa) : recursoBateNaEtapa(it.valor, etapa);
+  const itensQueBatemNaEtapa = (etapa) => itensFiltro.filter((it) => itemBateNaEtapa(it, etapa));
 
   const pisSelecionados = pis.filter((p) => piIds.includes(p.id) && (clientesAtivos.length === 0 || clientesAtivos.includes(chaveCliente(p.cliente))));
   const idsVisiveis = pisSelecionados.map((p) => p.id);
@@ -363,18 +364,31 @@ export default function LinhaDoTempoPage() {
                 const itensVisiveis = nivel === "macro" ? itens.filter((e) => !e.nivel) : itens;
                 return (
                   <div key={pi.id}>
-                    <div className="flex bg-panel">
+                    {/* faixa cinza do PI: fica parada (não rola na horizontal) e usa a largura visível
+                        inteira, para o nome do cliente e do projeto aparecerem por completo */}
+                    <div className="bg-panel border-y border-line" style={{ width: LABEL_W + largura }}>
                       <button onClick={() => ciclarNivel(pi.id)} title={`Clique para ${dicaProximo}`}
-                        className="shrink-0 sticky left-0 bg-panel z-10 px-3 py-2 text-sm font-mono text-cyan font-bold border-r border-line flex items-center gap-2 text-left hover:bg-line/40 transition-colors"
-                        style={{ width: LABEL_W }}>
-                        <span className="text-[10px] w-4 shrink-0">{icone}</span>
-                        <span className="truncate" title={`${pi.codigo} — ${pi.cliente}${pi.projeto ? ` · ${pi.projeto}` : ""}`}>{pi.codigo} — {pi.cliente}{pi.projeto ? <span className="font-sans font-normal text-muted"> · {pi.projeto}</span> : ""}</span>
-                      </button>
-                      <div className="relative" style={{ width: largura }}>
-                        {nivel === "pi" && (
-                          <div className="absolute top-0 bottom-0" style={{ left: hojeX, width: 1, background: "#D64545", opacity: 0.5 }} />
+                        className="sticky left-0 z-10 px-3 py-2 text-sm flex items-center gap-2 text-left hover:bg-line/40 transition-colors"
+                        style={{ width: larguraContainer || LABEL_W + larguraVisivel }}>
+                        <span className="text-[10px] w-4 shrink-0 text-cyan">{icone}</span>
+                        <span className="min-w-0 truncate" title={`${pi.codigo} — ${pi.cliente}${pi.projeto ? ` · ${pi.projeto}` : ""}`}>
+                          <span className="font-mono text-cyan font-bold">{pi.codigo}</span>
+                          <span className="font-semibold"> — {pi.cliente}</span>
+                          {pi.projeto && <span className="text-muted"> · {pi.projeto}</span>}
+                        </span>
+                        {periodo && (
+                          <span className="ml-auto shrink-0 text-xs text-muteddim font-mono pl-3">
+                            {new Date(periodo.inicio).toLocaleDateString("pt-BR")} → {new Date(periodo.fim - 86400000).toLocaleDateString("pt-BR")}
+                          </span>
                         )}
-                        {nivel === "pi" && periodo && (() => {
+                      </button>
+                    </div>
+                    {nivel === "pi" && (
+                    <div className="flex border-b border-line/60">
+                      <div className="shrink-0 sticky left-0 bg-white z-10 px-3 py-2 text-xs text-muted border-r border-line" style={{ width: LABEL_W }}>Período total do PI</div>
+                      <div className="relative h-8" style={{ width: largura }}>
+                        <div className="absolute top-0 bottom-0" style={{ left: hojeX, width: 1, background: "#D64545", opacity: 0.5 }} />
+                        {periodo && (() => {
                           const left = ((periodo.inicio - escala.min) / span) * largura;
                           const width = Math.max(4, ((periodo.fim - periodo.inicio) / span) * largura);
                           return (
@@ -384,6 +398,7 @@ export default function LinhaDoTempoPage() {
                         })()}
                       </div>
                     </div>
+                    )}
 
                     {nivel !== "pi" && itensVisiveis.map((e) => {
                       const inicio = tsLocal(e.data_prevista_inicio) ?? escala.min;
@@ -447,7 +462,7 @@ export default function LinhaDoTempoPage() {
             {itensFiltro.map((it) => {
               const linhas = pisSelecionados.flatMap((pi) =>
                 itensOrdenados(pi.id)
-                  .filter((e) => (it.tipo === "equipe" ? (e.areas || []).includes(it.valor) : recursoBateNaEtapa(it.valor, e)))
+                  .filter((e) => itemBateNaEtapa(it, e))
                   .map((e) => ({ pi, etapa: e }))
               );
               return (

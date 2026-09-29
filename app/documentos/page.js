@@ -13,6 +13,7 @@ import Icone from "../../components/Icone";
 import { ConfirmarExclusao } from "../../components/AcoesMaster";
 import { EditorRdo, EditorOcorrencia } from "../../components/Editores";
 import { ehMaster, excluirDocumento } from "../../lib/exclusoes";
+import { marcarDocumentosLidos } from "../../lib/documentosLidos";
 
 const TIPOS = [["", "Todos"], ["rdo", "RDOs (PDF)"], ["ocorrencia", "Ocorrências (PDF)"], ["ata", "Atas de reuniões"], ["arquivo", "Outros documentos"], ["foto", "Fotos"], ["video", "Vídeos"]];
 const ICONE_TIPO = { rdo: "pdf", ocorrencia: "alerta", ata: "usuarios", arquivo: "pasta", foto: "camera", video: "video" };
@@ -109,6 +110,7 @@ export default function DocumentosPage() {
     const aba = baixar ? null : window.open("", "_blank");
     try {
       const url = await linkTemporario(item.caminho, 3600, baixar);
+      marcarDocumentosLidos(usuario, [item.caminho]); // some do quadro "Documentos não abertos" do Dashboard
       if (baixar) { window.location.href = url; return; }
       if (aba) aba.location.href = url; else window.location.href = url;
     } catch (e) {
