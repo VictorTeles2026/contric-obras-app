@@ -44,11 +44,18 @@ export default function LoginPage() {
   const logadoSemCadastro = !carregandoAuth && sessao && !usuario && erroCadastro;
 
   return (
-    <div className="relative min-h-[100dvh] flex items-center justify-center lg:justify-end px-4 py-10 lg:px-16 bg-navy bg-cover bg-center"
-      style={{ backgroundImage: "url(/fundo-login.webp)", paddingTop: "max(2.5rem, env(safe-area-inset-top))" }}>
-      <div className="absolute inset-0 bg-gradient-to-t from-navy/70 via-navy/20 to-transparent lg:bg-gradient-to-l lg:from-navy/50 lg:via-transparent" />
-      <div className="relative w-full max-w-sm">
-        <div className="cartao p-6 sm:p-8 shadow-2xl animar-surgir bg-white/95 backdrop-blur">
+    // a imagem (16:9) fica sempre inteira e centralizada na tela; a parte azul ocupa
+    // ~67% da largura e o login fica centralizado na faixa branca à direita.
+    // Em telas estreitas (celular) usa a versão vertical como fundo (preso ao topo, na
+    // largura da tela) e o login fica centralizado abaixo do título da imagem.
+    <div className="min-h-[100dvh] bg-[#020f24] bg-[url(/tela-login-mobile.webp)] bg-[length:100%_auto] bg-top bg-no-repeat lg:bg-none lg:bg-white flex items-center justify-center"
+      style={{ paddingTop: "env(safe-area-inset-top)" }}>
+      <div className="relative w-full min-h-[100dvh] lg:min-h-0 lg:w-[min(100vw,calc(100dvh*16/9))] lg:aspect-[16/9] flex flex-col lg:block">
+        <img src="/tela-login.webp" alt="Sistema de Gestão de Obras Contric"
+          className="hidden lg:block lg:absolute lg:inset-0 lg:w-full lg:h-full lg:object-contain select-none" draggable={false} />
+        <h1 className="sr-only lg:hidden">Sistema de Gestão de Obras Contric</h1>
+      <div className="relative flex-1 pt-[calc(36vw+1rem)] pb-8 lg:pt-6 lg:absolute lg:top-0 lg:bottom-0 lg:right-0 lg:left-[67%] flex items-center justify-center px-4 lg:p-6">
+        <div className="w-full max-w-sm cartao p-6 sm:p-8 shadow-2xl animar-surgir bg-white">
           <div className="flex justify-center mb-6"><Logo tamanho="xl" /></div>
           {logadoSemCadastro ? (
             <div className="flex flex-col gap-3">
@@ -85,6 +92,7 @@ export default function LoginPage() {
           )}
           <a href="/acesso-clientes" className="block text-center text-sm text-muted hover:text-textmain mt-5">Sou cliente → <strong>Acesso Clientes Contric</strong></a>
         </div>
+      </div>
       </div>
     </div>
   );

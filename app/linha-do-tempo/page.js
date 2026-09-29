@@ -99,8 +99,13 @@ export default function LinhaDoTempoPage() {
       : recursoBateNaEtapa(it.valor, etapa)
   );
 
-  const pisSelecionados = pis.filter((p) => piIds.includes(p.id));
-  const etapasDosPis = etapas.filter((e) => piIds.includes(e.pi_id));
+  // ---- filtro por cliente ----
+  const [clienteFiltro, setClienteFiltro] = useState("");
+  const clientes = useMemo(() => [...new Set(pis.map((p) => p.cliente).filter(Boolean))].sort((a, b) => a.localeCompare(b, "pt-BR")), [pis]);
+
+  const pisSelecionados = pis.filter((p) => piIds.includes(p.id) && (!clienteFiltro || p.cliente === clienteFiltro));
+  const idsVisiveis = pisSelecionados.map((p) => p.id);
+  const etapasDosPis = etapas.filter((e) => idsVisiveis.includes(e.pi_id));
   // monta a lista na mesma ordem de criação do Cronograma: cada macro-etapa
   // seguida imediatamente das suas sub-etapas (também na ordem em que foram criadas)
   const porOrdem = (a, b) => (a.ordem ?? 999999) - (b.ordem ?? 999999);
@@ -211,6 +216,11 @@ export default function LinhaDoTempoPage() {
 
         {/* ---- filtro por equipe / recurso ---- */}
         <div className="cartao flex flex-wrap items-center gap-2 mb-4 p-3">
+          <select value={clienteFiltro} onChange={(e) => setClienteFiltro(e.target.value)}
+            className={`input !w-auto !py-2 !text-sm max-w-[220px] ${clienteFiltro ? "!border-cyan/40 !text-cyan" : ""}`} aria-label="Filtrar por cliente">
+            <option value="">Todos os clientes</option>
+            {clientes.map((c) => <option key={c} value={c}>{c}</option>)}
+          </select>
           <div className="relative" ref={equipesRef}>
             <button onClick={() => { setEquipesDropdownAberto((o) => !o); setRecursosDropdownAberto(false); }} className={`btn btn-sm !py-2 border ${equipesDraft.length ? "border-cyan/40 text-cyan bg-cyan/5" : "border-line bg-white text-muted"}`}>
               Equipes{equipesDraft.length > 0 ? ` (${equipesDraft.length})` : ""} ▾
