@@ -247,8 +247,8 @@ function GerenciarAcessos({ cliente, pis, acessos, onFechar, onMudou }) {
         {acessos.map((a) => {
           const pi = pis.find((p) => p.id === a.pi_id);
           return (
-            <div key={a.id} className="rounded-xl border border-line p-3 flex flex-col sm:flex-row sm:items-center gap-2">
-              <div className="flex-1 min-w-0 text-sm"><strong className="font-mono text-cyan">{pi?.codigo}</strong> · {pi?.cliente}{pi?.projeto ? <span className="text-muted"> · {pi.projeto}</span> : ""}</div>
+            <div key={a.id} className="rounded-xl border border-line p-3 flex flex-col gap-2.5">
+              <div className="min-w-0 text-sm"><strong className="font-mono text-cyan">{pi?.codigo}</strong> · {pi?.cliente}{pi?.projeto ? <span className="text-muted"> · {pi.projeto}</span> : ""}</div>
               <div className="flex flex-wrap items-center gap-1.5">
                 {ACESSOS.map(([k, l]) => (
                   <button key={k} disabled={!!salvando} onClick={() => salvar(a.pi_id, { ...flagsDe(a), [k]: !a[k] }, a.id)}
