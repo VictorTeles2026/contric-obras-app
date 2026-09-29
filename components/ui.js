@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import Icone from "./Icone";
 
 export function Logo({ tamanho = "md", claro = false }) {
@@ -106,8 +107,11 @@ export function Modal({ titulo, onFechar, children, rodape, largura = "max-w-lg"
     return () => { window.removeEventListener("keydown", onKey); document.body.style.overflow = overflowAnterior; };
   }, [onFechar]);
 
-  return (
-    <div className="fixed inset-x-0 top-0 z-50 flex items-end sm:items-center justify-center sm:p-4 animar-fade" role="dialog" aria-modal="true"
+  // renderiza direto no <body> (portal): aberto de dentro da barra lateral (ex: sininho),
+  // ficava preso abaixo de outros elementos fixos da página e herdava o texto branco dela
+  if (typeof document === "undefined") return null;
+  return createPortal(
+    <div className="fixed inset-x-0 top-0 z-[60] flex items-end sm:items-center justify-center sm:p-4 animar-fade text-textmain text-left font-body" role="dialog" aria-modal="true"
       style={{ height: area ? area.altura : "100dvh", top: area ? area.topo : 0 }}>
       <div className="absolute inset-0 bg-navy/50 backdrop-blur-[2px]" onClick={onFechar} />
       <div className={`relative w-full ${largura} bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl flex flex-col max-h-[94%] animar-modal`}>
@@ -128,7 +132,8 @@ export function Modal({ titulo, onFechar, children, rodape, largura = "max-w-lg"
           </div>
         )}
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
 
