@@ -10,7 +10,8 @@ import { ConfirmarExclusao } from "../../components/AcoesMaster";
 import { CabecalhoPagina, EstadoVazio, Esqueleto, Aviso, Modal, Campo, Spinner } from "../../components/ui";
 import Icone from "../../components/Icone";
 
-const ACESSOS = [["ver_atas", "Atas de reuniões"], ["ver_rdos_assinados", "RDOs assinados (PDF)"], ["ver_linha_tempo", "Linha do tempo"]];
+const ACESSOS = [["ver_atas", "Atas de reuniões"], ["ver_rdos_assinados", "RDOs assinados (PDF)"], ["ver_linha_tempo", "Linha do tempo"], ["ver_ocorrencias_assinadas", "Ocorrências assinadas"]];
+const flagsDe = (a, valor) => Object.fromEntries(ACESSOS.map(([k]) => [k, valor === undefined ? !!a[k] : valor]));
 const mascaraTelefone = (v) => {
   const d = String(v || "").replace(/\D/g, "").slice(0, 11);
   return d.length <= 10 ? d.replace(/^(\d{2})(\d)/, "($1) $2").replace(/(\d{4})(\d)/, "$1-$2") : d.replace(/^(\d{2})(\d)/, "($1) $2").replace(/(\d{5})(\d)/, "$1-$2");
@@ -206,7 +207,7 @@ function Credenciais({ dados, onFechar }) {
 function GerenciarAcessos({ cliente, pis, acessos, onFechar, onMudou }) {
   const { avisar } = useToast();
   const [piId, setPiId] = useState("");
-  const [flags, setFlags] = useState({ ver_atas: true, ver_rdos_assinados: true, ver_linha_tempo: true });
+  const [flags, setFlags] = useState(flagsDe({}, true));
   const [salvando, setSalvando] = useState(null);
   const jaTem = (id) => acessos.find((a) => a.pi_id === id);
 
@@ -250,10 +251,10 @@ function GerenciarAcessos({ cliente, pis, acessos, onFechar, onMudou }) {
               <div className="flex-1 min-w-0 text-sm"><strong className="font-mono text-cyan">{pi?.codigo}</strong> · {pi?.cliente}{pi?.projeto ? <span className="text-muted"> · {pi.projeto}</span> : ""}</div>
               <div className="flex flex-wrap items-center gap-1.5">
                 {ACESSOS.map(([k, l]) => (
-                  <button key={k} disabled={!!salvando} onClick={() => salvar(a.pi_id, { ver_atas: a.ver_atas, ver_rdos_assinados: a.ver_rdos_assinados, ver_linha_tempo: a.ver_linha_tempo, [k]: !a[k] }, a.id)}
+                  <button key={k} disabled={!!salvando} onClick={() => salvar(a.pi_id, { ...flagsDe(a), [k]: !a[k] }, a.id)}
                     className={`chip ${a[k] ? "chip-ativo" : ""}`} title={a[k] ? "Clique para retirar" : "Clique para liberar"}>{a[k] ? "✓ " : ""}{l}</button>
                 ))}
-                <button disabled={!!salvando} onClick={() => salvar(a.pi_id, { ver_atas: false, ver_rdos_assinados: false, ver_linha_tempo: false }, a.id)}
+                <button disabled={!!salvando} onClick={() => salvar(a.pi_id, flagsDe(a, false), a.id)}
                   className="p-2 rounded-lg text-muteddim hover:text-red hover:bg-red/5" title="Remover acesso a este PI"><Icone nome="lixo" className="w-4 h-4" /></button>
                 {salvando === a.id && <Spinner className="w-4 h-4 text-cyan" />}
               </div>

@@ -17,7 +17,23 @@ export const GET = rotaSegura(async (req) => {
   for (const a of acessos || []) {
     const { data: pi } = await admin.from("pis").select("id,codigo,cliente,projeto,status,prazo").eq("id", a.pi_id).maybeSingle();
     if (!pi) continue;
-    const obra = { pi, acessos: { atas: a.ver_atas, rdos: a.ver_rdos_assinados, linhaTempo: a.ver_linha_tempo }, atas: [], rdos: [], etapas: [] };
+    const obra = { pi, acessos: { atas: a.ver_atas, rdos: a.ver_rdos_assinados, linhaTempo: a.ver_linha_tempo, ocorrencias: !!a.ver_ocorrencias_assinadas }, atas: [], rdos: [], etapas: [], ocorrencias: [], documentos: [] };
+
+    if (a.ver_ocorrencias_assinadas) {
+      const { data: ocs } = await admin.from("ocorrencias").select("id,categoria,descricao,created_at,status,pdf_path,assinatura_cliente,assinatura_cliente_nome")
+        .eq("pi_id", pi.id).eq("assinatura_cliente", true).order("created_at", { ascending: false });
+      for (const o of (ocs || []).filter((x) => x.pdf_path && x.status !== "rejeitado")) {
+        const { data } = await admin.storage.from("documentos").createSignedUrl(o.pdf_path, 3600);
+        if (data?.signedUrl) obra.ocorrencias.push({ id: o.id, data: o.created_at, categoria: o.categoria, descricao: o.descricao, status: o.status, assinadoPor: o.assinatura_cliente_nome, url: data.signedUrl });
+      }
+    }
+    // documentos liberados individualmente para este cliente (página Documentos)
+    const { data: docs } = await admin.from("cliente_documentos").select("caminho,created_at").eq("cliente_id", cliente.id).eq("pi_id", pi.id);
+    for (const d of docs || []) {
+      const { data } = await admin.storage.from("documentos").createSignedUrl(d.caminho, 3600);
+      if (data?.signedUrl) obra.documentos.push({ nome: d.caminho.split("/").pop(), data: d.created_at, url: data.signedUrl }); // arquivo apagado: some da lista
+    }
+    obra.documentos.sort((x, y) => String(y.data).localeCompare(String(x.data)));
 
     if (a.ver_atas) {
       const { data: arquivos } = await admin.storage.from("documentos").list(pi.id, { limit: 500, search: "ATA_" });

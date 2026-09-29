@@ -103,6 +103,14 @@ export default function PortalCliente() {
                   <ListaArquivos titulo="RDOs assinados" icone="pdf" vazio="Nenhum RDO assinado disponível ainda."
                     itens={obra.rdos.map((r) => ({ chave: r.nome, nome: `RDO de ${formatarData(r.data)}`, detalhe: `${r.assinadoPor ? `Assinado por ${r.assinadoPor}` : "Assinado"} · ${r.status === "aprovado" ? "aprovado" : "em validação"}`, url: r.url }))} />
                 )}
+                {obra.acessos.ocorrencias && (
+                  <ListaArquivos titulo="Ocorrências assinadas" icone="alerta" vazio="Nenhuma ocorrência assinada disponível ainda."
+                    itens={(obra.ocorrencias || []).map((o) => ({ chave: o.id, nome: `${o.categoria || "Ocorrência"} — ${formatarData(o.data)}`, detalhe: `${o.assinadoPor ? `Assinada por ${o.assinadoPor}` : "Assinada"}${o.descricao ? ` · ${o.descricao}` : ""}`, url: o.url }))} />
+                )}
+                {(obra.documentos || []).length > 0 && (
+                  <ListaArquivos titulo="Documentos" icone="pasta" vazio=""
+                    itens={obra.documentos.map((d) => ({ chave: d.nome, nome: d.nome, detalhe: `Disponibilizado em ${formatarDataHora(d.data)}`, url: d.url }))} />
+                )}
               </div>
             )}
           </>

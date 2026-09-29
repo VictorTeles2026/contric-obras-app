@@ -59,6 +59,10 @@ export default function DocumentosPage() {
   const [gerando, setGerando] = useState(false);
   const [enviando, setEnviando] = useState(false);
   const inputArquivoRef = useRef(null);
+  const [clientesPi, setClientesPi] = useState([]);   // clientes com acesso ao PI buscado
+  const [docsCliente, setDocsCliente] = useState([]); // [{ id, cliente_id, caminho }]
+  const [liberando, setLiberando] = useState(null);   // item (documento) sendo liberado a clientes
+  const liberadosDe = (caminho) => docsCliente.filter((d) => d.caminho === caminho);
 
   const buscar = async (id = piId) => {
     if (!id) return;
@@ -87,6 +91,13 @@ export default function DocumentosPage() {
       });
     }));
     itens.sort((a, b) => String(b.data || "").localeCompare(String(a.data || "")));
+    // clientes vinculados a este PI (Clientes → Acessos) e documentos já liberados a cada um
+    const [{ data: acessosPi }, { data: docsCliente }] = await Promise.all([
+      supabase.from("cliente_acessos").select("cliente_id, clientes(id, nome, empresa, ativo)").eq("pi_id", id),
+      supabase.from("cliente_documentos").select("id, cliente_id, caminho").eq("pi_id", id),
+    ]);
+    setClientesPi((acessosPi || []).map((a) => a.clientes).filter(Boolean).sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR")));
+    setDocsCliente(docsCliente || []);
     setResultado({ pi, itens, rdosSemPdf: (rdos || []).filter((r) => !r.pdf_path),
       ocorrenciasSemPdf: (ocorrencias || []).filter((o) => !o.rdo_id && !o.pdf_path), erro: lista.error?.message });
     setBuscando(false);
@@ -268,6 +279,12 @@ export default function DocumentosPage() {
                           <Icone nome="download" className="w-4 h-4" />
                         </button>
                       )}
+                      {editavel && i.caminho && (
+                        <button onClick={() => setLiberando(i)} title="Disponibilizar este documento para clientes deste PI"
+                          className={`btn btn-sm ${liberadosDe(i.caminho).length ? "btn-contorno !border-cyan/40 !text-cyan" : "btn-fantasma"}`}>
+                          <Icone nome="usuarios" className="w-4 h-4" /> Clientes{liberadosDe(i.caminho).length ? ` (${liberadosDe(i.caminho).length})` : ""}
+                        </button>
+                      )}
                       {master && (i.rdo || i.ocorrencia) && (
                         <button onClick={() => editarRegistro(i)} className="p-2 rounded-lg text-muted hover:bg-panel" aria-label={`Editar o registro de ${i.nome}`}
                           title={i.rdo ? "Editar o RDO (o PDF é refeito)" : "Editar a ocorrência (o PDF é refeito)"}>
@@ -331,9 +348,17 @@ export default function DocumentosPage() {
           onFechar={() => setExcluindo(null)}
           onConfirmar={async (motivo) => {
             const r = await excluirDocumento({ caminho: excluindo.caminho, pi: resultado.pi, usuario, motivo });
-            if (r.ok) { avisar("Documento excluído — registrado na Auditoria.", "info"); buscar(resultado.pi.id); }
+            if (r.ok) {
+              await supabase.from("cliente_documentos").delete().eq("caminho", excluindo.caminho);
+              avisar("Documento excluído — registrado na Auditoria.", "info"); buscar(resultado.pi.id);
+            }
             return r;
           }} />
+      )}
+      {liberando && (
+        <LiberarParaClientes item={liberando} pi={resultado?.pi} clientes={clientesPi} liberados={liberadosDe(liberando.caminho)} usuario={usuario}
+          onMudou={(lista) => setDocsCliente((p) => [...p.filter((d) => d.caminho !== liberando.caminho), ...lista])}
+          onFechar={() => setLiberando(null)} />
       )}
       {editandoRegistro?.tipo === "rdo" && (
         <EditorRdo rdo={editandoRegistro.item} pi={resultado?.pi} pis={pis} comoAprovador ocorrenciasOriginais={editandoRegistro.ocorrencias}
@@ -343,5 +368,57 @@ export default function DocumentosPage() {
         <EditorOcorrencia oc={editandoRegistro.item} pis={pis} comoAprovador onFechar={() => setEditandoRegistro(null)} onSalvo={() => buscar(resultado.pi.id)} />
       )}
     </PainelShell>
+  );
+}
+
+// Disponibiliza um documento específico para clientes específicos — só os que têm acesso ao PI
+function LiberarParaClientes({ item, pi, clientes, liberados, usuario, onMudou, onFechar }) {
+  const { avisar } = useToast();
+  const [ocupado, setOcupado] = useState(null);
+  const liberado = (id) => liberados.find((d) => d.cliente_id === id);
+
+  const alternar = async (c) => {
+    setOcupado(c.id);
+    const atual = liberado(c.id);
+    if (atual) {
+      const { error } = await supabase.from("cliente_documentos").delete().eq("id", atual.id);
+      setOcupado(null);
+      if (error) { avisar(`Não foi possível retirar: ${error.message}`, "erro", 6000); return; }
+      onMudou(liberados.filter((d) => d.id !== atual.id));
+      await registrarLog(usuario, "Retirou documento do cliente", `${pi.codigo} — ${item.nome} · ${c.nome}`);
+    } else {
+      const { data, error } = await supabase.from("cliente_documentos")
+        .insert({ cliente_id: c.id, pi_id: pi.id, caminho: item.caminho, liberado_por_nome: usuario?.nome }).select("id, cliente_id, caminho").single();
+      setOcupado(null);
+      if (error) {
+        avisar(/cliente_documentos/.test(error.message) ? "Rode o script clientes-ocorrencias-documentos.sql no Supabase." : `Não foi possível liberar: ${error.message}`, "erro", 7000);
+        return;
+      }
+      onMudou([...liberados, data]);
+      await registrarLog(usuario, "Disponibilizou documento ao cliente", `${pi.codigo} — ${item.nome} · ${c.nome}`);
+    }
+  };
+
+  return (
+    <Modal titulo="Disponibilizar para clientes" onFechar={onFechar} largura="max-w-md"
+      rodape={<button onClick={onFechar} className="btn btn-primario">Concluir</button>}>
+      <div className="flex flex-col gap-3">
+        <div className="text-sm text-muted break-all">Documento: <strong className="text-textmain">{item.nome}</strong></div>
+        {clientes.length === 0 ? (
+          <Aviso tipo="info">Nenhum cliente está associado ao {pi?.codigo}. Associe primeiro em <strong>Clientes → Acessos</strong>.</Aviso>
+        ) : (
+          <div className="flex flex-col gap-1">
+            {clientes.map((c) => (
+              <label key={c.id} className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm cursor-pointer border transition-colors ${liberado(c.id) ? "border-cyan/40 bg-cyan/5" : "border-transparent bg-panel hover:bg-line/40"} ${c.ativo === false ? "opacity-60" : ""}`}>
+                <input type="checkbox" className="accent-cyan w-4 h-4" checked={!!liberado(c.id)} disabled={ocupado === c.id} onChange={() => alternar(c)} />
+                <span className="flex-1 min-w-0 truncate">{c.nome}{c.empresa ? <span className="text-muted"> · {c.empresa}</span> : ""}</span>
+                {ocupado === c.id && <Spinner className="w-4 h-4 text-cyan" />}
+              </label>
+            ))}
+          </div>
+        )}
+        <div className="text-xs text-muteddim">O cliente marcado vê este documento em "Documentos", na obra, ao entrar no Acesso Clientes.</div>
+      </div>
+    </Modal>
   );
 }

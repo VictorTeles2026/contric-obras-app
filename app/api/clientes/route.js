@@ -10,7 +10,7 @@ const enviarEmail = (dados) => ENVIO_EMAIL_CLIENTES ? enviarEmailReal(dados) : P
 // Gestão de clientes do portal — master, gerente e coordenador (excluir: só master).
 const PERFIS = ["master", "gerente", "coordenador"];
 const esc = (t) => String(t ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
-const ROTULOS = { ver_atas: "Atas de reuniões", ver_rdos_assinados: "RDOs assinados (PDF)", ver_linha_tempo: "Linha do tempo" };
+const ROTULOS = { ver_atas: "Atas de reuniões", ver_rdos_assinados: "RDOs assinados (PDF)", ver_linha_tempo: "Linha do tempo", ver_ocorrencias_assinadas: "Ocorrências assinadas" };
 
 function mensagemBoasVindas(cliente, senha, origem) {
   const link = `${urlApp() || origem || ""}/acesso-clientes`;
@@ -107,11 +107,13 @@ export const POST = rotaSegura(async (req) => {
   if (acao === "acesso") {
     const { data: pi } = await admin.from("pis").select("id,codigo,cliente,projeto").eq("id", body.piId).maybeSingle();
     if (!pi) return NextResponse.json({ error: "PI não encontrado." }, { status: 404 });
-    const flags = { ver_atas: !!body.ver_atas, ver_rdos_assinados: !!body.ver_rdos_assinados, ver_linha_tempo: !!body.ver_linha_tempo };
+    const flags = Object.fromEntries(Object.keys(ROTULOS).map((k) => [k, !!body[k]]));
     const { data: anterior } = await admin.from("cliente_acessos").select("*").eq("cliente_id", cliente.id).eq("pi_id", pi.id).maybeSingle();
     const nomePi = `${pi.codigo} — ${pi.cliente || ""}${pi.projeto ? ` — ${pi.projeto}` : ""}`;
     if (!Object.values(flags).some(Boolean)) {
       if (anterior) await admin.from("cliente_acessos").delete().eq("id", anterior.id);
+      // sem vínculo com o PI, os documentos liberados individualmente também saem
+      await admin.from("cliente_documentos").delete().eq("cliente_id", cliente.id).eq("pi_id", pi.id);
       await log(admin, interno, "Removeu acesso de cliente", `${cliente.nome} · ${nomePi}`);
       return NextResponse.json({ ok: true, removido: true });
     }
