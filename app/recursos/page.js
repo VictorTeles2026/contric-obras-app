@@ -12,6 +12,7 @@ import PainelShell from "../../components/PainelShell";
 import { Modal, EstadoVazio, Esqueleto, Aviso, Campo, SeletorEquipes } from "../../components/ui";
 import Icone from "../../components/Icone";
 import GraficoUtilizacao from "../../components/GraficoUtilizacao";
+import ConfirmacaoDupla from "../../components/ConfirmacaoDupla";
 const UNIDADES = [["hora", "Hora"], ["diaria", "Diária"], ["semana", "Semana"], ["quinzena", "Quinzena"], ["mes", "Mês"]];
 const PERFIS_COM_ALOCACAO = ["lider", "funcionario", "terceiro"];
 
@@ -46,6 +47,19 @@ export default function RecursosPage() {
   const [editarOpen, setEditarOpen] = useState(false);
   const [alocarOpen, setAlocarOpen] = useState(false);
   const [massaOpen, setMassaOpen] = useState(false);
+  const [excluindoRecurso, setExcluindoRecurso] = useState(null);
+  const master = usuario?.perfil === "master";
+  const excluirRecurso = async (r) => {
+    const qtd = alocacoes.filter((a) => a.recurso_id === r.id).length;
+    const { error: e1 } = await supabase.from("alocacoes_recurso").delete().eq("recurso_id", r.id);
+    if (e1) return { erro: e1.message };
+    const { error } = await supabase.from("recursos").delete().eq("id", r.id);
+    if (error) return { erro: error.message };
+    await registrarLog(usuario, "Excluiu recurso (Master)", `${r.nome} (${rotuloTipo(r.tipo)}) · ${qtd} alocação(ões) apagada(s)`);
+    avisar(`Recurso "${r.nome}" excluído — registrado na Auditoria.`, "info");
+    setSelecionadosIds([]); recarregarRecursos(); recarregarAlocacoes();
+    return { ok: true };
+  };
   const [busca, setBusca] = useState("");
   const [buscaAplicada, setBuscaAplicada] = useState("");
   const [filtroEquipe, setFiltroEquipe] = useState("");
@@ -352,6 +366,11 @@ export default function RecursosPage() {
                   }} className="btn btn-primario btn-sm">
                     <Icone nome="mais2" className="w-4 h-4" /> Alocar
                   </button>
+                  {master && (
+                    <button onClick={() => setExcluindoRecurso(selecionado)} className="btn btn-contorno-perigo btn-sm" title="Excluir recurso (somente Master)" aria-label="Excluir recurso">
+                      <Icone nome="lixo" className="w-4 h-4" />
+                    </button>
+                  )}
                 </div>
               )}
             </div>
@@ -439,6 +458,12 @@ export default function RecursosPage() {
     </div>
       )}
 
+      {excluindoRecurso && (
+        <ConfirmacaoDupla titulo="Excluir recurso" onFechar={() => setExcluindoRecurso(null)}
+          pergunta={<>Tem certeza que deseja excluir o recurso <strong>{excluindoRecurso.nome}</strong>?</>}
+          perdas={<>O recurso e todas as suas alocações ({alocacoes.filter((a) => a.recurso_id === excluindoRecurso.id).length}) em PIs e etapas serão apagados. O usuário vinculado (se houver) não é excluído.</>}
+          onConfirmar={() => excluirRecurso(excluindoRecurso)} />
+      )}
       {massaOpen && (
         <AlocacaoEmMassaModal pis={pis} recursos={recursos} usuarios={usuarios} onAplicar={aplicarAlocacaoMassa} onCancelar={() => setMassaOpen(false)}
           preSelecionados={selecionadosIds} />

@@ -9,6 +9,7 @@ import { CabecalhoPagina, Modal, Campo, Aviso, Esqueleto, EstadoVazio, Spinner, 
 import { AREAS } from "../../lib/constantes";
 import Icone from "../../components/Icone";
 import VerSenhas from "../../components/VerSenhas";
+import ConfirmacaoDupla from "../../components/ConfirmacaoDupla";
 
 const PERFIS = [
   ["master", "Master (acesso total)"],
@@ -47,6 +48,7 @@ export default function UsuariosPage() {
   const [mostrarInativos, setMostrarInativos] = useState(true);
   const [alternando, setAlternando] = useState(null);
   const [vendoSenha, setVendoSenha] = useState(null);
+  const [excluindo, setExcluindo] = useState(null);
 
   const abrirNovo = () => { setEditando(null); setModalAberto(true); };
   const abrirEdicao = (u) => { setEditando(u); setModalAberto(true); };
@@ -131,6 +133,11 @@ export default function UsuariosPage() {
                 {souMaster && (
                   <button onClick={() => abrirEdicao(u)} className="btn btn-contorno btn-sm">Editar</button>
                 )}
+                {souMaster && u.id !== usuario?.id && (
+                  <button onClick={() => setExcluindo(u)} className="p-2 rounded-lg text-muteddim hover:text-red hover:bg-red/5" title="Excluir usuário (somente Master)" aria-label={`Excluir ${u.nome}`}>
+                    <Icone nome="lixo" className="w-4 h-4" />
+                  </button>
+                )}
                 {souMaster && u.id !== usuario?.id ? (
                   <button onClick={() => toggleAtivo(u)} disabled={alternando === u.id} title={u.ativo ? "Clique para desabilitar" : "Clique para habilitar"}
                     className={`btn btn-sm border ${u.ativo ? "border-green/40 text-green bg-green/5 hover:bg-green/10" : "border-line text-muted bg-white hover:bg-panel"}`}>
@@ -145,6 +152,17 @@ export default function UsuariosPage() {
           ))}
         </div>
 
+        {excluindo && (
+          <ConfirmacaoDupla titulo="Excluir usuário" onFechar={() => setExcluindo(null)}
+            pergunta={<>Tem certeza que deseja excluir o usuário <strong>{excluindo.nome}</strong>?</>}
+            perdas={<>O login é apagado e também tudo o que foi lançado por ele: horas, RDOs (com os PDFs), ocorrências registradas, solicitações e notificações. Onde ele só aparece como aprovador ou responsável, o registro fica sem o vínculo. Para apenas bloquear o acesso, use o botão Ativo/Desabilitado.</>}
+            onConfirmar={async () => {
+              const { ok, json } = await chamarApi("/api/excluir-usuario", { id: excluindo.id });
+              if (!ok) return { erro: json.error || "Não foi possível excluir." };
+              avisar(`${excluindo.nome} excluído — registrado na Auditoria.`, "info"); recarregar();
+              return { ok: true };
+            }} />
+        )}
         {vendoSenha && <VerSenhas authUserId={vendoSenha.auth_user_id} nome={vendoSenha.nome} onFechar={() => setVendoSenha(null)} />}
         {modalAberto && (
           <ModalUsuario
