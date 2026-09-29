@@ -368,7 +368,7 @@ export default function LinhaDoTempoPage() {
                         className="shrink-0 sticky left-0 bg-panel z-10 px-3 py-2 text-sm font-mono text-cyan font-bold border-r border-line flex items-center gap-2 text-left hover:bg-line/40 transition-colors"
                         style={{ width: LABEL_W }}>
                         <span className="text-[10px] w-4 shrink-0">{icone}</span>
-                        <span className="truncate">{pi.codigo} — {pi.cliente}</span>
+                        <span className="truncate" title={`${pi.codigo} — ${pi.cliente}${pi.projeto ? ` · ${pi.projeto}` : ""}`}>{pi.codigo} — {pi.cliente}{pi.projeto ? <span className="font-sans font-normal text-muted"> · {pi.projeto}</span> : ""}</span>
                       </button>
                       <div className="relative" style={{ width: largura }}>
                         {nivel === "pi" && (

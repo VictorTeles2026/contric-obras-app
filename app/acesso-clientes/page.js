@@ -16,8 +16,12 @@ export default function AcessoClientesLogin() {
   const [erro, setErro] = useState("");
   const [carregando, setCarregando] = useState(false);
 
+  // só entra direto se a sessão aberta for de CLIENTE. Se o navegador estiver logado
+  // com um usuário da equipe (ex: quem acabou de cadastrar o cliente), antes ia direto
+  // para o painel e parecia que o acesso do cliente não funcionava.
+  const logadoComoEquipe = !carregandoAuth && sessao && usuario && usuario.perfil !== "cliente";
   useEffect(() => {
-    if (!carregandoAuth && sessao && usuario) router.replace(rotaInicialPara(usuario));
+    if (!carregandoAuth && sessao && usuario?.perfil === "cliente") router.replace(rotaInicialPara(usuario));
   }, [carregandoAuth, sessao, usuario, router]);
 
   const onSubmit = async (e) => {
@@ -46,7 +50,15 @@ export default function AcessoClientesLogin() {
           <div className="rounded-2xl bg-zinc-800/90 border border-zinc-700 p-6 shadow-2xl">
             <h1 className="font-head font-bold text-2xl mb-1">Entrar</h1>
             <p className="text-sm text-zinc-400 mb-6">Acompanhe as informações das suas obras.</p>
-            {!carregandoAuth && sessao && !usuario && erroCadastro ? (
+            {logadoComoEquipe ? (
+              <div className="flex flex-col gap-3">
+                <div className="rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-200 text-sm px-3.5 py-3">
+                  Este navegador está conectado como <strong>{usuario.nome}</strong> (equipe Contric). Para entrar como cliente, saia primeiro — ou use uma janela anônima.
+                </div>
+                <button onClick={() => sair("/acesso-clientes")} className="w-full py-3 rounded-xl bg-zinc-100 text-zinc-900 font-semibold">Sair e entrar como cliente</button>
+                <button onClick={() => router.replace(rotaInicialPara(usuario))} className="w-full py-3 rounded-xl border border-zinc-600 text-zinc-200 font-semibold">Voltar ao painel</button>
+              </div>
+            ) : !carregandoAuth && sessao && !usuario && erroCadastro ? (
               <div className="flex flex-col gap-3">
                 <div className="rounded-xl bg-red-500/10 border border-red-500/30 text-red-300 text-sm px-3.5 py-3">{erroCadastro}</div>
                 <button onClick={sair} className="w-full py-3 rounded-xl bg-zinc-100 text-zinc-900 font-semibold">Sair</button>

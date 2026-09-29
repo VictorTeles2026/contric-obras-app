@@ -1,14 +1,20 @@
 import { NextResponse } from "next/server";
-import { exigirPerfis, gerarSenha, registrarSenha, enviarEmail, emailCliente, urlApp, rotaSegura } from "../../../lib/authServidor";
+import { exigirPerfis, gerarSenha, registrarSenha, enviarEmail as enviarEmailReal, emailCliente, urlApp, rotaSegura } from "../../../lib/authServidor";
+
+// Envio automático de e-mail aos clientes TEMPORARIAMENTE DESLIGADO: as credenciais
+// aparecem numa mensagem pronta para copiar e encaminhar manualmente.
+// Para religar, troque para true.
+const ENVIO_EMAIL_CLIENTES = false;
+const enviarEmail = (dados) => ENVIO_EMAIL_CLIENTES ? enviarEmailReal(dados) : Promise.resolve({ enviado: false, motivo: "envio automático desativado" });
 
 // Gestão de clientes do portal — master, gerente e coordenador (excluir: só master).
 const PERFIS = ["master", "gerente", "coordenador"];
 const esc = (t) => String(t ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const ROTULOS = { ver_atas: "Atas de reuniões", ver_rdos_assinados: "RDOs assinados (PDF)", ver_linha_tempo: "Linha do tempo" };
 
-function mensagemBoasVindas(cliente, senha) {
-  const link = `${urlApp()}/acesso-clientes`;
-  const texto = `Olá, ${cliente.nome}!\n\nVocê foi incluído(a) no Acesso Clientes Contric, onde poderá acompanhar as informações das suas obras.\n\nEndereço: ${link}\nUsuário: ${cliente.email}\nSenha: ${senha}\n\nRecomendamos trocar a senha no primeiro acesso (menu "Minha senha").`;
+function mensagemBoasVindas(cliente, senha, origem) {
+  const link = `${urlApp() || origem || ""}/acesso-clientes`;
+  const texto = `Olá, ${cliente.nome}!\n\nVocê foi incluído(a) no Acesso Clientes Contric, onde poderá acompanhar as informações das suas obras.\n\nEndereço: ${link}\nUsuário: ${cliente.email}\nSenha: ${senha}\n\nRecomendamos trocar a senha no primeiro acesso (ícone de chave, "Minha senha").`;
   const html = emailCliente("Bem-vindo(a) ao Acesso Clientes Contric", [
     `Olá, <strong>${esc(cliente.nome)}</strong>!`,
     "Você foi incluído(a) na plataforma da Contric, onde poderá acompanhar as informações das suas obras.",
@@ -45,7 +51,7 @@ export const POST = rotaSegura(async (req) => {
       return NextResponse.json({ error: /clientes/.test(e2.message) ? "Cadastro de clientes ainda não criado — rode o script clientes-senhas.sql." : e2.message }, { status: 400 });
     }
     await registrarSenha(admin, { authUserId: criado.user.id, nome, email, tipo: "cliente", senha, definidaPor: interno.nome, origem: "criacao" });
-    const msg = mensagemBoasVindas(cliente, senha);
+    const msg = mensagemBoasVindas(cliente, senha, new URL(req.url).origin);
     const envio = await enviarEmail({ para: email, assunto: "Seu acesso à plataforma Contric", html: msg.html, texto: msg.texto });
     await log(admin, interno, "Cadastrou cliente", `${nome} (${email})${cliente.empresa ? ` — ${cliente.empresa}` : ""} · e-mail ${envio.enviado ? "enviado" : "NÃO enviado"}`);
     return NextResponse.json({ cliente, senha, envio, mensagem: msg.texto });
@@ -82,7 +88,7 @@ export const POST = rotaSegura(async (req) => {
     const { error } = await admin.auth.admin.updateUserById(cliente.auth_user_id, { password: senha });
     if (error) return NextResponse.json({ error: error.message }, { status: 400 });
     await registrarSenha(admin, { authUserId: cliente.auth_user_id, nome: cliente.nome, email: cliente.email, tipo: "cliente", senha, definidaPor: interno.nome, origem: "redefinicao" });
-    const msg = mensagemBoasVindas(cliente, senha);
+    const msg = mensagemBoasVindas(cliente, senha, new URL(req.url).origin);
     const envio = await enviarEmail({ para: cliente.email, assunto: "Sua nova senha — plataforma Contric", html: msg.html, texto: msg.texto });
     await log(admin, interno, "Redefiniu senha de cliente", `${cliente.nome} · e-mail ${envio.enviado ? "enviado" : "NÃO enviado"}`);
     return NextResponse.json({ senha, envio, mensagem: msg.texto });

@@ -157,7 +157,7 @@ function FormCliente({ inicial, onFechar, onSalvo }) {
     <Modal titulo={novo ? "Novo cliente" : `Editar — ${inicial.nome}`} onFechar={onFechar} largura="max-w-md"
       rodape={<>
         <button onClick={onFechar} className="btn btn-fantasma" disabled={salvando}>Cancelar</button>
-        <button onClick={salvar} disabled={!pode} className="btn btn-primario">{salvando ? <><Spinner /> Salvando...</> : novo ? "Cadastrar e enviar acesso" : "Salvar"}</button>
+        <button onClick={salvar} disabled={!pode} className="btn btn-primario">{salvando ? <><Spinner /> Salvando...</> : novo ? "Cadastrar e gerar acesso" : "Salvar"}</button>
       </>}>
       <div className="flex flex-col gap-3.5">
         <Campo rotulo="Nome"><input value={v.nome} onChange={set("nome")} className="input" autoFocus /></Campo>
@@ -171,7 +171,7 @@ function FormCliente({ inicial, onFechar, onSalvo }) {
             <input type="email" value={v.email} onChange={set("email")} className={`input ${v.email && !emailOk ? "!border-red" : ""}`} />
           </Campo>
         </div>
-        {novo && <Aviso tipo="info">Uma senha aleatória será criada e enviada ao e-mail do cliente, junto com o endereço da plataforma.</Aviso>}
+        {novo && <Aviso tipo="info">Uma senha aleatória será criada. Em seguida aparece uma mensagem pronta com endereço, usuário e senha para você copiar e encaminhar ao cliente.</Aviso>}
         {erro && <Aviso tipo="erro">{erro}</Aviso>}
       </div>
     </Modal>
@@ -190,13 +190,11 @@ function Credenciais({ dados, onFechar }) {
       <div className="flex flex-col gap-3">
         {envio?.enviado
           ? <Aviso tipo="sucesso">E-mail enviado para <strong>{cliente.email}</strong> com o usuário e a senha.</Aviso>
-          : <Aviso tipo="alerta">O e-mail <strong>não</strong> foi enviado ({envio?.motivo}). Envie a mensagem abaixo por WhatsApp ou e-mail.</Aviso>}
-        <div className="rounded-xl bg-panel p-3.5 text-sm">
-          <div><span className="text-muted">Usuário:</span> <strong>{cliente.email}</strong></div>
-          <div><span className="text-muted">Senha:</span> <strong className="font-mono text-base tracking-wider">{senha}</strong></div>
-        </div>
+          : <Aviso tipo="info">Copie a mensagem abaixo e encaminhe ao cliente (WhatsApp, e-mail etc.). A senha só aparece agora.</Aviso>}
+        <textarea readOnly value={mensagem} rows={10} onFocus={(e) => e.target.select()}
+          className="input !text-sm font-mono leading-relaxed resize-none" />
         <div className="flex flex-wrap gap-2">
-          <button onClick={copiar} className="btn btn-contorno btn-sm">Copiar mensagem</button>
+          <button onClick={copiar} className="btn btn-primario btn-sm"><Icone nome="copiar" className="w-4 h-4" /> Copiar mensagem</button>
           {fone && <a href={`https://wa.me/55${fone}?text=${encodeURIComponent(mensagem)}`} target="_blank" rel="noreferrer" className="btn btn-contorno btn-sm">Enviar por WhatsApp</a>}
           <a href={`mailto:${cliente.email}?subject=${encodeURIComponent("Seu acesso à plataforma Contric")}&body=${encodeURIComponent(mensagem)}`} className="btn btn-contorno btn-sm">Abrir no e-mail</a>
         </div>
@@ -217,7 +215,7 @@ function GerenciarAcessos({ cliente, pis, acessos, onFechar, onMudou }) {
     const { ok, json } = await chamarApi("/api/clientes", { acao: "acesso", id: cliente.id, piId: pi, ...valores });
     setSalvando(null);
     if (!ok) { avisar(json.error || "Não foi possível salvar.", "erro", 6000); return; }
-    avisar(json.removido ? "Acesso removido." : json.envio?.enviado ? "Acesso salvo — cliente avisado por e-mail." : `Acesso salvo${json.envio?.motivo && json.envio.motivo !== "sem alterações" ? ` (e-mail não enviado: ${json.envio.motivo})` : ""}.`);
+    avisar(json.removido ? "Acesso removido." : json.envio?.enviado ? "Acesso salvo — cliente avisado por e-mail." : "Acesso salvo. O cliente já vê a obra ao entrar em Acesso Clientes.");
     onMudou();
     if (chave === "novo") setPiId("");
   };
@@ -239,7 +237,7 @@ function GerenciarAcessos({ cliente, pis, acessos, onFechar, onMudou }) {
             ))}
           </div>
           <button onClick={() => salvar(piId, flags, "novo")} disabled={!piId || !Object.values(flags).some(Boolean) || salvando} className="btn btn-primario self-start">
-            {salvando === "novo" ? <><Spinner /> Salvando...</> : "Dar acesso e avisar o cliente"}
+            {salvando === "novo" ? <><Spinner /> Salvando...</> : "Dar acesso"}
           </button>
         </div>
 

@@ -40,6 +40,7 @@ const CAMINHOS = {
   entrar: <><path d="M9 4H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h3" /><path d="M14 17l5-5-5-5M19 12H8" /></>,
   assinatura: <><path d="M3 17c3 0 4-8 7-8s1 8 4 8 3-4 7-4" /><path d="M3 21h18" /></>,
   obra: <><path d="M3 21h18M5 21V10l7-5 7 5v11" /><path d="M9 21v-5h6v5" /></>,
+  copiar: <><rect x="8" y="8" width="12" height="12" rx="2" /><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2" /></>,
   info: <><circle cx="12" cy="12" r="9" /><path d="M12 11v5M12 8v.01" /></>,
 };
 
