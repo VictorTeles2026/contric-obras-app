@@ -204,7 +204,7 @@ export default function DashboardPage() {
                 {gruposMedicoes.map(({ pi, itens }) => (
                   <Fragment key={pi.id}>
                     <tr>
-                      <td colSpan={5} className="pt-4 pb-1.5 px-4 md:pl-0 text-xs font-mono text-cyan font-bold">
+                      <td colSpan={5} className="pt-4 pb-1.5 px-4 md:pl-0 text-sm text-cyan font-semibold">
                         {pi.codigo} — {pi.cliente}{pi.projeto ? ` — ${pi.projeto}` : ""}
                       </td>
                     </tr>
@@ -215,10 +215,10 @@ export default function DashboardPage() {
                       return (
                         <tr key={etapa.id} className="border-b border-line/60 hover:bg-panel/60">
                           <td className="py-2 px-4 md:pl-0">{etapa.parent_etapa_id ? <span className="text-muteddim">· </span> : ""}{etapa.nome}</td>
-                          <td className="py-2 pr-3 text-right font-mono text-xs">{formatarPercentual(etapa.percentual)}</td>
-                          <td className="py-2 pr-3 text-right font-mono text-xs">{formatarPercentual(etapa.medicao_percentual)}</td>
-                          <td className="py-2 pr-3 text-right font-mono text-xs whitespace-nowrap">{formatarValor(etapa.medicao_valor)}</td>
-                          <td className="py-2 pr-4 md:pr-0 whitespace-nowrap">
+                          <td className="py-2 pr-3 text-right tabular-nums">{formatarPercentual(etapa.percentual)}</td>
+                          <td className="py-2 pr-3 text-right tabular-nums">{formatarPercentual(etapa.medicao_percentual)}</td>
+                          <td className="py-2 pr-3 text-right tabular-nums whitespace-nowrap">{formatarValor(etapa.medicao_valor)}</td>
+                          <td className="py-2 pr-4 md:pr-0 whitespace-nowrap tabular-nums">
                             {formatarData(etapa.data_prevista_fim)}
                             {vencida && <span className="selo bg-red/10 text-red ml-2">vencida</span>}
                             {proxima && <span className="selo bg-amber/10 text-amber ml-2">{dias === 0 ? "hoje" : `em ${dias}d`}</span>}
