@@ -63,6 +63,21 @@ export default function RecursosPage() {
   const [busca, setBusca] = useState("");
   const [buscaAplicada, setBuscaAplicada] = useState("");
   const [filtroEquipe, setFiltroEquipe] = useState("");
+  const [mostrarDesabilitados, setMostrarDesabilitados] = useState(true);
+  const [alternandoAtivo, setAlternandoAtivo] = useState(false);
+  const alternarAtivo = async (r) => {
+    const ativo = r.ativo === false;
+    setAlternandoAtivo(true);
+    const { data: gravado, error } = await supabase.from("recursos").update({ ativo }).eq("id", r.id).select("id, ativo");
+    // sem erro mas sem linha alterada = o banco bloqueou (permissão)
+    if (!error && !gravado?.length) { setAlternandoAtivo(false); avisar("O banco não permitiu alterar este recurso (permissão).", "erro", 7000); return; }
+    setAlternandoAtivo(false);
+    // mostra o erro real do banco (antes só dizia "rode o script", o que escondia a causa)
+    if (error) { avisar(`Não foi possível alterar: ${error.message}${/ativo/.test(error.message) ? " — rode o recursos-ativo.sql (versão atual, com a recarga do cache) no Supabase." : ""}`, "erro", 9000); return; }
+    await registrarLog(usuario, ativo ? "Habilitou recurso" : "Desabilitou recurso", r.nome);
+    avisar(ativo ? `${r.nome} habilitado.` : `${r.nome} desabilitado — não aparece mais para novas alocações.`);
+    recarregarRecursos();
+  };
   const [gruposFechados, setGruposFechados] = useState([]);
 
   const usuariosElegiveis = usuarios.filter((u) => PERFIS_COM_ALOCACAO.includes(u.perfil));
@@ -75,14 +90,14 @@ export default function RecursosPage() {
 
   const recursosFiltrados = useMemo(() => {
     const termo = buscaAplicada.trim().toLowerCase();
-    return recursos.filter((r) => (!filtroEquipe || (r.equipes || []).includes(filtroEquipe)) && (!termo ||
+    return recursos.filter((r) => (mostrarDesabilitados || r.ativo !== false) && (!filtroEquipe || (r.equipes || []).includes(filtroEquipe)) && (!termo ||
       r.nome.toLowerCase().includes(termo) ||
       rotuloTipo(r.tipo).toLowerCase().includes(termo) ||
       (r.atributos?.funcao || "").toLowerCase().includes(termo) ||
       (usuarios.find((u) => u.id === r.usuario_id)?.nome || "").toLowerCase().includes(termo) ||
       (r.equipes || []).some((a) => a.toLowerCase().includes(termo))
     ));
-  }, [recursos, buscaAplicada, filtroEquipe, usuarios]);
+  }, [recursos, buscaAplicada, filtroEquipe, mostrarDesabilitados, usuarios]);
 
   const grupos = useMemo(() => {
     const porTipo = {};
@@ -132,12 +147,14 @@ export default function RecursosPage() {
 
   const salvarEdicao = async (dados) => {
     if (!selecionado) return;
-    const { error } = await gravarTolerante({
+    const { error, colunasIgnoradas } = await gravarTolerante({
       nome: dados.nome, tipo: dados.tipo, custo_unidade: dados.unidade,
       usuario_id: dados.usuarioId || null, atributos: { ...(selecionado.atributos || {}), funcao: dados.funcao || null }, equipes: dados.equipes || [],
       empresa_terceira_id: dados.tipo === "mao_obra_terceira" ? dados.empresaId || null : null,
+      ativo: dados.ativo !== false,
     }, (d) => supabase.from("recursos").update(d).eq("id", selecionado.id));
     if (error) { avisar(`Não foi possível salvar: ${error.message}`, "erro", 6000); return; }
+    if (colunasIgnoradas?.includes("ativo")) avisar("Salvo, mas a situação Ativo/Desabilitado não foi gravada: o banco ainda não tem a coluna. Rode o recursos-ativo.sql.", "erro", 9000);
     await registrarLog(usuario, "Editou recurso", `${dados.nome}${dados.empresaId ? ` — ${nomeEmpresa(dados.empresaId)}` : ""}`);
     avisar("Recurso atualizado.");
     setEditarOpen(false);
@@ -282,6 +299,10 @@ export default function RecursosPage() {
           <option value="">Todas as equipes</option>
           {AREAS.map((a) => <option key={a} value={a}>{a}</option>)}
         </select>
+        <label className="flex items-center gap-2 text-sm text-muted mb-2 px-1 cursor-pointer">
+          <input type="checkbox" className="accent-cyan w-4 h-4" checked={mostrarDesabilitados} onChange={(e) => setMostrarDesabilitados(e.target.checked)} />
+          Mostrar desabilitados ({recursos.filter((r) => r.ativo === false).length})
+        </label>
         <div className="text-xs text-muteddim mb-3 hidden md:block">Clique para ver detalhes · Shift + clique para selecionar vários</div>
 
         {carregandoRecursos && <Esqueleto linhas={5} altura={52} />}
@@ -299,9 +320,10 @@ export default function RecursosPage() {
                     const qtdAlocs = alocacoes.filter((a) => a.recurso_id === r.id).length;
                     return (
                       <button key={r.id} onClick={(e) => clicarRecurso(r.id, e)}
-                        className={`text-left px-3 py-2.5 rounded-xl border text-sm transition-all ${sel ? "border-cyan bg-cyan/5 shadow-sm" : "border-transparent hover:bg-panel"}`}>
+                        className={`text-left px-3 py-2.5 rounded-xl border text-sm transition-all ${sel ? "border-cyan bg-cyan/5 shadow-sm" : "border-transparent hover:bg-panel"} ${r.ativo === false ? "opacity-60" : ""}`}>
                         <div className="flex items-center justify-between gap-2">
                           <span className="font-semibold truncate">{r.nome}</span>
+                          {r.ativo === false && <span className="selo bg-panel text-muted shrink-0">Desabilitado</span>}
                           {qtdAlocs > 0 && <span className="selo bg-panel text-muted shrink-0">{qtdAlocs}</span>}
                         </div>
                         <div className="text-muted text-xs truncate">
@@ -341,7 +363,18 @@ export default function RecursosPage() {
           <div className="max-w-3xl animar-fade">
             <div className="cartao p-5 mb-4 flex flex-col sm:flex-row sm:items-start justify-between gap-3">
               <div className="min-w-0">
-                <div className="font-head font-bold text-xl">{selecionado.nome}</div>
+                <div className="font-head font-bold text-xl flex flex-wrap items-center gap-2">
+                  {selecionado.nome}
+                  {editavel ? (
+                    <button onClick={() => alternarAtivo(selecionado)} disabled={alternandoAtivo} title={selecionado.ativo === false ? "Clique para habilitar" : "Clique para desabilitar"}
+                      className={`btn btn-sm border !text-xs ${selecionado.ativo === false ? "border-line text-muted bg-white hover:bg-panel" : "border-green/40 text-green bg-green/5 hover:bg-green/10"}`}>
+                      <span className={`w-2 h-2 rounded-full ${selecionado.ativo === false ? "bg-muteddim" : "bg-green"}`} />
+                      {selecionado.ativo === false ? "Desabilitado" : "Ativo"}
+                    </button>
+                  ) : (
+                    <span className={`selo ${selecionado.ativo === false ? "bg-panel text-muted" : "bg-green/10 text-green"}`}>{selecionado.ativo === false ? "Desabilitado" : "Ativo"}</span>
+                  )}
+                </div>
                 <div className="text-sm text-muted mt-0.5">
                   {rotuloTipo(selecionado.tipo)} · apropriação por {rotuloUnidade(selecionado.custo_unidade).toLowerCase()}
                   {selecionado.atributos?.funcao && <> · {selecionado.atributos.funcao}</>}
@@ -363,7 +396,7 @@ export default function RecursosPage() {
                     setEditandoAlocId(null); setPiEscolhido(""); setModo("periodo_percentual");
                     setPeriodoInicio(hojeISO()); setPeriodoFim(hojeISO()); setPercentual(100);
                     fecharTudoMenos(alocarOpen && !editandoAlocId ? null : "alocar");
-                  }} className="btn btn-primario btn-sm">
+                  }} disabled={selecionado.ativo === false} title={selecionado.ativo === false ? "Recurso desabilitado — habilite para alocar" : undefined} className="btn btn-primario btn-sm">
                     <Icone nome="mais2" className="w-4 h-4" /> Alocar
                   </button>
                   {master && (
@@ -378,7 +411,7 @@ export default function RecursosPage() {
             {editarOpen && editavel && (
               <div className="mb-4 max-w-md animar-fade">
                 <RecursoForm usuarios={usuariosElegiveis} empresas={empresasAtivas.concat(empresas.filter((e) => !e.ativa && e.id === selecionado.empresa_terceira_id))} onIrParaEmpresas={() => setAba("empresas")} onSalvar={salvarEdicao} rotuloBotao="Salvar alterações" onCancelar={() => setEditarOpen(false)}
-                  valoresIniciais={{ nome: selecionado.nome, tipo: selecionado.tipo, unidade: selecionado.custo_unidade, usuarioId: selecionado.usuario_id || "", funcao: selecionado.atributos?.funcao || "", empresaId: selecionado.empresa_terceira_id || "", equipes: selecionado.equipes || [] }} />
+                  valoresIniciais={{ nome: selecionado.nome, tipo: selecionado.tipo, unidade: selecionado.custo_unidade, usuarioId: selecionado.usuario_id || "", funcao: selecionado.atributos?.funcao || "", empresaId: selecionado.empresa_terceira_id || "", equipes: selecionado.equipes || [], ativo: selecionado.ativo !== false }} />
               </div>
             )}
 
@@ -480,6 +513,8 @@ function RecursoForm({ usuarios, empresas = [], onIrParaEmpresas, onSalvar, rotu
   const [funcao, setFuncao] = useState(valoresIniciais?.funcao || "");
   const [empresaId, setEmpresaId] = useState(valoresIniciais?.empresaId || "");
   const [equipes, setEquipes] = useState(valoresIniciais?.equipes || []);
+  const [ativo, setAtivo] = useState(valoresIniciais?.ativo !== false);
+  const ehEdicao = !!valoresIniciais;
   const ehTerceira = tipo === "mao_obra_terceira";
   const faltaEmpresa = ehTerceira && !empresaId;
 
@@ -501,8 +536,18 @@ function RecursoForm({ usuarios, empresas = [], onIrParaEmpresas, onSalvar, rotu
   };
 
   return (
-    <form onSubmit={(e) => { e.preventDefault(); if (nome.trim() && !faltaEmpresa) onSalvar({ nome: nome.trim(), tipo, unidade, usuarioId, funcao, empresaId, equipes }); }}
+    <form onSubmit={(e) => { e.preventDefault(); if (nome.trim() && !faltaEmpresa) onSalvar({ nome: nome.trim(), tipo, unidade, usuarioId, funcao, empresaId, equipes, ativo }); }}
       className="bg-panel border border-line rounded-xl p-3.5 flex flex-col gap-3">
+      {ehEdicao && (
+        <div>
+          <span className="rotulo">Situação</span>
+          <div className="flex gap-2">
+            <button type="button" onClick={() => setAtivo(true)} className={`chip !py-2 flex-1 justify-center ${ativo ? "!bg-green !text-white !border-green" : ""}`}>Ativo</button>
+            <button type="button" onClick={() => setAtivo(false)} className={`chip !py-2 flex-1 justify-center ${!ativo ? "!bg-muted !text-white !border-muted" : ""}`}>Desabilitado</button>
+          </div>
+          {!ativo && <span className="block text-xs text-muteddim mt-1">Desabilitado não aparece para novas alocações.</span>}
+        </div>
+      )}
       <Campo rotulo="Vincular a um usuário (opcional)">
         <select value={usuarioId} onChange={(e) => onSelecionarUsuario(e.target.value)} className="input">
           <option value="">Sem vínculo com usuário</option>
@@ -562,7 +607,7 @@ function AlocacaoEmMassaModal({ pis, recursos, onAplicar, onCancelar, preSelecio
   const [selecionados, setSelecionados] = useState(preSelecionados || []);
   const [aplicando, setAplicando] = useState(false);
 
-  const filtrados = recursos.filter((r) =>
+  const filtrados = recursos.filter((r) => r.ativo !== false &&
     (!filtroTipo || r.tipo === filtroTipo) && (!filtroEquipeM || (r.equipes || []).includes(filtroEquipeM)) &&
     (!busca.trim() || r.nome.toLowerCase().includes(busca.trim().toLowerCase()))
   );
