@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState, useCallback } from "react";
 import { supabase } from "../lib/supabase";
+import { compararPis } from "../lib/dados";
 import { BUCKET_DOCUMENTOS, linkTemporario } from "../lib/pdfRdo";
 import { marcarDocumentosLidos } from "../lib/documentosLidos";
 import { formatarDataHora } from "../lib/datas";
@@ -25,7 +26,7 @@ export default function DocumentosNaoAbertos({ usuario, pis }) {
   const [arquivos, setArquivos] = useState(null); // [{ caminho, nome, tipo, data, pi }]
   const [lidos, setLidos] = useState(new Set());
   const [erroTabela, setErroTabela] = useState(false);
-  const [aba, setAba] = useState("rdo");
+  const [aba, setAba] = useState(""); // "" = todos os tipos (padrão)
   const [marcando, setMarcando] = useState(false);
 
   const idsPis = pis.map((p) => p.id).join(",");
@@ -45,14 +46,16 @@ export default function DocumentosNaoAbertos({ usuario, pis }) {
 
   const naoAbertos = useMemo(() => (arquivos || []).filter((a) => !lidos.has(a.caminho)), [arquivos, lidos]);
   const contagem = (t) => naoAbertos.filter((a) => a.tipo === t).length;
-  const doTipo = naoAbertos.filter((a) => a.tipo === aba);
+  const doTipo = naoAbertos.filter((a) => !aba || a.tipo === aba);
+  const ordemTipo = (t) => TIPOS.findIndex(([v]) => v === t);
   const porPi = useMemo(() => {
     const g = new Map();
-    doTipo.sort((x, y) => String(y.data || "").localeCompare(String(x.data || ""))).forEach((a) => {
+    // dentro de cada PI: por tipo (RDO, ocorrência, ata, outros) e, no tipo, do mais recente ao mais antigo
+    doTipo.sort((x, y) => ordemTipo(x.tipo) - ordemTipo(y.tipo) || String(y.data || "").localeCompare(String(x.data || ""))).forEach((a) => {
       if (!g.has(a.pi.id)) g.set(a.pi.id, { pi: a.pi, itens: [] });
       g.get(a.pi.id).itens.push(a);
     });
-    return [...g.values()].sort((x, y) => (x.pi.codigo || "").localeCompare(y.pi.codigo || ""));
+    return [...g.values()].sort((x, y) => compararPis(x.pi, y.pi));
   }, [doTipo]);
 
   const marcar = async (caminhos) => {
@@ -73,7 +76,7 @@ export default function DocumentosNaoAbertos({ usuario, pis }) {
     }
   };
   const marcarTodos = async () => {
-    if (!doTipo.length || !window.confirm(`Marcar ${doTipo.length} documento(s) de "${TIPOS.find(([t]) => t === aba)[1]}" como lidos?`)) return;
+    if (!doTipo.length || !window.confirm(`Marcar ${doTipo.length} documento(s) de "${aba ? TIPOS.find(([t]) => t === aba)[1] : "todos os tipos"}" como lidos?`)) return;
     setMarcando(true); await marcar(doTipo.map((a) => a.caminho)); setMarcando(false);
   };
 
@@ -88,6 +91,9 @@ export default function DocumentosNaoAbertos({ usuario, pis }) {
       </div>
       {erroTabela && <div className="text-xs text-amber mb-2">Rode o script <strong>documentos-lidos.sql</strong> no Supabase para guardar o que já foi aberto.</div>}
       <div className="flex flex-wrap gap-1.5 mb-3">
+        <button onClick={() => setAba("")} className={`chip ${aba === "" ? "chip-ativo" : ""}`}>
+          Todos{naoAbertos.length > 0 && <span className={`ml-1 font-bold ${aba === "" ? "" : "text-red"}`}>{naoAbertos.length}</span>}
+        </button>
         {TIPOS.map(([t, l]) => (
           <button key={t} onClick={() => setAba(t)} className={`chip ${aba === t ? "chip-ativo" : ""}`}>
             {l}{contagem(t) > 0 && <span className={`ml-1 font-bold ${aba === t ? "" : "text-red"}`}>{contagem(t)}</span>}
@@ -102,7 +108,7 @@ export default function DocumentosNaoAbertos({ usuario, pis }) {
 
       {arquivos === null && <Esqueleto linhas={3} altura={44} />}
       {arquivos !== null && doTipo.length === 0 && (
-        <div className="text-sm text-muteddim text-center py-6">Nenhum documento novo deste tipo. ✓</div>
+        <div className="text-sm text-muteddim text-center py-6">{aba ? "Nenhum documento novo deste tipo." : "Nenhum documento novo."} ✓</div>
       )}
       <div className="flex flex-col gap-3 overflow-y-auto rolagem-fina flex-1 min-h-0 -mx-1 px-1">
         {porPi.map(({ pi, itens }) => (

@@ -102,7 +102,7 @@ function ResumoDiasPeriodo({ dataInicio, dataFim }) {
 export default function CronogramaPage() {
   const { usuario } = useAuth();
   const editavel = podeEditar(usuario);
-  const { dados: pis, recarregar: recarregarPis } = useTabela("pis", { order: { coluna: "created_at" } });
+  const { dados: pis, recarregar: recarregarPis } = useTabela("pis", { order: { coluna: "codigo" } });
   const { dados: categorias } = useTabela("categorias_orcamento", { order: { coluna: "ordem" } });
   const { dados: orcamentos, recarregar: recarregarOrcamentos } = useTabela("orcamento_pi_item");
   const { dados: recursos } = useTabela("recursos");
@@ -704,10 +704,10 @@ function EtapaRow({ etapa, editavel, onChange, onDelete, deps, onRemoverDep, anc
         </button>
         <PainelSuspenso ancoraRef={alocRef} aberto={alocAberta} onFechar={fecharAloc} largura={272}>
             {recursos.length === 0 && <div className="text-sm text-muteddim px-2 py-1.5">Nenhum recurso cadastrado.</div>}
-            {recursos.map((r) => (
-              <label key={r.id} className="flex items-center gap-2 px-2 py-1.5 text-sm cursor-pointer rounded-lg hover:bg-panel">
+            {recursos.filter((r) => r.ativo !== false || alocs.some((a) => a.recurso_id === r.id)).map((r) => (
+              <label key={r.id} className={`flex items-center gap-2 px-2 py-1.5 text-sm cursor-pointer rounded-lg hover:bg-panel ${r.ativo === false ? "opacity-60" : ""}`}>
                 <input type="checkbox" className="accent-cyan" checked={alocs.some((a) => a.recurso_id === r.id)} disabled={!editavel} onChange={() => onToggleRecurso(etapa, r.id)} />
-                <span className="truncate">{r.nome}</span>
+                <span className="truncate">{r.nome}{r.ativo === false ? " (desabilitado)" : ""}</span>
               </label>
             ))}
         </PainelSuspenso>

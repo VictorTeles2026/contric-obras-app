@@ -295,6 +295,7 @@ export default function LinhaDoTempoPage() {
               <span key={k} className="flex items-center gap-1.5"><span className="w-3 h-2 rounded-sm" style={{ background: v.barra }} />{v.rotulo}</span>
             ))}
             <span className="flex items-center gap-1.5"><span className="w-px h-3 bg-red" />Hoje</span>
+            <span><strong className="text-red">*</strong> etapa com medição</span>
           </div>
         </div>
 
@@ -436,7 +437,7 @@ export default function LinhaDoTempoPage() {
                             )}
                             {(vencido || e.status === "em_andamento") && (
                               <span className={`absolute top-2 text-[11px] font-mono whitespace-nowrap ${vencido ? "text-red font-semibold" : "text-muted"}`} style={{ left: left + width + 5 }}>
-                                {vencido ? "VENCIDO" : `${e.percentual || 0}%`}
+                                {vencido ? `VENCIDO${e.medicao ? "*" : ""} · ${e.percentual || 0}%` : `${e.percentual || 0}%`}
                               </span>
                             )}
                           </div>
