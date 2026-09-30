@@ -377,10 +377,15 @@ export default function LinhaDoTempoPage() {
                         className="sticky left-0 z-10 px-3 py-2 text-sm flex items-center gap-2 text-left hover:bg-line/40 transition-colors"
                         style={{ width: larguraContainer || LABEL_W + larguraVisivel }}>
                         <span className="text-[10px] w-4 shrink-0 text-cyan">{icone}</span>
-                        <span className="min-w-0 truncate" title={`${pi.codigo} — ${pi.cliente}${pi.projeto ? ` · ${pi.projeto}` : ""}`}>
+                        <span className="min-w-0 truncate" title={`${pi.codigo} — ${pi.cliente}${pi.projeto ? ` · ${pi.projeto}` : ""}${pi.responsavel_cliente_nome ? ` · Resp. no cliente: ${[pi.responsavel_cliente_nome, pi.responsavel_cliente_email, pi.responsavel_cliente_telefone].filter(Boolean).join(" · ")}` : ""}`}>
                           <span className="font-mono text-cyan font-bold">{pi.codigo}</span>
                           <span className="font-semibold"> — {pi.cliente}</span>
                           {pi.projeto && <span className="text-muted"> · {pi.projeto}</span>}
+                          {pi.responsavel_cliente_nome && (
+                            <span className="text-muted" title={[pi.responsavel_cliente_email, pi.responsavel_cliente_telefone].filter(Boolean).join(" · ") || undefined}>
+                              {" "}· Resp. no cliente: <strong className="text-textmain font-semibold">{pi.responsavel_cliente_nome}</strong>
+                            </span>
+                          )}
                         </span>
                         {periodo && (
                           <span className="ml-auto shrink-0 text-xs text-muteddim font-mono pl-3">

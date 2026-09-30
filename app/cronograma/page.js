@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useMemo, useRef, useEffect, useLayoutEffect, useCallback } from "react";
-import { useTabela, registrarLog, chamarApi } from "../../lib/dados";
+import { useTabela, registrarLog, chamarApi, gravarTolerante } from "../../lib/dados";
 import { useAuth, podeEditar } from "../../lib/AuthContext";
 import { supabase } from "../../lib/supabase";
 import { hojeISO as todayISO, addDias, isoLocal } from "../../lib/datas";
@@ -145,13 +145,16 @@ export default function CronogramaPage() {
     const duplicado = pis.some((p) => p.codigo.trim().toLowerCase() === dadosPi.codigo.toLowerCase() && (pisModalModo === "create" || p.id !== piId));
     if (duplicado) return `Já existe um PI com o número ${dadosPi.codigo}.`;
     if (pisModalModo === "create") {
-      const { data, error } = await supabase.from("pis").insert(dadosPi).select().single();
+      // tolerante: se as colunas do responsável no cliente ainda não existirem, grava o resto
+      const { data, error, colunasIgnoradas } = await gravarTolerante(dadosPi, (d) => supabase.from("pis").insert(d).select().single());
       if (error) return error.message;
+      if (colunasIgnoradas?.length) avisar("PI criado, mas o responsável no cliente não foi gravado: rode o pi-responsavel-cliente.sql no Supabase.", "erro", 9000);
       piId = data.id;
       registrarLog(usuario, "Criou PI", data.codigo);
     } else {
-      const { error } = await supabase.from("pis").update(dadosPi).eq("id", piId);
+      const { error, colunasIgnoradas } = await gravarTolerante(dadosPi, (d) => supabase.from("pis").update(d).eq("id", piId));
       if (error) return error.message;
+      if (colunasIgnoradas?.length) avisar("PI salvo, mas o responsável no cliente não foi gravado: rode o pi-responsavel-cliente.sql no Supabase.", "erro", 9000);
       registrarLog(usuario, "Editou PI", dadosPi.codigo);
     }
     // campo apagado que já tinha valor salvo vira 0 (antes era ignorado e o valor antigo ficava)
@@ -764,6 +767,9 @@ function PiModal({ modo, piInicial, categorias, valoresIniciais, onSalvar, onCan
   const [projeto, setProjeto] = useState(piInicial?.projeto || "");
   const [prazo, setPrazo] = useState(piInicial?.prazo || addDias(todayISO(), 45));
   const [status, setStatus] = useState(piInicial?.status || "ativo");
+  const [respNome, setRespNome] = useState(piInicial?.responsavel_cliente_nome || "");
+  const [respEmail, setRespEmail] = useState(piInicial?.responsavel_cliente_email || "");
+  const [respTelefone, setRespTelefone] = useState(piInicial?.responsavel_cliente_telefone || "");
   const [valores, setValores] = useState(valoresIniciais || {});
 
   const compraCats = categorias.filter((c) => c.grupo === "compra_reais");
@@ -777,7 +783,8 @@ function PiModal({ modo, piInicial, categorias, valoresIniciais, onSalvar, onCan
   const salvar = async () => {
     if (!podeSalvar) return;
     setSalvando(true); setErroModal("");
-    const erro = await onSalvar({ codigo: codigo.trim(), cliente: cliente.trim() || null, projeto: projeto.trim() || null, prazo: prazo || null, status }, valores);
+    const erro = await onSalvar({ codigo: codigo.trim(), cliente: cliente.trim() || null, projeto: projeto.trim() || null, prazo: prazo || null, status,
+      responsavel_cliente_nome: respNome.trim() || null, responsavel_cliente_email: respEmail.trim() || null, responsavel_cliente_telefone: respTelefone.trim() || null }, valores);
     setSalvando(false);
     if (erro) setErroModal(erro);
   };
@@ -820,6 +827,9 @@ function PiModal({ modo, piInicial, categorias, valoresIniciais, onSalvar, onCan
         <Campo rotulo="Cliente" className="col-span-2 md:col-span-2"><input value={cliente} onChange={(e) => setCliente(e.target.value)} className="input" /></Campo>
         <Campo rotulo="Prazo" className="col-span-2 md:col-span-2"><input type="date" value={prazo || ""} onChange={(e) => setPrazo(e.target.value)} className="input" /></Campo>
         <Campo rotulo="Projeto" className="col-span-2 md:col-span-6"><input value={projeto} onChange={(e) => setProjeto(e.target.value)} className="input" /></Campo>
+        <Campo rotulo="Responsável pelo PI no cliente" className="col-span-2 md:col-span-2"><input value={respNome} onChange={(e) => setRespNome(e.target.value)} className="input" placeholder="Nome" /></Campo>
+        <Campo rotulo="E-mail do responsável" className="col-span-2 md:col-span-2"><input value={respEmail} onChange={(e) => setRespEmail(e.target.value)} className="input" inputMode="email" autoCapitalize="none" /></Campo>
+        <Campo rotulo="Telefone do responsável" className="col-span-2 md:col-span-2"><input value={respTelefone} onChange={(e) => setRespTelefone(e.target.value)} className="input" inputMode="tel" /></Campo>
       </div>
 
       <div className="flex items-baseline justify-between mb-2">
