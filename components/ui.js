@@ -41,7 +41,7 @@ export function EstadoVazio({ icone = "info", titulo, texto, acao }) {
       <div className="w-12 h-12 rounded-2xl bg-white border border-line flex items-center justify-center text-muteddim mb-1">
         <Icone nome={icone} className="w-6 h-6" />
       </div>
-      {titulo && <div className="font-head font-bold text-base text-textmain">{titulo}</div>}
+      {titulo && <div className="titulo-quadro text-textmain">{titulo}</div>}
       {texto && <p className="text-sm text-muted max-w-xs leading-relaxed">{texto}</p>}
       {acao && <div className="mt-2">{acao}</div>}
     </div>
@@ -52,7 +52,7 @@ export function CabecalhoPagina({ titulo, subtitulo, acoes }) {
   return (
     <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3 mb-5">
       <div className="min-w-0">
-        <h1 className="font-head font-bold text-xl md:text-2xl text-textmain leading-tight">{titulo}</h1>
+        <h1 className="titulo-pagina">{titulo}</h1>
         {subtitulo && <p className="text-sm text-muted mt-1">{subtitulo}</p>}
       </div>
       {acoes && <div className="flex flex-wrap items-center gap-2 shrink-0">{acoes}</div>}

@@ -788,7 +788,8 @@ function PiModal({ modo, piInicial, categorias, valoresIniciais, onSalvar, onCan
   const salvar = async () => {
     if (!podeSalvar) return;
     setSalvando(true); setErroModal("");
-    const erro = await onSalvar({ codigo: codigo.trim(), cliente: cliente.trim() || null, projeto: projeto.trim() || null, prazo: prazo || null, status,
+    // cliente e projeto sempre gravados em MAIÚSCULAS
+    const erro = await onSalvar({ codigo: codigo.trim(), cliente: cliente.trim().toLocaleUpperCase("pt-BR") || null, projeto: projeto.trim().toLocaleUpperCase("pt-BR") || null, prazo: prazo || null, status,
       responsavel_cliente_nome: respNome.trim() || null, responsavel_cliente_email: respEmail.trim() || null, responsavel_cliente_telefone: respTelefone.trim() || null }, valores);
     setSalvando(false);
     if (erro) setErroModal(erro);
@@ -829,22 +830,22 @@ function PiModal({ modo, piInicial, categorias, valoresIniciais, onSalvar, onCan
             {Object.entries(STATUS_PI).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
           </select>
         </Campo>
-        <Campo rotulo="Cliente" className="col-span-2 md:col-span-2"><input value={cliente} onChange={(e) => setCliente(e.target.value)} className="input" /></Campo>
+        <Campo rotulo="Cliente" className="col-span-2 md:col-span-2"><input value={cliente} onChange={(e) => setCliente(e.target.value.toLocaleUpperCase("pt-BR"))} className="input uppercase" /></Campo>
         <Campo rotulo="Prazo" className="col-span-2 md:col-span-2"><input type="date" value={prazo || ""} onChange={(e) => setPrazo(e.target.value)} className="input" /></Campo>
-        <Campo rotulo="Projeto" className="col-span-2 md:col-span-6"><input value={projeto} onChange={(e) => setProjeto(e.target.value)} className="input" /></Campo>
+        <Campo rotulo="Projeto" className="col-span-2 md:col-span-6"><input value={projeto} onChange={(e) => setProjeto(e.target.value.toLocaleUpperCase("pt-BR"))} className="input uppercase" /></Campo>
         <Campo rotulo="Responsável pelo PI no cliente" className="col-span-2 md:col-span-2"><input value={respNome} onChange={(e) => setRespNome(e.target.value)} className="input" placeholder="Nome" /></Campo>
         <Campo rotulo="E-mail do responsável" className="col-span-2 md:col-span-2"><input value={respEmail} onChange={(e) => setRespEmail(e.target.value)} className="input" inputMode="email" autoCapitalize="none" /></Campo>
         <Campo rotulo="Telefone do responsável" className="col-span-2 md:col-span-2"><input value={respTelefone} onChange={(e) => setRespTelefone(e.target.value)} className="input" inputMode="tel" /></Campo>
       </div>
 
       <div className="flex items-baseline justify-between mb-2">
-        <div className="font-head font-bold text-sm text-cyan">Compra — Produto ou Serviço</div>
+        <div className="titulo-quadro text-cyan">Compra — Produto ou Serviço</div>
         <div className="text-xs text-muted">Total: <strong className="text-textmain">R$ {soma(compraCats).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</strong></div>
       </div>
       <div className="mb-6">{tabela(compraCats, "Valor (R$)", "0.01")}</div>
 
       <div className="flex items-baseline justify-between mb-2">
-        <div className="font-head font-bold text-sm text-cyan">MOI + Contric (horas)</div>
+        <div className="titulo-quadro text-cyan">MOI + Contric (horas)</div>
         <div className="text-xs text-muted">Total: <strong className="text-textmain">{soma(moiCats).toLocaleString("pt-BR")} h</strong></div>
       </div>
       {tabela(moiCats, "Horas", "0.5")}

@@ -114,7 +114,7 @@ export default function RdoPage() {
             )}
 
             <section className="cartao p-4 md:p-5 mb-4">
-              <h2 className="font-head font-bold text-base mb-3">Atividades</h2>
+              <h2 className="titulo-quadro mb-3">Atividades</h2>
               <div className="flex flex-col gap-1.5">
                 {etapasDoPi.map((e) => {
                   const v = valorDe(e);
@@ -142,7 +142,7 @@ export default function RdoPage() {
             </section>
 
             <section className="cartao p-4 md:p-5 mb-4">
-              <h2 className="font-head font-bold text-base mb-3">Ocorrências</h2>
+              <h2 className="titulo-quadro mb-3">Ocorrências</h2>
               {ocorrencias.map((o, i) => (
                 <div key={i} className="flex items-center gap-2 text-sm px-3 py-2 bg-amber/5 border border-amber/20 rounded-lg mb-1.5">
                   <span className="flex-1"><span className="text-amber font-semibold">{o.categoria}</span>{o.descricao ? ` — ${o.descricao}` : ""}
@@ -186,7 +186,7 @@ export default function RdoPage() {
 
         {editavel && meusPis.length > 0 && (
           <section className="cartao p-4 md:p-5 mt-8 max-w-xl">
-            <h2 className="font-head font-bold text-base mb-3">Minhas horas</h2>
+            <h2 className="titulo-quadro mb-3">Minhas horas</h2>
             <FormHoras usuario={usuario} pis={meusPis} compacto />
           </section>
         )}

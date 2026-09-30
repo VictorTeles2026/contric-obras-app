@@ -37,7 +37,7 @@ export default function LiderCronogramaPage() {
                 <div key={pi.id} className="flex flex-col gap-2.5">
                   <div>
                     <div className="text-xs font-mono text-cyan font-bold tracking-wide">{pi.codigo}</div>
-                    <div className="font-head font-bold text-lg leading-tight">{pi.projeto || pi.cliente}</div>
+                    <div className="titulo-destaque">{pi.projeto || pi.cliente}</div>
                     {pi.projeto && <div className="text-sm text-muted">{pi.cliente}</div>}
                   </div>
                   {macroEtapas.map((e) => {

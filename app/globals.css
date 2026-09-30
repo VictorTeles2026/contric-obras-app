@@ -89,6 +89,16 @@ input[type="date"], input[type="time"] {
   .cartao-interativo {
     @apply transition-all hover:-translate-y-px hover:border-cyan/40 hover:shadow-md active:translate-y-0;
   }
+  /* ---- escala tipográfica padrão (use estas classes em vez de tamanhos soltos) ----
+     titulo-pagina   → título principal da página (h1)
+     titulo-destaque → nome do item em foco num cabeçalho de detalhe (PI, recurso, obra)
+     titulo-quadro   → título de quadro / cartão / seção (h2)
+     titulo-secao    → rótulo pequeno em maiúsculas (cabeçalho de tabela, grupo)
+     texto-apoio     → linha secundária (datas, detalhes) */
+  .titulo-pagina { @apply font-head text-xl font-bold leading-tight text-textmain md:text-2xl; }
+  .titulo-destaque { @apply font-head text-lg font-bold leading-tight; }
+  .titulo-quadro { @apply font-head text-base font-bold leading-tight; }
+  .texto-apoio { @apply text-xs text-muted; }
   .titulo-secao {
     @apply text-[11px] font-semibold uppercase tracking-wider text-muteddim;
   }

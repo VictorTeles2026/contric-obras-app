@@ -247,7 +247,7 @@ export default function RecursosPage() {
     <div className="flex flex-col md:h-[100dvh]">
       <div className="bg-white border-b border-line px-4 md:px-6 pt-4 shrink-0">
         <div className="flex items-center justify-between gap-3 mb-3">
-          <h1 className="font-head font-bold text-xl md:text-2xl">Recursos</h1>
+          <h1 className="titulo-pagina">Recursos</h1>
           <span className="text-xs text-muted">{recursos.length} cadastrados · {alocacoes.length} alocações</span>
         </div>
         <div className="flex gap-1 overflow-x-auto" role="tablist">
@@ -347,7 +347,7 @@ export default function RecursosPage() {
 
         {selecionadosIds.length > 1 && (
           <div className="max-w-xl animar-fade">
-            <div className="font-head font-bold text-xl mb-3">{selecionadosIds.length} recursos selecionados</div>
+            <div className="titulo-destaque mb-3">{selecionadosIds.length} recursos selecionados</div>
             <div className="cartao divide-y divide-line mb-4 max-h-72 overflow-auto">
               {recursos.filter((r) => selecionadosIds.includes(r.id)).map((r) => (
                 <div key={r.id} className="text-sm px-4 py-2.5">{r.nome}</div>
@@ -363,7 +363,7 @@ export default function RecursosPage() {
           <div className="max-w-3xl animar-fade">
             <div className="cartao p-5 mb-4 flex flex-col sm:flex-row sm:items-start justify-between gap-3">
               <div className="min-w-0">
-                <div className="font-head font-bold text-xl flex flex-wrap items-center gap-2">
+                <div className="titulo-destaque flex flex-wrap items-center gap-2">
                   {selecionado.nome}
                   {editavel ? (
                     <button onClick={() => alternarAtivo(selecionado)} disabled={alternandoAtivo} title={selecionado.ativo === false ? "Clique para habilitar" : "Clique para desabilitar"}
@@ -417,7 +417,7 @@ export default function RecursosPage() {
 
             {alocarOpen && editavel && (
               <div className="cartao p-4 mb-4 flex flex-col gap-3 animar-fade ring-2 ring-cyan/15">
-                <div className="font-head font-bold">{editandoAlocId ? "Editar alocação" : "Nova alocação"}</div>
+                <div className="titulo-quadro">{editandoAlocId ? "Editar alocação" : "Nova alocação"}</div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <Campo rotulo="PI">
                     <select value={piEscolhido} onChange={(e) => setPiEscolhido(e.target.value)} className="input">

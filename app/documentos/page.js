@@ -212,7 +212,7 @@ export default function DocumentosPage() {
             <div className="flex flex-wrap items-end justify-between gap-3 mb-3">
               <div>
                 <div className="text-xs font-mono text-cyan font-bold">{resultado.pi?.codigo}</div>
-                <div className="font-head font-bold text-lg leading-tight">{resultado.pi?.cliente}{resultado.pi?.projeto ? ` — ${resultado.pi.projeto}` : ""}</div>
+                <div className="titulo-destaque">{resultado.pi?.cliente}{resultado.pi?.projeto ? ` — ${resultado.pi.projeto}` : ""}</div>
               </div>
               {editavel && (
                 <>

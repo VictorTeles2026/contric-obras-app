@@ -96,7 +96,7 @@ export default function SolicitacoesCronogramaPage() {
                   <div className="flex flex-wrap items-start justify-between gap-2">
                     <div className="min-w-0">
                       <div className="text-xs text-muted">Solicitada em <strong className="text-textmain">{formatarDataHora(s.created_at)}</strong> por <strong className="text-textmain">{nome(s.solicitado_por)}</strong></div>
-                      <div className="font-head font-bold text-base mt-0.5">{etapa?.nome || "Etapa removida"}</div>
+                      <div className="titulo-quadro mt-0.5">{etapa?.nome || "Etapa removida"}</div>
                     </div>
                     <span className={`selo shrink-0 ${st.classe}`}>{st.rotulo}</span>
                   </div>

@@ -112,7 +112,7 @@ export default function RelatoriosPage() {
             <div className="flex flex-wrap items-end justify-between gap-2 mb-4">
               <div>
                 <div className="text-xs font-mono text-cyan font-bold">{piVisto.codigo}</div>
-                <div className="font-head font-bold text-lg leading-tight">{piVisto.cliente}{piVisto.projeto ? ` — ${piVisto.projeto}` : ""}</div>
+                <div className="titulo-destaque">{piVisto.cliente}{piVisto.projeto ? ` — ${piVisto.projeto}` : ""}</div>
               </div>
               <button onClick={() => window.print()} className="btn btn-contorno btn-sm print:hidden">Imprimir</button>
             </div>
@@ -187,7 +187,7 @@ function LancamentosHoras({ lancamentos, usuarios, categorias, pis, pi, editavel
   return (
     <section className="cartao overflow-hidden">
       <div className="px-4 md:px-5 py-3 border-b border-line flex flex-wrap items-center justify-between gap-2">
-        <h2 className="font-head font-bold text-base text-cyan">Lançamentos de horas do PI</h2>
+        <h2 className="titulo-quadro text-cyan">Lançamentos de horas do PI</h2>
         <span className="text-xs text-muted">{lancamentos.length} lançamento(s){semCodigo ? <span className="text-amber font-semibold"> · {semCodigo} sem código</span> : ""}</span>
       </div>
       {lancamentos.length === 0 ? (
@@ -341,7 +341,7 @@ function TabelaOrcadoRealizado({ tipo, titulo, colOrcado, colRealizado, categori
   return (
     <section className="cartao overflow-hidden">
       <div className="px-4 md:px-5 py-3 border-b border-line flex items-center justify-between gap-2">
-        <h2 className="font-head font-bold text-base text-cyan">{titulo}</h2>
+        <h2 className="titulo-quadro text-cyan">{titulo}</h2>
         <div className="flex items-center gap-3">
           <span className="text-xs text-muted">{tipo === "custo" ? "Valores em R$" : "Valores em horas"}</span>
           <div className="print:hidden">

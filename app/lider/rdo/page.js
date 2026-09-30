@@ -142,7 +142,7 @@ export default function LiderRdoPage() {
         {/* obra */}
         <div className="cartao p-4 mb-4">
           <div className="text-xs font-mono text-cyan font-bold tracking-wide">{piAtivo.codigo}</div>
-          <div className="font-head font-bold text-xl leading-tight mt-0.5">{piAtivo.projeto || piAtivo.cliente}</div>
+          <div className="titulo-destaque mt-0.5">{piAtivo.projeto || piAtivo.cliente}</div>
           {piAtivo.projeto && <div className="text-sm text-muted">{piAtivo.cliente}</div>}
           {meusPis.length > 1 && (
             <select value={piAtivo.id} onChange={(e) => trocarPi(e.target.value)} className="input mt-3" aria-label="Trocar de obra">
@@ -180,7 +180,7 @@ export default function LiderRdoPage() {
               const mudou = alteradas.some((a) => a.id === e.id);
               return (
                 <div key={e.id} className={`cartao p-4 transition-colors ${e.nivel ? "ml-4 border-l-4 border-l-line" : ""} ${mudou ? "!border-cyan/50 bg-cyan/[0.03]" : ""}`}>
-                  <div className={`font-semibold mb-3 leading-snug ${e.nivel ? "text-[15px] text-muted" : "text-base"}`}>{e.nome}</div>
+                  <div className={`font-semibold mb-3 leading-snug ${e.nivel ? "text-sm text-muted" : "text-base"}`}>{e.nome}</div>
                   <div className="grid grid-cols-2 gap-2">
                     {LISTA_STATUS_ETAPA.map(([valor, rotulo]) => {
                       const ativo = v.status === valor;

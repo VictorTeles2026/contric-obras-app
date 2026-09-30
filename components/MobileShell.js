@@ -47,7 +47,7 @@ export default function MobileShell({ children, nav, perfis, titulo }) {
           <div className="flex items-center gap-3 min-w-0">
             <img src="/logo-claro.png" alt="Contric" className="h-11 w-auto shrink-0" />
             <div className="min-w-0">
-              <div className="font-head font-bold text-[15px] leading-tight truncate">{titulo || usuario.nome}</div>
+              <div className="titulo-quadro truncate">{titulo || usuario.nome}</div>
               <div className="text-xs text-slate-300 leading-tight mt-0.5 truncate">
                 {titulo ? usuario.nome : (usuario.funcao || ROTULO_PERFIL[usuario.perfil] || usuario.perfil)}
               </div>

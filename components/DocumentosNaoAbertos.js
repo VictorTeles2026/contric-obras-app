@@ -83,7 +83,7 @@ export default function DocumentosNaoAbertos({ usuario, pis }) {
   return (
     <section className="cartao p-4 md:p-5 h-full flex flex-col min-h-0">
       <div className="flex items-center justify-between gap-2 mb-3">
-        <h2 className="font-head font-bold text-base">Documentos não abertos</h2>
+        <h2 className="titulo-quadro">Documentos não abertos</h2>
         <div className="flex items-center gap-2">
           <span className="text-xs text-muted">{naoAbertos.length} no total</span>
           <button onClick={carregar} className="p-1.5 rounded-lg text-muted hover:bg-panel" title="Atualizar" aria-label="Atualizar"><Icone nome="historico" className="w-4 h-4" /></button>

@@ -185,7 +185,7 @@ export default function ControleHorasPage() {
             {/* ---------- linha do tempo dia a dia ---------- */}
             <section className="cartao mb-6 overflow-hidden">
               <div className="px-4 py-3 border-b border-line flex flex-wrap items-center justify-between gap-2">
-                <h2 className="font-head font-bold text-base text-cyan">Linha do tempo — horas {SOMAR.find(([v]) => v === somar)[1].toLowerCase()} por dia</h2>
+                <h2 className="titulo-quadro text-cyan">Linha do tempo — horas {SOMAR.find(([v]) => v === somar)[1].toLowerCase()} por dia</h2>
                 <span className="text-xs text-muted">{dias.length} dia(s) · passe o mouse numa célula para ver o detalhe</span>
               </div>
               <div className="overflow-auto rolagem-linha-tempo" style={{ maxHeight: "60vh" }}>
@@ -244,7 +244,7 @@ export default function ControleHorasPage() {
             {/* ---------- lista de lançamentos ---------- */}
             <section className="cartao overflow-hidden">
               <div className="px-4 py-3 border-b border-line flex items-center justify-between gap-2">
-                <h2 className="font-head font-bold text-base text-cyan">Lançamentos ({filtradas.length})</h2>
+                <h2 className="titulo-quadro text-cyan">Lançamentos ({filtradas.length})</h2>
                 {agrupar && <span className="text-xs text-muted">agrupados por {AGRUPAR.find(([v]) => v === agrupar)[1].toLowerCase()}, com subtotal</span>}
               </div>
               <div className="overflow-x-auto">

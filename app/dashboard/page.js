@@ -139,7 +139,7 @@ export default function DashboardPage() {
     "lista-pis": (
       <section className="cartao p-4 md:p-5 h-full flex flex-col min-h-0">
         <div className="flex items-center justify-between gap-2 mb-3">
-          <h2 className="font-head font-bold text-base">PIs</h2>
+          <h2 className="titulo-quadro">PIs</h2>
           <span className="text-xs text-muted">{pisFiltrados.length} de {pis.length}</span>
         </div>
         <div className="relative mb-2">
@@ -184,7 +184,7 @@ export default function DashboardPage() {
 
     medicoes: (
       <section className="cartao p-4 md:p-5 h-full flex flex-col min-h-0">
-        <h2 className="font-head font-bold text-base mb-3">Medições em aberto</h2>
+        <h2 className="titulo-quadro mb-3">Medições em aberto</h2>
         {gruposMedicoes.length === 0 && (
           <EstadoVazio icone="calendario" titulo="Nada a medir" texto="Marque “Medição” em macro ou sub-etapas no Cronograma para acompanhar aqui." />
         )}

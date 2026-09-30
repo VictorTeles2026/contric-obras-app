@@ -67,7 +67,7 @@ export default function PortalCliente() {
         {!dados && !erro && <div className="flex justify-center py-16"><Spinner className="w-7 h-7 text-zinc-500" /></div>}
         {dados && dados.obras.length === 0 && (
           <div className="rounded-2xl bg-white border border-zinc-200 p-8 text-center">
-            <div className="font-head font-bold text-lg">Nenhuma obra liberada ainda</div>
+            <div className="titulo-destaque">Nenhuma obra liberada ainda</div>
             <p className="text-sm text-zinc-500 mt-1">Quando a Contric liberar o acesso a uma obra, ela aparecerá aqui e você receberá um e-mail.</p>
           </div>
         )}
@@ -89,7 +89,7 @@ export default function PortalCliente() {
               <div className="flex flex-col gap-4">
                 <section className="rounded-2xl bg-white border border-zinc-200 p-5">
                   <div className="text-xs font-mono font-bold text-zinc-500">{obra.pi.codigo}</div>
-                  <h1 className="font-head font-bold text-xl">{obra.pi.projeto || obra.pi.cliente}</h1>
+                  <h1 className="titulo-destaque">{obra.pi.projeto || obra.pi.cliente}</h1>
                   <div className="text-sm text-zinc-500">{obra.pi.cliente}{obra.pi.prazo ? ` · prazo ${formatarData(obra.pi.prazo)}` : ""} · {STATUS_PI[obra.pi.status] || obra.pi.status}</div>
                 </section>
 
@@ -126,7 +126,7 @@ function ListaArquivos({ titulo, icone, itens, vazio }) {
     <section className="rounded-2xl bg-white border border-zinc-200 overflow-hidden">
       <div className="px-5 py-3.5 border-b border-zinc-200 flex items-center gap-2">
         <Icone nome={icone} className="w-5 h-5 text-zinc-500" />
-        <h2 className="font-head font-bold">{titulo}</h2>
+        <h2 className="titulo-quadro">{titulo}</h2>
         <span className="text-xs text-zinc-500 ml-auto">{itens.length}</span>
       </div>
       {itens.length === 0 && <div className="px-5 py-6 text-sm text-zinc-500">{vazio}</div>}
@@ -170,7 +170,7 @@ function LinhaTempoCliente({ etapas }) {
     <section className="rounded-2xl bg-white border border-zinc-200 overflow-hidden">
       <div className="px-5 py-3.5 border-b border-zinc-200 flex flex-wrap items-center gap-3">
         <Icone nome="linhaTempo" className="w-5 h-5 text-zinc-500" />
-        <h2 className="font-head font-bold">Linha do tempo</h2>
+        <h2 className="titulo-quadro">Linha do tempo</h2>
         <div className="flex items-center gap-2 text-sm ml-auto">
           <span className="w-28 h-2 rounded-full bg-zinc-200 overflow-hidden inline-block"><span className="block h-full bg-zinc-800" style={{ width: `${progresso}%` }} /></span>
           <strong>{progresso}%</strong>
