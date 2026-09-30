@@ -11,6 +11,7 @@ import PainelSuspenso from "../../components/PainelSuspenso";
 
 const STATUS_COR = Object.fromEntries(Object.entries(STATUS_ETAPA).map(([k, v]) => [k, v.barra]));
 const LABEL_W = 240;
+const COR_MEDICAO = "#8E5CD9"; // mesma cor do indicador de medições do Dashboard
 // listas de filtro (clientes, equipes, recursos) com o mesmo visual de um campo de seleção
 const ESTILO_LISTA = "input !w-auto !py-2 !text-sm max-w-[220px] truncate text-left cursor-pointer";
 const ESTILO_LISTA_ATIVA = "!border-cyan/40 !text-cyan";
@@ -295,7 +296,11 @@ export default function LinhaDoTempoPage() {
               <span key={k} className="flex items-center gap-1.5"><span className="w-3 h-2 rounded-sm" style={{ background: v.barra }} />{v.rotulo}</span>
             ))}
             <span className="flex items-center gap-1.5"><span className="w-px h-3 bg-red" />Hoje</span>
-            <span><strong className="text-red">*</strong> etapa com medição</span>
+            <span className="flex items-center gap-1.5">
+              <span className="w-3 h-3 rounded-full border-2 border-white" style={{ background: COR_MEDICAO, boxShadow: `0 0 0 1.5px ${COR_MEDICAO}` }} />
+              <span className="px-1.5 py-px rounded text-[10px] font-bold text-white" style={{ background: COR_MEDICAO }}>M-R$</span>
+              Medição (no fim do período planejado)
+            </span>
           </div>
         </div>
 
@@ -435,11 +440,20 @@ export default function LinhaDoTempoPage() {
                                 ))}
                               </div>
                             )}
-                            {(vencido || e.status === "em_andamento") && (
-                              <span className={`absolute top-2 text-[11px] font-mono whitespace-nowrap ${vencido ? "text-red font-semibold" : "text-muted"}`} style={{ left: left + width + 5 }}>
-                                {vencido ? `VENCIDO${e.medicao ? "*" : ""} · ${e.percentual || 0}%` : `${e.percentual || 0}%`}
-                              </span>
-                            )}
+                            {/* fim do período planejado: marca de medição (qualquer status) + situação */}
+                            <div className="absolute top-0 bottom-0 flex items-center gap-1.5 whitespace-nowrap" style={{ left: e.medicao ? left + width - 6 : left + width + 5 }}>
+                              {e.medicao && (
+                                <span className="flex items-center gap-1" title={`Medição${e.medicao_percentual != null ? ` · ${e.medicao_percentual}%` : ""}${e.medicao_valor != null ? ` · R$ ${Number(e.medicao_valor).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}` : ""} · término previsto ${formatarDataIso(e.data_prevista_fim)}`}>
+                                  <span className="w-3 h-3 rounded-full border-2 border-white shrink-0" style={{ background: COR_MEDICAO, boxShadow: `0 0 0 1.5px ${COR_MEDICAO}` }} />
+                                  <span className="px-1.5 py-px rounded text-[10px] font-bold text-white leading-tight" style={{ background: COR_MEDICAO }}>M-R$</span>
+                                </span>
+                              )}
+                              {(vencido || e.status === "em_andamento") && (
+                                <span className={`text-[11px] font-mono ${vencido ? "text-red font-semibold" : "text-muted"}`}>
+                                  {vencido ? `VENCIDO · ${e.percentual || 0}%` : `${e.percentual || 0}%`}
+                                </span>
+                              )}
+                            </div>
                           </div>
                         </div>
                       );
