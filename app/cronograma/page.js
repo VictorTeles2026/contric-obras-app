@@ -108,7 +108,8 @@ export default function CronogramaPage() {
   const { dados: recursos } = useTabela("recursos");
   const { avisar } = useToast();
   const [piSelecionadoId, setPiSelecionadoIdEstado] = useState(null);
-  const piAtual = pis.find((p) => p.id === piSelecionadoId) || pis[0];
+  // abre sempre sem PI selecionado (antes abria o primeiro da lista); o link ?pi=... continua valendo
+  const piAtual = pis.find((p) => p.id === piSelecionadoId);
 
   // abre o PI indicado no link (?pi=...) — o Dashboard já mandava esse parâmetro, mas
   // ele era ignorado e sempre abria o primeiro PI
@@ -381,6 +382,7 @@ export default function CronogramaPage() {
       <div className="md:sticky md:top-0 z-20 bg-white/95 backdrop-blur border-b border-line px-4 md:px-6 py-3">
         <div className="flex flex-wrap items-center gap-2">
           <select value={piAtual?.id || ""} onChange={(e) => setPiSelecionadoId(e.target.value)} className="input !w-full sm:!w-auto sm:min-w-[280px] sm:max-w-md font-semibold" aria-label="Selecionar PI">
+            <option value="">Selecione o PI...</option>
             {pis.map((p) => <option key={p.id} value={p.id}>{p.codigo} — {p.cliente}{p.projeto ? ` — ${p.projeto}` : ""}</option>)}
           </select>
           {editavel && (
@@ -445,7 +447,10 @@ export default function CronogramaPage() {
       )}
 
       <div ref={containerRef} className="flex-1 overflow-auto p-4 md:p-6 relative" onClick={() => ctxMenu && setCtxMenu(null)}>
-        {!piAtual && (
+        {!piAtual && pis.length > 0 && (
+          <EstadoVazio icone="cronograma" titulo="Selecione um PI" texto="Escolha o PI na lista acima para ver e editar o cronograma." />
+        )}
+        {!piAtual && pis.length === 0 && (
           <EstadoVazio icone="obra" titulo="Nenhum PI cadastrado" texto="Abra o primeiro PI para começar a planejar as etapas."
             acao={editavel && <button onClick={() => { setPisModalModo("create"); setPisModalAberto(true); }} className="btn btn-primario">+ Novo PI</button>} />
         )}
