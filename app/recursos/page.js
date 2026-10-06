@@ -16,6 +16,16 @@ import ConfirmacaoDupla from "../../components/ConfirmacaoDupla";
 const UNIDADES = [["hora", "Hora"], ["diaria", "Diária"], ["semana", "Semana"], ["quinzena", "Quinzena"], ["mes", "Mês"]];
 
 function sobrepoe(iniA, fimA, iniB, fimB) { return iniA <= fimB && iniB <= fimA; }
+// etapas do PI na ordem do Cronograma (macro seguida das suas sub-etapas), com rótulo "Macro › Sub"
+const porOrdem = (a, b) => (a.ordem ?? 999999) - (b.ordem ?? 999999) || String(a.created_at || "").localeCompare(String(b.created_at || ""));
+function etapasEmOrdem(etapas, piId) {
+  if (!piId) return [];
+  const doPi = etapas.filter((e) => e.pi_id === piId);
+  return doPi.filter((e) => !e.parent_etapa_id).sort(porOrdem).flatMap((m) => [
+    { ...m, rotulo: m.nome, nivel: 0 },
+    ...doPi.filter((s) => s.parent_etapa_id === m.id).sort(porOrdem).map((s) => ({ ...s, rotulo: `${m.nome} › ${s.nome}`, nivel: 1 })),
+  ]);
+}
 function rotuloUnidade(u) { return UNIDADES.find((x) => x[0] === u)?.[1] || u; }
 function rotuloTipo(t) { return TIPOS_RECURSO.find((x) => x[0] === t)?.[1] || t; }
 function tipoParaPerfil(perfil) {
@@ -33,6 +43,9 @@ export default function RecursosPage() {
   const { dados: usuarios } = useTabela("usuarios");
   const { dados: recursos, carregando: carregandoRecursos, recarregar: recarregarRecursos } = useTabela("recursos", { order: { coluna: "nome" } });
   const { dados: alocacoes, recarregar: recarregarAlocacoes } = useTabela("alocacoes_recurso");
+  const { dados: etapas } = useTabela("etapas", { select: "id,pi_id,nome,parent_etapa_id,ordem,created_at,data_prevista_inicio,data_prevista_fim", order: { coluna: "created_at" } });
+  const opcoesEtapa = (piId) => etapasEmOrdem(etapas, piId);
+  const nomeEtapa = (id) => opcoesEtapa(etapas.find((e) => e.id === id)?.pi_id).find((e) => e.id === id)?.rotulo;
   const { dados: empresas, carregando: carregandoEmpresas, erro: erroEmpresas, recarregar: recarregarEmpresas } = useTabela("empresas_terceiras", { order: { coluna: "nome" } });
   const empresasAtivas = empresas.filter((e) => e.ativa);
   const nomeEmpresa = (id) => empresas.find((e) => e.id === id)?.nome;
@@ -173,6 +186,15 @@ export default function RecursosPage() {
   const [periodoFim, setPeriodoFim] = useState(hojeISO());
   const [percentual, setPercentual] = useState(100);
   const [piEscolhido, setPiEscolhido] = useState("");
+  const [etapaEscolhida, setEtapaEscolhida] = useState("");
+  // escolher a etapa faz o mesmo que a alocação pelo Cronograma: usa as datas planejadas dela
+  const escolherEtapa = (id) => {
+    setEtapaEscolhida(id);
+    const e = etapas.find((x) => x.id === id);
+    if (e?.data_prevista_inicio) setPeriodoInicio(e.data_prevista_inicio);
+    if (e?.data_prevista_fim) setPeriodoFim(e.data_prevista_fim);
+  };
+  const etapaDuplicada = !!etapaEscolhida && alocsDoSelecionado.some((a) => a.etapa_id === etapaEscolhida && a.id !== editandoAlocId);
 
   // calculado enquanto preenche (antes o aviso só aparecia DEPOIS de já ter salvo)
   const somaSobreposta = useMemo(() => {
@@ -186,10 +208,10 @@ export default function RecursosPage() {
   const percentualInvalido = modo === "periodo_percentual" && (!(Number(percentual) > 0) || Number(percentual) > 100);
 
   const salvarAlocacao = async () => {
-    if (!selecionadoId || !piEscolhido || periodoInvalido || percentualInvalido) return;
+    if (!selecionadoId || !piEscolhido || periodoInvalido || percentualInvalido || etapaDuplicada) return;
 
     const payload = {
-      recurso_id: selecionadoId, pi_id: piEscolhido, modo,
+      recurso_id: selecionadoId, pi_id: piEscolhido, etapa_id: etapaEscolhida || null, modo,
       periodo_inicio: periodoInicio, periodo_fim: periodoFim,
       percentual: modo === "periodo_percentual" ? Number(percentual) : null,
     };
@@ -198,7 +220,7 @@ export default function RecursosPage() {
       : await supabase.from("alocacoes_recurso").insert(payload);
     if (error) { avisar(`Não foi possível salvar: ${error.message}`, "erro", 6000); return; }
     avisar(editandoAlocId ? "Alocação atualizada." : "Alocação criada.");
-    await registrarLog(usuario, editandoAlocId ? "Editou alocação" : "Criou alocação", `${selecionado?.nome} — ${pis.find((p) => p.id === piEscolhido)?.codigo}`);
+    await registrarLog(usuario, editandoAlocId ? "Editou alocação" : "Criou alocação", `${selecionado?.nome} — ${pis.find((p) => p.id === piEscolhido)?.codigo}${etapaEscolhida ? ` · ${nomeEtapa(etapaEscolhida)}` : ""}`);
     setEditandoAlocId(null);
     recarregarAlocacoes();
   };
@@ -211,15 +233,18 @@ export default function RecursosPage() {
     recarregarAlocacoes();
   };
 
-  const aplicarAlocacaoMassa = async ({ piId, modoM, inicio, fim, perc, recursoIds }) => {
-    const linhas = recursoIds.map((rid) => ({
-      recurso_id: rid, pi_id: piId, modo: modoM, periodo_inicio: inicio, periodo_fim: fim,
+  const aplicarAlocacaoMassa = async ({ piId, etapaId, modoM, inicio, fim, perc, recursoIds }) => {
+    // na mesma etapa, não duplica quem já está alocado nela
+    const ids = etapaId ? recursoIds.filter((rid) => !alocacoes.some((a) => a.recurso_id === rid && a.etapa_id === etapaId)) : recursoIds;
+    if (!ids.length) { avisar("Todos os recursos escolhidos já estão nesta etapa.", "info"); return; }
+    const linhas = ids.map((rid) => ({
+      recurso_id: rid, pi_id: piId, etapa_id: etapaId || null, modo: modoM, periodo_inicio: inicio, periodo_fim: fim,
       percentual: modoM === "periodo_percentual" ? Number(perc) : null,
     }));
     const { error } = await supabase.from("alocacoes_recurso").insert(linhas);
     if (error) { avisar(`Não foi possível alocar: ${error.message}`, "erro", 6000); return; }
-    avisar(`${recursoIds.length} recurso(s) alocado(s).`);
-    await registrarLog(usuario, "Alocação em massa", `${recursoIds.length} recurso(s) em ${pis.find((p) => p.id === piId)?.codigo}`);
+    avisar(`${ids.length} recurso(s) alocado(s)${ids.length < recursoIds.length ? ` · ${recursoIds.length - ids.length} já estavam na etapa` : ""}.`);
+    await registrarLog(usuario, "Alocação em massa", `${ids.length} recurso(s) em ${pis.find((p) => p.id === piId)?.codigo}${etapaId ? ` · ${nomeEtapa(etapaId)}` : ""}`);
     setMassaOpen(false);
     recarregarAlocacoes();
   };
@@ -399,7 +424,7 @@ export default function RecursosPage() {
                     <Icone nome="editar" className="w-4 h-4" /> Editar
                   </button>}
                   {podeAlocar && <button onClick={() => {
-                    setEditandoAlocId(null); setPiEscolhido(""); setModo("periodo_percentual");
+                    setEditandoAlocId(null); setPiEscolhido(""); setEtapaEscolhida(""); setModo("periodo_percentual");
                     setPeriodoInicio(hojeISO()); setPeriodoFim(hojeISO()); setPercentual(100);
                     fecharTudoMenos(alocarOpen && !editandoAlocId ? null : "alocar");
                   }} disabled={selecionado.ativo === false} title={selecionado.ativo === false ? "Recurso desabilitado — habilite para alocar" : undefined} className="btn btn-primario btn-sm">
@@ -426,10 +451,17 @@ export default function RecursosPage() {
                 <div className="titulo-quadro">{editandoAlocId ? "Editar alocação" : "Nova alocação"}</div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <Campo rotulo="PI">
-                    <select value={piEscolhido} onChange={(e) => setPiEscolhido(e.target.value)} className="input">
+                    <select value={piEscolhido} onChange={(e) => { setPiEscolhido(e.target.value); setEtapaEscolhida(""); }} className="input">
                       <option value="">Selecione o PI...</option>
-                      {pis.map((p) => <option key={p.id} value={p.id}>{p.codigo} — {p.cliente}</option>)}
+                      {pis.map((p) => <option key={p.id} value={p.id}>{p.codigo} — {p.cliente}{p.projeto ? ` — ${p.projeto}` : ""}</option>)}
                     </select>
+                  </Campo>
+                  <Campo rotulo="Etapa (igual à alocação pelo Cronograma)" className="sm:col-span-2">
+                    <select value={etapaEscolhida} onChange={(e) => escolherEtapa(e.target.value)} disabled={!piEscolhido} className="input">
+                      <option value="">Sem etapa — só período no PI</option>
+                      {opcoesEtapa(piEscolhido).map((e) => <option key={e.id} value={e.id}>{e.nivel ? "   " : ""}{e.rotulo}</option>)}
+                    </select>
+                    {etapaEscolhida && <span className="block text-xs text-muteddim mt-1">Usa as datas planejadas da etapa (pode ajustar) e aparece na etapa, no Cronograma.</span>}
                   </Campo>
                   <div>
                     <span className="rotulo">Modo</span>
@@ -448,12 +480,13 @@ export default function RecursosPage() {
                 </div>
                 {periodoInvalido && <Aviso tipo="erro">A data de fim está antes da data de início.</Aviso>}
                 {percentualInvalido && <Aviso tipo="erro">O uso deve ficar entre 1% e 100%.</Aviso>}
+                {etapaDuplicada && <Aviso tipo="erro">Este recurso já está alocado nesta etapa.</Aviso>}
                 {avisoOverlap && !periodoInvalido && (
                   <Aviso tipo="alerta">Com esta alocação o recurso chega a <strong>{somaSobreposta}%</strong> de uso no período — acima de 100%.</Aviso>
                 )}
                 <div className="flex gap-2 justify-end">
                   <button onClick={() => { setAlocarOpen(false); setEditandoAlocId(null); }} className="btn btn-fantasma">Cancelar</button>
-                  <button onClick={salvarAlocacao} disabled={!piEscolhido || periodoInvalido || percentualInvalido} className="btn btn-primario">
+                  <button onClick={salvarAlocacao} disabled={!piEscolhido || periodoInvalido || percentualInvalido || etapaDuplicada} className="btn btn-primario">
                     {editandoAlocId ? "Salvar alterações" : "Adicionar alocação"}
                   </button>
                 </div>
@@ -469,7 +502,7 @@ export default function RecursosPage() {
                     <span className="font-mono text-cyan font-bold">{pi?.codigo || "?"}</span>
                     <span className="text-muted flex-1 min-w-[180px]">
                       {formatarData(a.periodo_inicio)} → {formatarData(a.periodo_fim)}
-                      {a.etapa_id && <span className="text-muteddim"> · via cronograma</span>}
+                      {a.etapa_id && <span className="text-muted"> · {nomeEtapa(a.etapa_id) || "etapa"}</span>}
                     </span>
                     <span className={`selo ${a.modo === "periodo_percentual" ? "bg-cyan/10 text-cyan" : "bg-amber/10 text-amber"}`}>
                       {a.modo === "periodo_percentual" ? `${a.percentual}%` : "cadência"}
@@ -477,7 +510,7 @@ export default function RecursosPage() {
                     {podeAlocar && (
                       <div className="flex items-center gap-1">
                         <button onClick={() => {
-                          setEditandoAlocId(a.id); setPiEscolhido(a.pi_id); setModo(a.modo);
+                          setEditandoAlocId(a.id); setPiEscolhido(a.pi_id); setEtapaEscolhida(a.etapa_id || ""); setModo(a.modo);
                           setPeriodoInicio(a.periodo_inicio); setPeriodoFim(a.periodo_fim); setPercentual(a.percentual || 100);
                           fecharTudoMenos("alocar");
                         }} className="btn btn-fantasma btn-sm">Editar</button>
@@ -504,7 +537,7 @@ export default function RecursosPage() {
           onConfirmar={() => excluirRecurso(excluindoRecurso)} />
       )}
       {massaOpen && (
-        <AlocacaoEmMassaModal pis={pis} recursos={recursos} usuarios={usuarios} onAplicar={aplicarAlocacaoMassa} onCancelar={() => setMassaOpen(false)}
+        <AlocacaoEmMassaModal pis={pis} recursos={recursos} opcoesEtapa={opcoesEtapa} etapas={etapas} usuarios={usuarios} onAplicar={aplicarAlocacaoMassa} onCancelar={() => setMassaOpen(false)}
           preSelecionados={selecionadosIds} />
       )}
     </div>
@@ -606,8 +639,9 @@ function RecursoForm({ usuarios, recursoDoUsuario = () => null, recursoAtualId, 
   );
 }
 
-function AlocacaoEmMassaModal({ pis, recursos, onAplicar, onCancelar, preSelecionados }) {
+function AlocacaoEmMassaModal({ pis, recursos, opcoesEtapa, etapas, onAplicar, onCancelar, preSelecionados }) {
   const [piId, setPiId] = useState("");
+  const [etapaId, setEtapaId] = useState("");
   const [modoM, setModoM] = useState("periodo_percentual");
   const [inicio, setInicio] = useState(hojeISO());
   const [fim, setFim] = useState(hojeISO());
@@ -631,7 +665,7 @@ function AlocacaoEmMassaModal({ pis, recursos, onAplicar, onCancelar, preSelecio
 
   const aplicar = async () => {
     setAplicando(true);
-    await onAplicar({ piId, modoM, inicio, fim, perc, recursoIds: selecionados });
+    await onAplicar({ piId, etapaId, modoM, inicio, fim, perc, recursoIds: selecionados });
     setAplicando(false);
   };
 
@@ -645,9 +679,20 @@ function AlocacaoEmMassaModal({ pis, recursos, onAplicar, onCancelar, preSelecio
       </>}>
       <div className="flex flex-col gap-3 mb-4">
         <Campo rotulo="PI">
-          <select value={piId} onChange={(e) => setPiId(e.target.value)} className="input">
+          <select value={piId} onChange={(e) => { setPiId(e.target.value); setEtapaId(""); }} className="input">
             <option value="">Selecione o PI...</option>
-            {pis.map((p) => <option key={p.id} value={p.id}>{p.codigo} — {p.cliente}</option>)}
+            {pis.map((p) => <option key={p.id} value={p.id}>{p.codigo} — {p.cliente}{p.projeto ? ` — ${p.projeto}` : ""}</option>)}
+          </select>
+        </Campo>
+        <Campo rotulo="Etapa (igual à alocação pelo Cronograma)">
+          <select value={etapaId} disabled={!piId} className="input" onChange={(e) => {
+            setEtapaId(e.target.value);
+            const et = etapas.find((x) => x.id === e.target.value);
+            if (et?.data_prevista_inicio) setInicio(et.data_prevista_inicio);
+            if (et?.data_prevista_fim) setFim(et.data_prevista_fim);
+          }}>
+            <option value="">Sem etapa — só período no PI</option>
+            {opcoesEtapa(piId).map((e) => <option key={e.id} value={e.id}>{e.nivel ? "   " : ""}{e.rotulo}</option>)}
           </select>
         </Campo>
         <div className="flex gap-2">

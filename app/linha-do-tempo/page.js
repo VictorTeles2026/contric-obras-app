@@ -491,11 +491,11 @@ export default function LinhaDoTempoPage() {
                     {it.rotulo}
                   </div>
                   <div className="cartao overflow-x-auto">
-                    <table className="w-full text-sm min-w-[480px]">
+                    <table className="w-full text-sm min-w-[640px]">
                       <thead>
                         <tr className="bg-panel text-left">
-                          <th className="px-3 py-2 titulo-secao">PI</th>
-                          <th className="px-3 py-2 titulo-secao">Macro/sub etapa</th>
+                          <th className="px-3 py-2 titulo-secao">PI / descrição</th>
+                          <th className="px-3 py-2 titulo-secao">Etapa</th>
                           <th className="px-3 py-2 titulo-secao">Início</th>
                           <th className="px-3 py-2 titulo-secao">Fim</th>
                         </tr>
@@ -503,8 +503,15 @@ export default function LinhaDoTempoPage() {
                       <tbody>
                         {linhas.map(({ pi, etapa: e }) => (
                           <tr key={pi.id + e.id} className="border-t border-line">
-                            <td className="px-3 py-2 font-mono text-cyan font-bold">{pi.codigo}</td>
-                            <td className="px-3 py-2">{e.nivel ? "· " : ""}{e.nome}</td>
+                            <td className="px-3 py-2">
+                              <div className="font-semibold text-cyan">{pi.codigo}</div>
+                              <div className="text-xs text-muted">{pi.cliente}{pi.projeto ? ` · ${pi.projeto}` : ""}</div>
+                            </td>
+                            <td className="px-3 py-2">
+                              {e.nivel ? (
+                                <><div className="text-xs text-muted">{etapasDosPis.find((m) => m.id === e.parent_etapa_id)?.nome}</div><div>› {e.nome}</div></>
+                              ) : <div className="font-semibold">{e.nome}</div>}
+                            </td>
                             <td className="px-3 py-2 whitespace-nowrap">{formatarDataIso(e.data_prevista_inicio)}</td>
                             <td className="px-3 py-2 whitespace-nowrap">{formatarDataIso(e.data_prevista_fim)}</td>
                           </tr>
