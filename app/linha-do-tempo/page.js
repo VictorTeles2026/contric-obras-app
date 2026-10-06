@@ -43,7 +43,7 @@ function useFecharAoClicarFora(aberto, fechar) {
 
 export default function LinhaDoTempoPage() {
   const { dados: pis, carregando: carregandoPis } = useTabela("pis", { order: { coluna: "codigo" } });
-  const { dados: etapas } = useTabela("etapas");
+  const { dados: etapas } = useTabela("etapas", { order: { coluna: "created_at" } }); // mesma ordem de inserção do Cronograma
   const { dados: recursos } = useTabela("recursos");
   const { dados: alocacoesRecurso } = useTabela("alocacoes_recurso");
   const [selecionarAberto, setSelecionarAberto] = useState(false);
@@ -124,7 +124,7 @@ export default function LinhaDoTempoPage() {
   const etapasDosPis = etapas.filter((e) => idsVisiveis.includes(e.pi_id));
   // monta a lista na mesma ordem de criação do Cronograma: cada macro-etapa
   // seguida imediatamente das suas sub-etapas (também na ordem em que foram criadas)
-  const porOrdem = (a, b) => (a.ordem ?? 999999) - (b.ordem ?? 999999);
+  const porOrdem = (a, b) => (a.ordem ?? 999999) - (b.ordem ?? 999999) || String(a.created_at || "").localeCompare(String(b.created_at || ""));
   const itensOrdenados = (piId) => {
     const doPi = etapasDosPis.filter((e) => e.pi_id === piId);
     const macros = doPi.filter((e) => !e.parent_etapa_id).sort(porOrdem);

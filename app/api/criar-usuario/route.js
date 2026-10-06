@@ -1,10 +1,10 @@
 import { NextResponse } from "next/server";
-import { exigirMaster, PERFIS_VALIDOS, gerarPinUnico, registrarSenha } from "../../../lib/authServidor";
+import { exigirPermissao, PERFIS_VALIDOS, gerarPinUnico, registrarSenha } from "../../../lib/authServidor";
 
 const equipesValidas = (v) => Array.isArray(v) ? [...new Set(v.map((x) => String(x).trim()).filter(Boolean))] : undefined;
 
 export async function POST(req) {
-  const { admin, solicitante, resposta } = await exigirMaster(req);
+  const { admin, solicitante, resposta } = await exigirPermissao(req, "usuario.editar");
   if (resposta) return resposta;
 
   const body = await req.json().catch(() => ({}));

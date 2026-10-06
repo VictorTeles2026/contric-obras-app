@@ -2,7 +2,7 @@
 
 import { useState, useRef } from "react";
 import { useTabela, registrarLog, chamarApi } from "../../lib/dados";
-import { useAuth, podeEditar } from "../../lib/AuthContext";
+import { useAuth, pode } from "../../lib/AuthContext";
 import { supabase } from "../../lib/supabase";
 import { BUCKET_DOCUMENTOS, gerarPdfRdo, gerarPdfOcorrencia, linkTemporario } from "../../lib/pdfRdo";
 import { formatarDataHora } from "../../lib/datas";
@@ -50,7 +50,8 @@ function nomeSeguro(nome) {
 export default function DocumentosPage() {
   const { usuario } = useAuth();
   const { avisar } = useToast();
-  const editavel = podeEditar(usuario);
+  const editavel = pode(usuario, "doc.enviar");
+  const podeLiberarCliente = pode(usuario, "doc.cliente");
   const { dados: pis } = useTabela("pis", { order: { coluna: "codigo" } });
   const [piId, setPiId] = useState("");
   const [buscando, setBuscando] = useState(false);
@@ -121,6 +122,8 @@ export default function DocumentosPage() {
 
   // exclusão e edição de documentos: somente Master (registrado na Auditoria)
   const master = ehMaster(usuario);
+  const podeExcluirDoc = pode(usuario, "doc.excluir");
+  const podeEditarRegistro = (i) => (i.rdo && pode(usuario, "rdo.editar")) || (i.ocorrencia && pode(usuario, "ocorrencia.editar"));
   const [excluindo, setExcluindo] = useState(null);
   const [editandoRegistro, setEditandoRegistro] = useState(null); // { tipo, item, ocorrencias? }
   const editarRegistro = async (item) => {
@@ -281,19 +284,19 @@ export default function DocumentosPage() {
                           <Icone nome="download" className="w-4 h-4" />
                         </button>
                       )}
-                      {editavel && i.caminho && (
+                      {podeLiberarCliente && i.caminho && (
                         <button onClick={() => setLiberando(i)} title="Disponibilizar este documento para clientes deste PI"
                           className={`btn btn-sm ${liberadosDe(i.caminho).length ? "btn-contorno !border-cyan/40 !text-cyan" : "btn-fantasma"}`}>
                           <Icone nome="usuarios" className="w-4 h-4" /> Clientes{liberadosDe(i.caminho).length ? ` (${liberadosDe(i.caminho).length})` : ""}
                         </button>
                       )}
-                      {master && (i.rdo || i.ocorrencia) && (
+                      {podeEditarRegistro(i) && (
                         <button onClick={() => editarRegistro(i)} className="p-2 rounded-lg text-muted hover:bg-panel" aria-label={`Editar o registro de ${i.nome}`}
                           title={i.rdo ? "Editar o RDO (o PDF é refeito)" : "Editar a ocorrência (o PDF é refeito)"}>
                           <Icone nome="editar" className="w-4 h-4" />
                         </button>
                       )}
-                      {master && i.caminho && (
+                      {podeExcluirDoc && i.caminho && (
                         <button onClick={() => setExcluindo(i)} className="p-2 rounded-lg text-muteddim hover:text-red hover:bg-red/5" aria-label={`Excluir ${i.nome}`} title="Excluir">
                           <Icone nome="lixo" className="w-4 h-4" />
                         </button>

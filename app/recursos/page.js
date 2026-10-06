@@ -3,7 +3,7 @@
 import { useState, useMemo, useRef, useEffect } from "react";
 import { useTabela, registrarLog, gravarTolerante } from "../../lib/dados";
 import EmpresasTerceiras from "../../components/EmpresasTerceiras";
-import { useAuth, podeEditar } from "../../lib/AuthContext";
+import { useAuth, pode } from "../../lib/AuthContext";
 import { supabase } from "../../lib/supabase";
 import { hojeISO, formatarData } from "../../lib/datas";
 import { TIPOS_RECURSO, AREAS } from "../../lib/constantes";
@@ -14,7 +14,6 @@ import Icone from "../../components/Icone";
 import GraficoUtilizacao from "../../components/GraficoUtilizacao";
 import ConfirmacaoDupla from "../../components/ConfirmacaoDupla";
 const UNIDADES = [["hora", "Hora"], ["diaria", "Diária"], ["semana", "Semana"], ["quinzena", "Quinzena"], ["mes", "Mês"]];
-const PERFIS_COM_ALOCACAO = ["lider", "funcionario", "terceiro"];
 
 function sobrepoe(iniA, fimA, iniB, fimB) { return iniA <= fimB && iniB <= fimA; }
 function rotuloUnidade(u) { return UNIDADES.find((x) => x[0] === u)?.[1] || u; }
@@ -26,7 +25,8 @@ function tipoParaPerfil(perfil) {
 
 export default function RecursosPage() {
   const { usuario } = useAuth();
-  const editavel = podeEditar(usuario);
+  const editavel = pode(usuario, "recurso.editar");
+  const podeAlocar = pode(usuario, "recurso.alocar");
   const { avisar } = useToast();
   const detalheRef = useRef(null);
   const { dados: pis } = useTabela("pis", { order: { coluna: "codigo" } });
@@ -48,7 +48,7 @@ export default function RecursosPage() {
   const [alocarOpen, setAlocarOpen] = useState(false);
   const [massaOpen, setMassaOpen] = useState(false);
   const [excluindoRecurso, setExcluindoRecurso] = useState(null);
-  const master = usuario?.perfil === "master";
+  const master = pode(usuario, "recurso.excluir");
   const excluirRecurso = async (r) => {
     const qtd = alocacoes.filter((a) => a.recurso_id === r.id).length;
     const { error: e1 } = await supabase.from("alocacoes_recurso").delete().eq("recurso_id", r.id);
@@ -80,7 +80,13 @@ export default function RecursosPage() {
   };
   const [gruposFechados, setGruposFechados] = useState([]);
 
-  const usuariosElegiveis = usuarios.filter((u) => PERFIS_COM_ALOCACAO.includes(u.perfil));
+  // qualquer usuário (todos os perfis) pode virar recurso e ser alocado nos PIs;
+  // desabilitados ficam de fora, exceto o que já está vinculado ao recurso em edição
+  const usuariosElegiveis = usuarios
+    .filter((u) => u.ativo !== false || u.id === selecionado?.usuario_id)
+    .sort((a, b) => (a.nome || "").localeCompare(b.nome || "", "pt-BR"));
+  // usuário que já é recurso (para avisar e evitar duplicar)
+  const recursoDoUsuario = (uid) => recursos.find((r) => r.usuario_id === uid);
 
   const fecharTudoMenos = (aberto) => {
     setNovoOpen(aberto === "novo");
@@ -264,7 +270,7 @@ export default function RecursosPage() {
 
       {aba === "empresas" ? (
         <div className="flex-1 min-h-0 p-4 md:p-6 md:overflow-y-auto rolagem-fina">
-          <EmpresasTerceiras empresas={empresas} carregando={carregandoEmpresas} recursos={recursos} editavel={editavel} usuario={usuario}
+          <EmpresasTerceiras empresas={empresas} carregando={carregandoEmpresas} recursos={recursos} editavel={pode(usuario, "empresa.gerenciar")} usuario={usuario}
             onMudou={() => { recarregarEmpresas(); recarregarRecursos(); }} erroTabela={!!erroEmpresas} />
         </div>
       ) : aba === "utilizacao" ? (
@@ -276,17 +282,17 @@ export default function RecursosPage() {
     <div className="flex flex-col md:flex-row flex-1 min-h-0">
       <aside className="w-full md:w-96 shrink-0 bg-white border-b md:border-b-0 md:border-r border-line p-4 md:p-5 md:overflow-y-auto rolagem-fina">
 
-        {editavel && (
+        {(editavel || podeAlocar) && (
           <div className="flex flex-col gap-2 mb-4">
             <div className="grid grid-cols-2 gap-2">
-              <button onClick={() => fecharTudoMenos(novoOpen ? null : "novo")} className={`btn ${novoOpen ? "btn-contorno" : "btn-primario"}`}>
+              {editavel && <button onClick={() => fecharTudoMenos(novoOpen ? null : "novo")} className={`btn ${novoOpen ? "btn-contorno" : "btn-primario"}`}>
                 <Icone nome={novoOpen ? "fechar" : "mais2"} className="w-4 h-4" /> {novoOpen ? "Fechar" : "Novo recurso"}
-              </button>
-              <button onClick={() => setMassaOpen(true)} className="btn btn-contorno !border-amber/50 !text-amber hover:!bg-amber/5">
+              </button>}
+              {podeAlocar && <button onClick={() => setMassaOpen(true)} className="btn btn-contorno !border-amber/50 !text-amber hover:!bg-amber/5">
                 ⚡ Alocar vários
-              </button>
+              </button>}
             </div>
-            {novoOpen && <div className="animar-fade"><RecursoForm usuarios={usuariosElegiveis} empresas={empresasAtivas} onIrParaEmpresas={() => setAba("empresas")} onSalvar={criarRecurso} rotuloBotao="Criar recurso" onCancelar={() => setNovoOpen(false)} /></div>}
+            {novoOpen && <div className="animar-fade"><RecursoForm usuarios={usuariosElegiveis} recursoDoUsuario={recursoDoUsuario} empresas={empresasAtivas} onIrParaEmpresas={() => setAba("empresas")} onSalvar={criarRecurso} rotuloBotao="Criar recurso" onCancelar={() => setNovoOpen(false)} /></div>}
           </div>
         )}
 
@@ -353,7 +359,7 @@ export default function RecursosPage() {
                 <div key={r.id} className="text-sm px-4 py-2.5">{r.nome}</div>
               ))}
             </div>
-            {editavel && (
+            {podeAlocar && (
               <button onClick={() => setMassaOpen(true)} className="btn btn-alerta">⚡ Alocar estes {selecionadosIds.length} recursos</button>
             )}
           </div>
@@ -387,20 +393,20 @@ export default function RecursosPage() {
                   <div className="text-sm text-cyan mt-1 flex items-center gap-1.5"><Icone nome="usuarios" className="w-4 h-4" /> Vinculado a {usuarios.find((u) => u.id === selecionado.usuario_id)?.nome}</div>
                 )}
               </div>
-              {editavel && (
+              {(editavel || podeAlocar || master) && (
                 <div className="flex gap-2 shrink-0">
-                  <button onClick={() => fecharTudoMenos(editarOpen ? null : "editar")} className="btn btn-contorno btn-sm">
+                  {editavel && <button onClick={() => fecharTudoMenos(editarOpen ? null : "editar")} className="btn btn-contorno btn-sm">
                     <Icone nome="editar" className="w-4 h-4" /> Editar
-                  </button>
-                  <button onClick={() => {
+                  </button>}
+                  {podeAlocar && <button onClick={() => {
                     setEditandoAlocId(null); setPiEscolhido(""); setModo("periodo_percentual");
                     setPeriodoInicio(hojeISO()); setPeriodoFim(hojeISO()); setPercentual(100);
                     fecharTudoMenos(alocarOpen && !editandoAlocId ? null : "alocar");
                   }} disabled={selecionado.ativo === false} title={selecionado.ativo === false ? "Recurso desabilitado — habilite para alocar" : undefined} className="btn btn-primario btn-sm">
                     <Icone nome="mais2" className="w-4 h-4" /> Alocar
-                  </button>
+                  </button>}
                   {master && (
-                    <button onClick={() => setExcluindoRecurso(selecionado)} className="btn btn-contorno-perigo btn-sm" title="Excluir recurso (somente Master)" aria-label="Excluir recurso">
+                    <button onClick={() => setExcluindoRecurso(selecionado)} className="btn btn-contorno-perigo btn-sm" title="Excluir recurso" aria-label="Excluir recurso">
                       <Icone nome="lixo" className="w-4 h-4" />
                     </button>
                   )}
@@ -410,12 +416,12 @@ export default function RecursosPage() {
 
             {editarOpen && editavel && (
               <div className="mb-4 max-w-md animar-fade">
-                <RecursoForm usuarios={usuariosElegiveis} empresas={empresasAtivas.concat(empresas.filter((e) => !e.ativa && e.id === selecionado.empresa_terceira_id))} onIrParaEmpresas={() => setAba("empresas")} onSalvar={salvarEdicao} rotuloBotao="Salvar alterações" onCancelar={() => setEditarOpen(false)}
+                <RecursoForm usuarios={usuariosElegiveis} recursoDoUsuario={recursoDoUsuario} recursoAtualId={selecionado.id} empresas={empresasAtivas.concat(empresas.filter((e) => !e.ativa && e.id === selecionado.empresa_terceira_id))} onIrParaEmpresas={() => setAba("empresas")} onSalvar={salvarEdicao} rotuloBotao="Salvar alterações" onCancelar={() => setEditarOpen(false)}
                   valoresIniciais={{ nome: selecionado.nome, tipo: selecionado.tipo, unidade: selecionado.custo_unidade, usuarioId: selecionado.usuario_id || "", funcao: selecionado.atributos?.funcao || "", empresaId: selecionado.empresa_terceira_id || "", equipes: selecionado.equipes || [], ativo: selecionado.ativo !== false }} />
               </div>
             )}
 
-            {alocarOpen && editavel && (
+            {alocarOpen && podeAlocar && (
               <div className="cartao p-4 mb-4 flex flex-col gap-3 animar-fade ring-2 ring-cyan/15">
                 <div className="titulo-quadro">{editandoAlocId ? "Editar alocação" : "Nova alocação"}</div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -468,7 +474,7 @@ export default function RecursosPage() {
                     <span className={`selo ${a.modo === "periodo_percentual" ? "bg-cyan/10 text-cyan" : "bg-amber/10 text-amber"}`}>
                       {a.modo === "periodo_percentual" ? `${a.percentual}%` : "cadência"}
                     </span>
-                    {editavel && (
+                    {podeAlocar && (
                       <div className="flex items-center gap-1">
                         <button onClick={() => {
                           setEditandoAlocId(a.id); setPiEscolhido(a.pi_id); setModo(a.modo);
@@ -505,7 +511,8 @@ export default function RecursosPage() {
     </PainelShell>
   );
 }
-function RecursoForm({ usuarios, empresas = [], onIrParaEmpresas, onSalvar, rotuloBotao, onCancelar, valoresIniciais }) {
+const ROTULO_PERFIL_CURTO = { master: "Master", gerente: "Gerente", coordenador: "Coordenador", lider: "Líder", funcionario: "Funcionário", terceiro: "Terceiro", visualizador: "Visualizador" };
+function RecursoForm({ usuarios, recursoDoUsuario = () => null, recursoAtualId, empresas = [], onIrParaEmpresas, onSalvar, rotuloBotao, onCancelar, valoresIniciais }) {
   const [nome, setNome] = useState(valoresIniciais?.nome || "");
   const [tipo, setTipo] = useState(valoresIniciais?.tipo || "mao_obra_propria");
   const [unidade, setUnidade] = useState(valoresIniciais?.unidade || "hora");
@@ -551,7 +558,11 @@ function RecursoForm({ usuarios, empresas = [], onIrParaEmpresas, onSalvar, rotu
       <Campo rotulo="Vincular a um usuário (opcional)">
         <select value={usuarioId} onChange={(e) => onSelecionarUsuario(e.target.value)} className="input">
           <option value="">Sem vínculo com usuário</option>
-          {usuarios.map((u) => <option key={u.id} value={u.id}>{u.nome}</option>)}
+          {usuarios.map((u) => {
+            const ja = recursoDoUsuario(u.id);
+            const outro = ja && ja.id !== recursoAtualId;
+            return <option key={u.id} value={u.id} disabled={outro}>{u.nome} — {ROTULO_PERFIL_CURTO[u.perfil] || u.perfil}{outro ? " (já é recurso)" : ""}</option>;
+          })}
         </select>
       </Campo>
       <Campo rotulo="Nome"><input placeholder="Ex: Caminhão Munck, João Silva..." value={nome} onChange={(e) => setNome(e.target.value)} className="input" /></Campo>

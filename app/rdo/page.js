@@ -2,7 +2,7 @@
 
 import { useState, useMemo } from "react";
 import { useTabela, registrarLog } from "../../lib/dados";
-import { useAuth, podeEditar } from "../../lib/AuthContext";
+import { useAuth, pode } from "../../lib/AuthContext";
 import { supabase } from "../../lib/supabase";
 import { useMinhasPis } from "../../lib/minhasPis";
 import { hojeISO } from "../../lib/datas";
@@ -20,7 +20,7 @@ const limitar = (n) => Math.max(0, Math.min(100, Number(n) || 0));
 export default function RdoPage() {
   const { usuario } = useAuth();
   const { avisar } = useToast();
-  const editavel = podeEditar(usuario);
+  const editavel = pode(usuario, "rdo.criar");
   const { dados: pisTodos } = useTabela("pis", { order: { coluna: "codigo" } });
   const pis = pisTodos.filter((p) => p.status !== "cancelado");
   const { dados: etapas } = useTabela("etapas");

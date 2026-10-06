@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter, usePathname } from "next/navigation";
 import { useAuth, podeAcessarDesktop, ROTULO_PERFIL } from "../lib/AuthContext";
 import { rotaInicialPara } from "../lib/rotas";
-import { NAV_PAINEL } from "../lib/nav";
+import { navPermitida, itemDaRota, itemPermitido, primeiraRotaPainel } from "../lib/nav";
 import { useTabela } from "../lib/dados";
 import { Logo, TelaCarregando } from "./ui";
 import TelaAcessoNegado from "./TelaAcessoNegado";
@@ -41,10 +41,17 @@ export default function PainelShell({ children }) {
 
   useEffect(() => { setMenuAberto(false); }, [pathname]);
 
+  // página que o usuário não tem permissão de ver: vai para a primeira que ele pode
+  const itemAtual = itemDaRota(pathname || "");
+  const paginaNegada = !!usuario && podeAcessarDesktop(usuario) && itemAtual && !itemPermitido(usuario, itemAtual);
+  useEffect(() => {
+    if (paginaNegada) router.replace(primeiraRotaPainel(usuario));
+  }, [paginaNegada, usuario, router]);
+
   if (carregando) return <TelaCarregando />;
   if (!sessao) return null;
   if (!usuario) return <TelaAcessoNegado mensagem={erroCadastro} onSair={sair} />;
-  if (!podeAcessarDesktop(usuario)) return <TelaCarregando texto="Redirecionando..." />;
+  if (!podeAcessarDesktop(usuario) || paginaNegada) return <TelaCarregando texto="Redirecionando..." />;
 
   const itemMenu = (item, compacto = false) => {
     const ativo = pathname === item.href || pathname.startsWith(`${item.href}/`);
@@ -80,8 +87,8 @@ export default function PainelShell({ children }) {
     </div>
   );
 
-  // itens com "perfis" só aparecem para esses perfis (ex: Clientes)
-  const navVisivel = NAV_PAINEL.filter((i) => !i.perfis || i.perfis.includes(usuario.perfil));
+  // menu conforme a matriz de permissões do usuário
+  const navVisivel = navPermitida(usuario);
   const principais = navVisivel.filter((i) => i.principal);
 
   return (

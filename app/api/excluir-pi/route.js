@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { exigirPerfis, rotaSegura } from "../../../lib/authServidor";
+import { exigirPermissao, rotaSegura } from "../../../lib/authServidor";
 
 // Exclusão COMPLETA de um PI (somente Master): apaga tudo o que está ligado a ele
 // e os arquivos da pasta do PI no bucket "documentos". Irreversível.
@@ -14,7 +14,7 @@ const TABELAS_POR_PI = [
 const ausente = (e) => /does not exist|could not find|schema cache/i.test(e?.message || "");
 
 export const POST = rotaSegura(async (req) => {
-  const { admin, interno, resposta } = await exigirPerfis(req, ["master"]);
+  const { admin, interno, resposta } = await exigirPermissao(req, "pi.excluir");
   if (resposta) return resposta;
   const { piId, confirmacao } = await req.json().catch(() => ({}));
   const { data: pi } = await admin.from("pis").select("*").eq("id", piId).maybeSingle();

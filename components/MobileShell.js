@@ -3,7 +3,8 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter, usePathname } from "next/navigation";
-import { useAuth, podeAcessarDesktop, ROTULO_PERFIL } from "../lib/AuthContext";
+import { useAuth, podeAcessarDesktop, ROTULO_PERFIL, pode } from "../lib/AuthContext";
+import { primeiraRotaPainel } from "../lib/nav";
 import { rotaInicialPara } from "../lib/rotas";
 import { TelaCarregando } from "./ui";
 import TelaAcessoNegado from "./TelaAcessoNegado";
@@ -24,7 +25,8 @@ export default function MobileShell({ children, nav, perfis, titulo }) {
   const [confirmarSaida, setConfirmarSaida] = useState(false);
   const [trocandoSenha, setTrocandoSenha] = useState(false);
 
-  const permitido = !usuario || !perfis || perfis.includes(usuario.perfil) || podeAcessarDesktop(usuario);
+  // área de campo: perfis da obra ou quem tem a permissão "Entrar no app de campo"
+  const permitido = !usuario || !perfis || perfis.includes(usuario.perfil) || pode(usuario, "acesso.mobile") || podeAcessarDesktop(usuario);
 
   useEffect(() => {
     if (carregando) return;
@@ -59,7 +61,7 @@ export default function MobileShell({ children, nav, perfis, titulo }) {
               <Icone nome="chave" className="w-5 h-5" />
             </button>
             {podeAcessarDesktop(usuario) && (
-              <Link href="/dashboard" className="text-sm font-semibold text-slate-200 px-3 py-2.5 rounded-lg hover:bg-white/10">Painel</Link>
+              <Link href={primeiraRotaPainel(usuario)} className="text-sm font-semibold text-slate-200 px-3 py-2.5 rounded-lg hover:bg-white/10">Painel</Link>
             )}
             {confirmarSaida ? (
               <div className="flex items-center gap-1 animar-fade">

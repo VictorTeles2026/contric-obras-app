@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useTabela, registrarLog, gravarTolerante } from "../../../lib/dados";
-import { useAuth, podeEditar } from "../../../lib/AuthContext";
+import { useAuth, pode } from "../../../lib/AuthContext";
 import { supabase } from "../../../lib/supabase";
 import { formatarData, formatarDataHora } from "../../../lib/datas";
 import { STATUS_SOLICITACAO, etapasEmArvore } from "../../../lib/constantes";
@@ -28,7 +28,7 @@ const FILTROS = [["", "Todas"], ["pendentes", "Em análise"], ["aprovada", "Apro
 // data, motivo, fotos/vídeos e os dados de cada aprovação (Coordenador e Gerente).
 export default function SolicitacoesCronogramaPage() {
   const { usuario } = useAuth();
-  const editavel = podeEditar(usuario);
+  const editavel = pode(usuario, "cronograma.solicitar");
   const { dados: pis } = useTabela("pis", { order: { coluna: "codigo" } });
   const { dados: etapas } = useTabela("etapas");
   const { dados: usuarios } = useTabela("usuarios");

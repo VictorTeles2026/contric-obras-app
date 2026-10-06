@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { exigirMaster, rotaSegura } from "../../../lib/authServidor";
+import { exigirPermissao, rotaSegura } from "../../../lib/authServidor";
 
 // Exclusão definitiva de um usuário (somente Master). Irreversível.
 // - registros que SÃO do usuário (horas, RDOs que ele fez, ocorrências que registrou,
@@ -26,7 +26,7 @@ const APAGAR = [
 const ausente = (e) => /does not exist|could not find|schema cache/i.test(e?.message || "");
 
 export const POST = rotaSegura(async (req) => {
-  const { admin, solicitante, resposta } = await exigirMaster(req);
+  const { admin, solicitante, resposta } = await exigirPermissao(req, "usuario.excluir");
   if (resposta) return resposta;
   const { id } = await req.json().catch(() => ({}));
   if (id === solicitante.id) return NextResponse.json({ error: "Você não pode excluir o seu próprio usuário." }, { status: 400 });

@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useTabela, registrarLog } from "../../lib/dados";
-import { useAuth, podeEditar } from "../../lib/AuthContext";
+import { useAuth, pode } from "../../lib/AuthContext";
 import { supabase } from "../../lib/supabase";
 import { formatarData, formatarDataHora, horaCurta, formatarHoras } from "../../lib/datas";
 import { STATUS_ETAPA, STATUS_SOLICITACAO } from "../../lib/constantes";
@@ -23,7 +23,10 @@ const CAMPOS_APLICAVEIS = ["data_prevista_inicio", "data_prevista_fim", "nome"];
 export default function AprovacoesPage() {
   const { usuario } = useAuth();
   const { avisar } = useToast();
-  const editavel = podeEditar(usuario);
+  // cada aba confere a sua permissão (matriz de permissões)
+  const podeRdo = pode(usuario, "rdo.aprovar"), podeHoras = pode(usuario, "horas.aprovar");
+  const podeOcorrencia = pode(usuario, "ocorrencia.aprovar"), podeSolicitacao = pode(usuario, "cronograma.aprovar");
+  const editavel = podeRdo || podeHoras || podeOcorrencia || podeSolicitacao;
   const [aba, setAba] = useState("rdos");
   const [editando, setEditando] = useState(null); // { tipo: "rdo" | "horas" | "solicitacao", item }
   const { dados: pis } = useTabela("pis", { order: { coluna: "codigo" } });
@@ -99,10 +102,12 @@ export default function AprovacoesPage() {
   };
 
   // ---------------- Solicitações ----------------
-  const podeDecidirSolicitacao = (s) =>
-    usuario?.perfil === "master" ||
+  // fluxo em duas fases (Coordenador → Gerente); quem tem a permissão e não é
+  // coordenador/gerente (ex: Master ou exceção por usuário) decide qualquer fase
+  const podeDecidirSolicitacao = (s) => podeSolicitacao && (
+    usuario?.perfil === "master" || !["coordenador", "gerente"].includes(usuario?.perfil) ||
     (s.status === "pendente_coordenador" && usuario?.perfil === "coordenador") ||
-    (s.status === "pendente_gerente" && usuario?.perfil === "gerente");
+    (s.status === "pendente_gerente" && usuario?.perfil === "gerente"));
 
   const decidirSolicitacao = async (s, aprovar, motivo) => {
     const etapa = etapas.find((e) => e.id === s.etapa_id);
@@ -167,12 +172,12 @@ export default function AprovacoesPage() {
             {c1 && <Esqueleto linhas={2} altura={140} />}
             {!c1 && rdosPendentes.length === 0 && <EstadoVazio icone="aprovar" titulo="Tudo em dia" texto="Nenhum RDO aguardando aprovação." />}
             {rdosPendentes.map((rdo) => (
-              <RdoCard key={`${rdo.id}-${rdo.editado_em || ""}`} rdo={rdo} pi={piInfo(rdo.pi_id)} lider={nomeUsuario(rdo.lider_id)} editavel={editavel}
+              <RdoCard key={`${rdo.id}-${rdo.editado_em || ""}`} rdo={rdo} pi={piInfo(rdo.pi_id)} lider={nomeUsuario(rdo.lider_id)} editavel={podeRdo}
                 editadoPor={rdo.editado_por ? nomeUsuario(rdo.editado_por) : null}
                 ocorrencias={ocorrencias.filter((o) => o.rdo_id === rdo.id)}
                 onAprovar={(aplicar) => aprovarRdo(rdo, aplicar)} onReprovar={(m) => reprovarRdo(rdo, m)}
                 onEditar={() => setEditando({ tipo: "rdo", item: rdo })}
-                rodapeMaster={<AcoesMaster excluir={(motivo) => excluirRdo({ rdo, pi: piInfo(rdo.pi_id), usuario, motivo })} onExcluido={recarregarRdos}
+                rodapeMaster={<AcoesMaster permissaoExcluir="rdo.excluir" excluir={(motivo) => excluirRdo({ rdo, pi: piInfo(rdo.pi_id), usuario, motivo })} onExcluido={recarregarRdos}
                   tituloExclusao="Excluir RDO" descricaoExclusao="O RDO, as ocorrências registradas nele e o PDF serão apagados." />} />
             ))}
           </div>
@@ -185,10 +190,10 @@ export default function AprovacoesPage() {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               {horasPendentes.map((h) => (
                 // a chave inclui o total: quando o check-out ou uma edição chega, o card reinicia os campos com o valor novo
-                <HorasCard key={`${h.id}-${h.horas_totais}`} registro={h} pi={piInfo(h.pi_id)} pessoa={nomeUsuario(h.usuario_id)} editavel={editavel}
+                <HorasCard key={`${h.id}-${h.horas_totais}`} registro={h} pi={piInfo(h.pi_id)} pessoa={nomeUsuario(h.usuario_id)} editavel={podeHoras}
                   editadoPor={h.editado_por ? nomeUsuario(h.editado_por) : null}
                   onAprovar={aprovarHoras} onReprovar={(m) => reprovarHoras(h, m)} onEditar={() => setEditando({ tipo: "horas", item: h })}
-                  rodapeMaster={<AcoesMaster excluir={(motivo) => excluirHoras({ registro: h, pi: piInfo(h.pi_id), pessoa: usuarios.find((u) => u.id === h.usuario_id), usuario, motivo })}
+                  rodapeMaster={<AcoesMaster permissaoExcluir="horas.excluir" excluir={(motivo) => excluirHoras({ registro: h, pi: piInfo(h.pi_id), pessoa: usuarios.find((u) => u.id === h.usuario_id), usuario, motivo })}
                     onExcluido={recarregarHoras} tituloExclusao="Excluir lançamento de horas" descricaoExclusao="O lançamento de horas será apagado." />} />
               ))}
             </div>
@@ -200,9 +205,9 @@ export default function AprovacoesPage() {
             {ocorrenciasPendentes.length === 0 && <EstadoVazio icone="alerta" titulo="Nenhuma ocorrência pendente" texto="Ocorrências registradas pela equipe no celular aparecem aqui (as de dentro de um RDO são aprovadas junto com o RDO)." />}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               {ocorrenciasPendentes.map((o) => (
-                <CartaoOcorrencia key={`${o.id}-${o.editado_em || ""}`} oc={o} pi={piInfo(o.pi_id)} pis={pis} podeDecidir={editavel}
+                <CartaoOcorrencia key={`${o.id}-${o.editado_em || ""}`} oc={o} pi={piInfo(o.pi_id)} pis={pis} podeDecidir={podeOcorrencia}
                   pessoa={usuarios.find((u) => u.id === o.registrado_por)} onMudou={recarregarOcorrencias}
-                  rodapeMaster={<AcoesMaster excluir={(motivo) => excluirOcorrencia({ oc: o, pi: piInfo(o.pi_id), usuario, motivo })} onExcluido={recarregarOcorrencias}
+                  rodapeMaster={<AcoesMaster permissaoExcluir="ocorrencia.excluir" excluir={(motivo) => excluirOcorrencia({ oc: o, pi: piInfo(o.pi_id), usuario, motivo })} onExcluido={recarregarOcorrencias}
                     tituloExclusao="Excluir ocorrência" descricaoExclusao="A ocorrência e o PDF serão apagados." />} />
               ))}
             </div>
@@ -218,7 +223,7 @@ export default function AprovacoesPage() {
               return (
                 <SolicitacaoCard key={s.id} s={s} etapa={etapa} pi={piInfo(etapa?.pi_id)} solicitante={nomeUsuario(s.solicitado_por)}
                   editadoPor={s.editado_por ? nomeUsuario(s.editado_por) : null}
-                  editavel={editavel} podeDecidir={podeDecidirSolicitacao(s)} finalizaDireto={usuario?.perfil === "master"}
+                  editavel={podeSolicitacao} podeDecidir={podeDecidirSolicitacao(s)} finalizaDireto={usuario?.perfil === "master"}
                   onDecidir={(aprovar, motivo) => decidirSolicitacao(s, aprovar, motivo)}
                   onEditar={() => setEditando({ tipo: "solicitacao", item: s })}
                   rodapeMaster={<AcoesMaster excluir={(motivo) => excluirSolicitacao({ s, etapa, usuario, motivo })} onExcluido={recarregarSolicitacoes}

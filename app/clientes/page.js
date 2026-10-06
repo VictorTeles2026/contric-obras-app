@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useTabela, chamarApi } from "../../lib/dados";
-import { useAuth, podeGerenciarClientes } from "../../lib/AuthContext";
+import { useAuth, podeGerenciarClientes, pode } from "../../lib/AuthContext";
 import { useToast } from "../../lib/Toast";
 import PainelShell from "../../components/PainelShell";
 import VerSenhas from "../../components/VerSenhas";
@@ -20,8 +20,10 @@ const mascaraTelefone = (v) => {
 export default function ClientesPage() {
   const { usuario } = useAuth();
   const { avisar } = useToast();
-  const pode = podeGerenciarClientes(usuario);
-  const master = usuario?.perfil === "master";
+  const podeGerenciar = podeGerenciarClientes(usuario);
+  const podeAcessos = pode(usuario, "cliente.acessos");
+  const podeSenha = pode(usuario, "cliente.senha");
+  const podeExcluir = pode(usuario, "cliente.excluir");
   const { dados: clientes, carregando, erro: erroTabela, recarregar } = useTabela("clientes", { order: { coluna: "nome" } });
   const { dados: acessos, recarregar: recarregarAcessos } = useTabela("cliente_acessos");
   const { dados: pis } = useTabela("pis", { order: { coluna: "codigo" } });
@@ -33,7 +35,7 @@ export default function ClientesPage() {
   const [excluindo, setExcluindo] = useState(null);
   const [ocupado, setOcupado] = useState(null);
 
-  if (usuario && !pode) {
+  if (usuario && !podeGerenciar && !podeAcessos) {
     return <PainelShell><div className="p-8"><Aviso tipo="erro">Página disponível somente para Master, Gerente de Obras e Coordenador de Obras.</Aviso></div></PainelShell>;
   }
 
@@ -61,7 +63,7 @@ export default function ClientesPage() {
     <PainelShell>
       <div className="p-4 md:p-8 max-w-5xl mx-auto">
         <CabecalhoPagina titulo="Clientes" subtitulo="Acesso dos clientes às informações das suas obras (Acesso Clientes Contric)."
-          acoes={<button onClick={() => setForm({})} className="btn btn-primario"><Icone nome="mais2" className="w-4 h-4" /> Novo cliente</button>} />
+          acoes={podeGerenciar && <button onClick={() => setForm({})} className="btn btn-primario"><Icone nome="mais2" className="w-4 h-4" /> Novo cliente</button>} />
         {erroTabela && <Aviso tipo="erro" className="mb-4">O banco ainda não tem o cadastro de clientes. Rode o script <strong>clientes-senhas.sql</strong> no Supabase.</Aviso>}
 
         <div className="relative mb-4">
@@ -87,15 +89,15 @@ export default function ClientesPage() {
                     <div className="text-sm text-muted">{c.email}{c.telefone ? ` · ${c.telefone}` : ""}</div>
                   </div>
                   <div className="flex flex-wrap gap-1.5">
-                    <button onClick={() => setGerenciando(c)} className="btn btn-primario btn-sm"><Icone nome="obra" className="w-4 h-4" /> Acessos ({meus.length})</button>
-                    <button onClick={() => setForm(c)} className="btn btn-contorno btn-sm"><Icone nome="editar" className="w-4 h-4" /> Editar</button>
-                    <button onClick={() => novaSenha(c)} disabled={ocupado === c.id} className="btn btn-contorno btn-sm">Nova senha</button>
-                    {master && c.auth_user_id && <button onClick={() => setVendoSenha(c)} className="btn btn-contorno btn-sm"><Icone nome="chave" className="w-4 h-4" /> Senha</button>}
-                    <button onClick={() => acao(c, { acao: "ativo", ativo: !c.ativo }, c.ativo ? "Cliente desativado — não consegue mais entrar." : "Cliente reativado.")} disabled={ocupado === c.id}
+                    {podeAcessos && <button onClick={() => setGerenciando(c)} className="btn btn-primario btn-sm"><Icone nome="obra" className="w-4 h-4" /> Acessos ({meus.length})</button>}
+                    {podeGerenciar && <button onClick={() => setForm(c)} className="btn btn-contorno btn-sm"><Icone nome="editar" className="w-4 h-4" /> Editar</button>}
+                    {podeSenha && <button onClick={() => novaSenha(c)} disabled={ocupado === c.id} className="btn btn-contorno btn-sm">Nova senha</button>}
+                    {podeSenha && c.auth_user_id && <button onClick={() => setVendoSenha(c)} className="btn btn-contorno btn-sm"><Icone nome="chave" className="w-4 h-4" /> Senha</button>}
+                    {podeGerenciar && <button onClick={() => acao(c, { acao: "ativo", ativo: !c.ativo }, c.ativo ? "Cliente desativado — não consegue mais entrar." : "Cliente reativado.")} disabled={ocupado === c.id}
                       className={`btn btn-sm border ${c.ativo ? "border-amber/40 text-amber bg-white" : "border-green/40 text-green bg-white"}`}>
                       {ocupado === c.id ? <Spinner className="w-3.5 h-3.5" /> : c.ativo ? "Desativar" : "Ativar"}
-                    </button>
-                    {master && <button onClick={() => setExcluindo(c)} className="btn btn-contorno-perigo btn-sm"><Icone nome="lixo" className="w-4 h-4" /></button>}
+                    </button>}
+                    {podeExcluir && <button onClick={() => setExcluindo(c)} className="btn btn-contorno-perigo btn-sm"><Icone nome="lixo" className="w-4 h-4" /></button>}
                   </div>
                 </div>
                 {meus.length > 0 && (

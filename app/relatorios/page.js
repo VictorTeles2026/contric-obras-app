@@ -2,7 +2,7 @@
 
 import { useState, useMemo, useEffect, useRef } from "react";
 import { useTabela, registrarLog } from "../../lib/dados";
-import { useAuth, podeEditar } from "../../lib/AuthContext";
+import { useAuth, pode } from "../../lib/AuthContext";
 import { supabase } from "../../lib/supabase";
 import { useToast } from "../../lib/Toast";
 import PainelShell from "../../components/PainelShell";
@@ -51,7 +51,7 @@ const corDe = (n) => (n === null ? undefined : n >= 0 ? VERDE_ESCURO : VERMELHO)
 
 export default function RelatoriosPage() {
   const { usuario } = useAuth();
-  const editavel = podeEditar(usuario);
+  const editavel = pode(usuario, "relatorio.editar");
   const { dados: pis } = useTabela("pis", { order: { coluna: "codigo" } });
   const { dados: categorias } = useTabela("categorias_orcamento", { order: { coluna: "ordem" } });
   const { dados: orcamentos, recarregar: recarregarOrcamentos } = useTabela("orcamento_pi_item");
@@ -147,7 +147,7 @@ export default function RelatoriosPage() {
 function LancamentosHoras({ lancamentos, usuarios, categorias, pis, pi, editavel, usuario, onSalvo }) {
   const { avisar } = useToast();
   const [editando, setEditando] = useState(null);
-  const master = usuario?.perfil === "master";
+  const master = pode(usuario, "relatorio.editar") && pode(usuario, "horas.excluir"); // ações restritas sobre lançamentos
   const [salvando, setSalvando] = useState({});
   const pessoa = (id) => usuarios.find((u) => u.id === id);
   const inicio = (l) => (l.entrada ? horaCurta(l.entrada) : l.hora_inicio || "—");
@@ -229,7 +229,7 @@ function LancamentosHoras({ lancamentos, usuarios, categorias, pis, pi, editavel
                     {master && (
                       <td className="px-3 py-1.5">
                         <div className="[&_.selo]:hidden">
-                          <AcoesMaster onEditar={() => setEditando(l)} onExcluido={onSalvo}
+                          <AcoesMaster permissaoEditar="relatorio.editar" permissaoExcluir="horas.excluir" onEditar={() => setEditando(l)} onExcluido={onSalvo}
                             excluir={(motivo) => excluirHoras({ registro: l, pi, pessoa: p, usuario, motivo })}
                             tituloExclusao="Excluir lançamento de horas" descricaoExclusao={`Lançamento de ${p?.nome || "—"} em ${formatarData(l.data)} será apagado.`} />
                         </div>
@@ -345,7 +345,7 @@ function TabelaOrcadoRealizado({ tipo, titulo, colOrcado, colRealizado, categori
         <div className="flex items-center gap-3">
           <span className="text-xs text-muted">{tipo === "custo" ? "Valores em R$" : "Valores em horas"}</span>
           <div className="print:hidden">
-            <AcoesMaster onExcluido={() => { sujosRef.current.clear(); onSalvo?.(); }}
+            <AcoesMaster permissaoExcluir="relatorio.editar" onExcluido={() => { sujosRef.current.clear(); onSalvo?.(); }}
               excluir={(motivo) => limparRealizados({ pi, categoriaIds: categorias.map((c) => c.id), grupo: titulo, usuario, motivo })}
               tituloExclusao="Apagar valores realizados"
               descricaoExclusao={`Todos os valores realizados digitados em "${titulo}" deste PI serão apagados (os valores orçados e os lançamentos de horas não mudam).`} />

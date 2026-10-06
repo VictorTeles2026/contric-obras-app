@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useTabela, registrarLog, chamarApi } from "../../lib/dados";
-import { useAuth, podeGerenciarUsuarios } from "../../lib/AuthContext";
+import { useAuth, podeGerenciarUsuarios, pode } from "../../lib/AuthContext";
 import { useToast } from "../../lib/Toast";
 import PainelShell from "../../components/PainelShell";
 import { CabecalhoPagina, Modal, Campo, Aviso, Esqueleto, EstadoVazio, Spinner, SeletorEquipes } from "../../components/ui";
@@ -36,7 +36,9 @@ const COR_PERFIL = {
 export default function UsuariosPage() {
   const { usuario } = useAuth();
   const { avisar } = useToast();
-  const souMaster = podeGerenciarUsuarios(usuario);
+  const souMaster = podeGerenciarUsuarios(usuario); // pode criar/editar/habilitar (permissão usuario.editar)
+  const podeVerSenha = pode(usuario, "usuario.senha");
+  const podeExcluirUsuario = pode(usuario, "usuario.excluir");
   const { dados: usuarios, carregando, recarregar } = useTabela("usuarios", { order: { coluna: "nome" } });
 
   const [modalAberto, setModalAberto] = useState(false);
@@ -76,7 +78,7 @@ export default function UsuariosPage() {
           subtitulo={`${usuarios.filter((u) => u.ativo).length} ativos de ${usuarios.length} cadastrados`}
           acoes={souMaster
             ? <button onClick={abrirNovo} className="btn btn-primario"><Icone nome="mais2" className="w-4 h-4" /> Novo usuário</button>
-            : <span className="text-xs text-muteddim">Somente o Master pode gerenciar usuários</span>}
+            : <span className="text-xs text-muteddim">Seu usuário não pode gerenciar usuários</span>}
         />
 
         <div className="flex flex-col sm:flex-row gap-2 mb-4">
@@ -127,13 +129,13 @@ export default function UsuariosPage() {
                 ) : (u.email || "—")}
               </div>
               <div className="flex items-center gap-2 ml-auto">
-                {souMaster && u.auth_user_id && (
+                {podeVerSenha && u.auth_user_id && (
                   <button onClick={() => setVendoSenha(u)} className="btn btn-contorno btn-sm" title="Ver senha registrada (somente Master)"><Icone nome="chave" className="w-4 h-4" /> Senha</button>
                 )}
                 {souMaster && (
                   <button onClick={() => abrirEdicao(u)} className="btn btn-contorno btn-sm">Editar</button>
                 )}
-                {souMaster && u.id !== usuario?.id && (
+                {podeExcluirUsuario && u.id !== usuario?.id && (
                   <button onClick={() => setExcluindo(u)} className="p-2 rounded-lg text-muteddim hover:text-red hover:bg-red/5" title="Excluir usuário (somente Master)" aria-label={`Excluir ${u.nome}`}>
                     <Icone nome="lixo" className="w-4 h-4" />
                   </button>

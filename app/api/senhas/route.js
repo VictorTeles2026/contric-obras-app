@@ -1,10 +1,10 @@
 import { NextResponse } from "next/server";
-import { exigirMaster, decifrar, rotaSegura } from "../../../lib/authServidor";
+import { exigirPermissao, decifrar, rotaSegura } from "../../../lib/authServidor";
 
 // SOMENTE Master: histórico de senhas de um usuário/cliente (decifrado no servidor).
 // Cada consulta fica registrada na Auditoria.
 export const POST = rotaSegura(async (req) => {
-  const { admin, solicitante, resposta } = await exigirMaster(req);
+  const { admin, solicitante, resposta } = await exigirPermissao(req, ["usuario.senha", "cliente.senha"]);
   if (resposta) return resposta;
   const { authUserId, nome } = await req.json().catch(() => ({}));
   if (!authUserId) return NextResponse.json({ error: "Informe o usuário." }, { status: 400 });

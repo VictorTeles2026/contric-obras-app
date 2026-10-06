@@ -2,7 +2,7 @@
 
 import { useState, useMemo, useRef, useEffect, useLayoutEffect, useCallback } from "react";
 import { useTabela, registrarLog, chamarApi, gravarTolerante } from "../../lib/dados";
-import { useAuth, podeEditar } from "../../lib/AuthContext";
+import { useAuth, podeEditar, pode } from "../../lib/AuthContext";
 import { supabase } from "../../lib/supabase";
 import { hojeISO as todayISO, addDias, isoLocal } from "../../lib/datas";
 import { LISTA_STATUS_ETAPA as STATUS, AREAS, STATUS_PI, COR_STATUS_PI, STATUS_ETAPA } from "../../lib/constantes";
@@ -129,7 +129,7 @@ export default function CronogramaPage() {
   const { dados: alocacoesRecurso, recarregar: recarregarAlocacoesRecurso } = useTabela("alocacoes_recurso");
   const { dados: solicitacoesPendentes } = useTabela("solicitacoes_alteracao_cronograma", { select: "id,etapa_id,status" });
 
-  const porOrdem = (a, b) => (a.ordem ?? 999999) - (b.ordem ?? 999999);
+  const porOrdem = (a, b) => (a.ordem ?? 999999) - (b.ordem ?? 999999) || String(a.created_at || "").localeCompare(String(b.created_at || ""));
   const etapasDoPi = useMemo(() => etapas.filter((e) => e.pi_id === (piAtual && piAtual.id)), [etapas, piAtual]);
   const macroEtapas = etapasDoPi.filter((e) => !e.parent_etapa_id).sort(porOrdem);
   const subDe = (macroId) => etapasDoPi.filter((e) => e.parent_etapa_id === macroId).sort(porOrdem);
@@ -385,22 +385,22 @@ export default function CronogramaPage() {
             <option value="">Selecione o PI...</option>
             {pis.map((p) => <option key={p.id} value={p.id}>{p.codigo} — {p.cliente}{p.projeto ? ` — ${p.projeto}` : ""}</option>)}
           </select>
-          {editavel && (
+          {pode(usuario, "pi.criar") && (
             <button onClick={() => { setPisModalModo("create"); setPisModalAberto(true); }} className="btn btn-primario btn-sm !py-2">
               <Icone nome="mais2" className="w-4 h-4" /> Novo PI
             </button>
           )}
-          {editavel && piAtual && (
+          {pode(usuario, "pi.editar") && piAtual && (
             <button onClick={() => { setPisModalModo("edit"); setPisModalAberto(true); }} className="btn btn-contorno btn-sm !py-2">
               <Icone nome="editar" className="w-4 h-4" /> Editar PI
             </button>
           )}
-          {usuario?.perfil === "master" && piAtual && (
+          {pode(usuario, "pi.excluir") && piAtual && (
             <button onClick={() => setExcluindoPi(piAtual)} className="btn btn-contorno-perigo btn-sm !py-2" title="Apagar o PI e tudo o que está associado a ele (somente Master)">
               <Icone nome="lixo" className="w-4 h-4" /> Excluir PI
             </button>
           )}
-          {editavel && piAtual && (
+          {pode(usuario, "cronograma.base") && piAtual && (
             <button onClick={salvarCronogramaBase}
               title={piAtual.baseline_definida_em ? `Salvo em ${new Date(piAtual.baseline_definida_em).toLocaleString("pt-BR")} — clique para atualizar` : "Congela a versão atual como referência"}
               className={`btn btn-sm !py-2 sm:ml-auto border ${piAtual.baseline_definida_em ? "border-green/40 text-green bg-green/5 hover:bg-green/10" : "border-amber/50 text-amber bg-amber/5 hover:bg-amber/10"}`}>
@@ -452,7 +452,7 @@ export default function CronogramaPage() {
         )}
         {!piAtual && pis.length === 0 && (
           <EstadoVazio icone="obra" titulo="Nenhum PI cadastrado" texto="Abra o primeiro PI para começar a planejar as etapas."
-            acao={editavel && <button onClick={() => { setPisModalModo("create"); setPisModalAberto(true); }} className="btn btn-primario">+ Novo PI</button>} />
+            acao={pode(usuario, "pi.criar") && <button onClick={() => { setPisModalModo("create"); setPisModalAberto(true); }} className="btn btn-primario">+ Novo PI</button>} />
         )}
 
         {piAtual && (

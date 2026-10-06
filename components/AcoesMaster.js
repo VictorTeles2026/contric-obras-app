@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useAuth } from "../lib/AuthContext";
 import { useToast } from "../lib/Toast";
 import { ehMaster } from "../lib/exclusoes";
+import { pode } from "../lib/permissoes";
 import { Modal, Aviso, Spinner } from "./ui";
 import Icone from "./Icone";
 
@@ -40,18 +41,23 @@ export function ConfirmarExclusao({ titulo, descricao, onConfirmar, onFechar }) 
   );
 }
 
-// Botões "Editar" e "Excluir" que só aparecem para o Master.
+// Botões "Editar" e "Excluir" de ações restritas. Cada um aparece conforme a matriz de
+// permissões (permissaoEditar / permissaoExcluir); sem código informado, só o Master.
 // `excluir(motivo)` deve devolver { ok } ou { erro }.
-export default function AcoesMaster({ onEditar, excluir, descricaoExclusao, tituloExclusao = "Excluir", onExcluido, compacto = true }) {
+export default function AcoesMaster({ onEditar, excluir, descricaoExclusao, tituloExclusao = "Excluir", onExcluido, compacto = true, permissaoEditar, permissaoExcluir }) {
   const { usuario } = useAuth();
   const { avisar } = useToast();
   const [confirmando, setConfirmando] = useState(false);
-  if (!ehMaster(usuario)) return null;
+  const podeEditarItem = !!onEditar && (permissaoEditar ? pode(usuario, permissaoEditar) : ehMaster(usuario));
+  const podeExcluirItem = !!excluir && (permissaoExcluir ? pode(usuario, permissaoExcluir) : ehMaster(usuario));
+  if (!podeEditarItem && !podeExcluirItem) return null;
+  onEditar = podeEditarItem ? onEditar : null;
+  excluir = podeExcluirItem ? excluir : null;
   const cls = compacto ? "btn btn-sm" : "btn";
   return (
     <>
       <div className="flex items-center gap-1.5">
-        <span className="selo bg-navy text-white" title="Ações exclusivas do Master — registradas na Auditoria">Master</span>
+        <span className="selo bg-navy text-white" title="Ações restritas — registradas na Auditoria">{ehMaster(usuario) ? "Master" : "Restrito"}</span>
         {onEditar && <button onClick={onEditar} className={`${cls} btn-contorno`}><Icone nome="editar" className="w-4 h-4" /> Editar</button>}
         {excluir && <button onClick={() => setConfirmando(true)} className={`${cls} btn-contorno-perigo`}><Icone nome="lixo" className="w-4 h-4" /> Excluir</button>}
       </div>

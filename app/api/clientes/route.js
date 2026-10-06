@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { exigirPerfis, gerarSenha, registrarSenha, enviarEmail as enviarEmailReal, emailCliente, urlApp, rotaSegura } from "../../../lib/authServidor";
+import { exigirPermissao, gerarSenha, registrarSenha, enviarEmail as enviarEmailReal, emailCliente, urlApp, rotaSegura } from "../../../lib/authServidor";
 
 // Envio automático de e-mail aos clientes TEMPORARIAMENTE DESLIGADO: as credenciais
 // aparecem numa mensagem pronta para copiar e encaminhar manualmente.
@@ -29,10 +29,13 @@ async function log(admin, quem, acao, detalhe) {
 }
 
 export const POST = rotaSegura(async (req) => {
-  const { admin, interno, resposta } = await exigirPerfis(req, PERFIS);
+  const { admin, interno, resposta, tem } = await exigirPermissao(req, ["cliente.gerenciar", "cliente.acessos", "cliente.senha", "cliente.excluir"]);
   if (resposta) return resposta;
   const body = await req.json().catch(() => ({}));
   const acao = body.acao;
+  // cada ação confere a sua permissão (matriz de permissões)
+  const exigida = { criar: "cliente.gerenciar", editar: "cliente.gerenciar", ativo: "cliente.gerenciar", redefinir_senha: "cliente.senha", excluir: "cliente.excluir", acesso: "cliente.acessos" }[acao];
+  if (exigida && !tem(exigida)) return NextResponse.json({ error: "Seu usuário não tem permissão para esta ação." }, { status: 403 });
 
   // ---------- criar ----------
   if (acao === "criar") {
@@ -96,7 +99,6 @@ export const POST = rotaSegura(async (req) => {
 
   // ---------- excluir (só master) ----------
   if (acao === "excluir") {
-    if (interno.perfil !== "master") return NextResponse.json({ error: "Somente o Master pode excluir clientes." }, { status: 403 });
     await admin.from("clientes").delete().eq("id", cliente.id);
     if (cliente.auth_user_id) await admin.auth.admin.deleteUser(cliente.auth_user_id);
     await log(admin, interno, "Excluiu cliente (Master)", `${cliente.nome} (${cliente.email})${body.motivo ? ` · motivo: ${body.motivo}` : ""}`);
