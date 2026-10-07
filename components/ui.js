@@ -87,7 +87,8 @@ export function Aviso({ tipo = "info", children, className = "" }) {
 }
 
 // Modal que vira "bottom sheet" no celular (mais fácil de alcançar com o polegar).
-export function Modal({ titulo, onFechar, children, rodape, largura = "max-w-lg" }) {
+// confirmarAoFechar=false: janela só de leitura/conclusão — o X e o Esc fecham sem perguntar
+export function Modal({ titulo, onFechar, children, rodape, largura = "max-w-lg", confirmarAoFechar = true }) {
   // no celular, acompanha a área visível (o teclado encolhe a tela): a janela nunca fica atrás dele
   const [area, setArea] = useState(null);
   useEffect(() => {
@@ -105,7 +106,7 @@ export function Modal({ titulo, onFechar, children, rodape, largura = "max-w-lg"
   const sujoRef = useRef(false);
   const [balancar, setBalancar] = useState(false);
   const fecharComCuidado = () => {
-    if (sujoRef.current && !window.confirm("Fechar a janela e descartar o que foi preenchido?")) return;
+    if (confirmarAoFechar && sujoRef.current && !window.confirm("Fechar a janela e descartar o que foi preenchido?")) return;
     onFechar?.();
   };
   // clicar fora NUNCA fecha: só balança (fecha pelo X, Esc ou pelos botões da janela)

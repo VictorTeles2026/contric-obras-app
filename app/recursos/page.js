@@ -192,6 +192,8 @@ export default function RecursosPage() {
     const e = etapas.find((x) => x.id === id);
     if (e?.data_prevista_inicio) setPeriodoInicio(e.data_prevista_inicio);
     if (e?.data_prevista_fim) setPeriodoFim(e.data_prevista_fim);
+    // igual à alocação pelo Cronograma: % / Período com 100% (pode ajustar depois)
+    if (e) { setModo("periodo_percentual"); setPercentual(100); }
   };
   const etapaDuplicada = !!etapaEscolhida && alocsDoSelecionado.some((a) => a.etapa_id === etapaEscolhida && a.id !== editandoAlocId);
 
@@ -699,6 +701,7 @@ function AlocacaoEmMassaModal({ pis, recursos, opcoesEtapa, etapas, onAplicar, o
             const et = etapas.find((x) => x.id === e.target.value);
             if (et?.data_prevista_inicio) setInicio(et.data_prevista_inicio);
             if (et?.data_prevista_fim) setFim(et.data_prevista_fim);
+            if (et) { setModoM("periodo_percentual"); setPerc(100); } // igual à alocação pelo Cronograma
           }}>
             <option value="">Sem etapa — só período no PI</option>
             {opcoesEtapa(piId).map((e) => <option key={e.id} value={e.id}>{e.nivel ? "   " : ""}{e.rotulo}</option>)}

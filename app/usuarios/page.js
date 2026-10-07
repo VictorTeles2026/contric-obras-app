@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useTabela, registrarLog, chamarApi } from "../../lib/dados";
 import { useAuth, podeGerenciarUsuarios, pode } from "../../lib/AuthContext";
 import { useToast } from "../../lib/Toast";
@@ -87,6 +87,25 @@ export default function UsuariosPage() {
     (!termo || [u.nome, u.email, loginDe(u), u.funcao, u.empresa_terceira].some((c) => (c || "").toLowerCase().includes(termo))));
   const qtdCampo = usuarios.filter(ehDeCampo).length;
 
+  // aba Usuários de Campo: funcionários (Contric) primeiro e depois os terceiros, um grupo por
+  // empresa (empresas em ordem alfabética); dentro de cada grupo, ordem alfabética por nome
+  const porNome = (a, b) => (a.nome || "").localeCompare(b.nome || "", "pt-BR", { sensitivity: "base" });
+  const grupos = useMemo(() => {
+    if (aba !== "campo") return [{ titulo: null, itens: filtrados }];
+    const proprios = filtrados.filter((u) => u.perfil !== "terceiro").sort(porNome);
+    const porEmpresa = new Map();
+    filtrados.filter((u) => u.perfil === "terceiro").forEach((u) => {
+      const nome = (u.empresa_terceira || "").trim() || "Terceiros sem empresa";
+      const chave = nome.toLowerCase();
+      if (!porEmpresa.has(chave)) porEmpresa.set(chave, { titulo: nome, itens: [] });
+      porEmpresa.get(chave).itens.push(u);
+    });
+    const terceiros = [...porEmpresa.values()].sort((a, b) => a.titulo.localeCompare(b.titulo, "pt-BR", { sensitivity: "base" }))
+      .map((g) => ({ ...g, titulo: `Terceiros — ${g.titulo}`, itens: g.itens.sort(porNome) }));
+    return [...(proprios.length ? [{ titulo: "Funcionários Contric", itens: proprios }] : []), ...terceiros];
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [aba, filtrados]);
+
   return (
     <PainelShell>
       <div className="p-4 md:p-8">
@@ -146,8 +165,17 @@ export default function UsuariosPage() {
             acao={aba === "campo" && souMaster && !daAba.length && <button onClick={() => setLoteAberto(true)} className="btn btn-primario"><Icone nome="mais2" className="w-4 h-4" /> Novos Usuários</button>} />
         )}
 
+        {grupos.map((g) => (
+        <div key={g.titulo || "todos"} className="mb-5">
+          {g.titulo && (
+            <div className="flex items-center gap-2 mb-2 px-1">
+              <span className="text-sm font-semibold text-cyan">{g.titulo}</span>
+              <span className="selo bg-panel text-muted">{g.itens.length}</span>
+              <span className="flex-1 h-px bg-line" />
+            </div>
+          )}
         <div className="flex flex-col gap-2">
-          {filtrados.map((u) => (
+          {g.itens.map((u) => (
             <div key={u.id} className={`cartao flex flex-wrap items-center gap-3 p-3 md:p-4 transition-opacity ${!u.ativo ? "opacity-60" : ""}`}>
               <div className="w-10 h-10 rounded-full bg-panel border border-line flex items-center justify-center font-semibold text-sm text-muted shrink-0">
                 {(u.nome || "?").split(" ").slice(0, 2).map((p) => p[0]).join("").toUpperCase()}
@@ -197,6 +225,8 @@ export default function UsuariosPage() {
             </div>
           ))}
         </div>
+        </div>
+        ))}
 
         {excluindo && (
           <ConfirmacaoDupla titulo="Excluir usuário" onFechar={() => setExcluindo(null)}
@@ -427,9 +457,12 @@ function CadastroEmLote({ usuariosExistentes, empresas = [], onFechar, onCriados
     }));
     setCriados((c) => [...c, ...novos]);
     const falhas = json.resultados.filter((r) => !r.usuario).length;
-    avisar(`${json.resultados.length - falhas} usuário(s) criado(s)${falhas ? ` · ${falhas} com erro (veja na tabela)` : ""}.`, falhas ? "erro" : "sucesso", 7000);
     onCriados();
+    // tudo certo: mostra a tela de conclusão (com os usuários e senhas para copiar e o botão Concluir)
+    if (!falhas) { setConcluido(true); return; }
+    avisar(`${json.resultados.length - falhas} usuário(s) criado(s) · ${falhas} com erro (veja na tabela).`, "erro", 7000);
   };
+  const [concluido, setConcluido] = useState(false);
 
   const copiarCredenciais = async () => {
     const texto = criados.map((c) => `${c.nome}\nUsuário: ${c.login}\nSenha: ${c.senha}`).join("\n\n");
@@ -438,6 +471,30 @@ function CadastroEmLote({ usuariosExistentes, empresas = [], onFechar, onCriados
 
   const cel = "px-1.5 py-1.5 align-top";
   const inp = "input !py-1.5 !px-2 !text-sm";
+
+  if (concluido) {
+    return (
+      <Modal titulo="Usuários criados" onFechar={onFechar} confirmarAoFechar={false} largura="max-w-2xl"
+        rodape={<>
+          <button onClick={copiarCredenciais} className="btn btn-contorno"><Icone nome="copiar" className="w-4 h-4" /> Copiar usuários e senhas</button>
+          <button onClick={() => { setConcluido(false); setLinhas(Array.from({ length: 5 }, linhaVazia)); }} className="btn btn-fantasma">Criar mais</button>
+          <button onClick={onFechar} className="btn btn-primario">Concluir</button>
+        </>}>
+        <Aviso tipo="sucesso" className="mb-3">{criados.length} usuário(s) criado(s) na equipe Campo. Copie os usuários e senhas para entregar à equipe — as senhas não aparecem de novo.</Aviso>
+        <table className="w-full text-sm">
+          <thead><tr className="text-left border-b border-line"><th className="py-2 titulo-secao">Nome</th><th className="py-2 titulo-secao">Usuário</th><th className="py-2 titulo-secao">Senha</th></tr></thead>
+          <tbody>
+            {criados.map((c) => (
+              <tr key={c.login} className="border-b border-line/60">
+                <td className="py-1.5">{c.nome}</td><td className="py-1.5 font-medium">{c.login}</td><td className="py-1.5 font-mono">{c.senha}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </Modal>
+    );
+  }
+
   return (
     <Modal titulo="Novos usuários de campo (em lote)" onFechar={() => !enviando && onFechar()} largura="max-w-[min(1200px,96vw)]"
       rodape={<>

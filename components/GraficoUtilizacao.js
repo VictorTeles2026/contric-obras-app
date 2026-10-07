@@ -245,11 +245,9 @@ export default function GraficoUtilizacao({ recursos, alocacoes, pis, carregando
                               </div>
                               <div className="relative h-10" style={{ width: largura }}>
                                 <div className="absolute inset-y-0" style={{ left: hojeX, width: 1, background: "#D64545", opacity: 0.5 }} />
-                                {cadencia ? (
-                                  <div className="absolute top-4 h-1.5 rounded border border-dashed border-muteddim" style={{ left, width }} title={titulo} />
-                                ) : (
-                                  <div className="absolute top-3.5 h-3 rounded" style={{ left, width, background: sobrealocado ? "#D64545" : cor, opacity: sobrealocado ? 0.9 : 0.8 }} title={titulo} />
-                                )}
+                                {/* mesmo padrão da alocação pelo Cronograma: barra cheia, preenchida
+                                    (a cadência só se diferencia pelo texto "cadência" na coluna da esquerda) */}
+                                <div className="absolute top-3.5 h-3 rounded" style={{ left, width, background: sobrealocado && !cadencia ? "#D64545" : cor, opacity: sobrealocado && !cadencia ? 0.9 : 0.8 }} title={titulo} />
                               </div>
                             </div>
                           );
