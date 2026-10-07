@@ -6,7 +6,8 @@ import { useAuth, podeGerenciarUsuarios, pode } from "../../lib/AuthContext";
 import { useToast } from "../../lib/Toast";
 import PainelShell from "../../components/PainelShell";
 import { CabecalhoPagina, Modal, Campo, Aviso, Esqueleto, EstadoVazio, Spinner, SeletorEquipes } from "../../components/ui";
-import { AREAS } from "../../lib/constantes";
+import { AREAS, FUNCOES, EQUIPE_CAMPO } from "../../lib/constantes";
+import { normalizarLogin, erroLogin, ehEmail, sugerirLogin } from "../../lib/login";
 import Icone from "../../components/Icone";
 import VerSenhas from "../../components/VerSenhas";
 import ConfirmacaoDupla from "../../components/ConfirmacaoDupla";
@@ -20,18 +21,14 @@ const PERFIS = [
   ["terceiro", "Terceiro (mão de obra)"],
   ["visualizador", "Visualizador"],
 ];
-const FUNCOES = [
-  "Líder", "Programador", "Eletricista Eletromecânico", "Eletricista Força e Controle",
-  "Mecânico", "Serralheiro", "Encanador", "Téc. Automação", "Téc. Eletrotécnica",
-  "Téc. Mecatrônico", "Pedreiro", "Técnico de Segurança",
-  "Projetista Mecânico", "Projetista Elétrico", "Gerente de Engenharia Elétrica",
-  "Gerente de Engenharia Mecânica", "Gestor de Projetos", "Gerente de Engenharia", "Diretor",
-];
 const PERFIS_COM_FUNCAO = ["lider", "funcionario", "terceiro", "gerente", "coordenador"];
 const COR_PERFIL = {
   master: "bg-navy text-white", gerente: "bg-cyan/10 text-cyan", coordenador: "bg-cyan/10 text-cyan",
   lider: "bg-green/10 text-green", funcionario: "bg-panel text-muted", terceiro: "bg-amber/10 text-amber", visualizador: "bg-panel text-muted",
 };
+const ehDeCampo = (u) => (u.equipes || []).includes(EQUIPE_CAMPO);
+// login exibido: o campo "login"; usuários antigos (antes do campo existir) usam o e-mail
+const loginDe = (u) => u.login || u.email || "";
 
 export default function UsuariosPage() {
   const { usuario } = useAuth();
@@ -41,7 +38,9 @@ export default function UsuariosPage() {
   const podeExcluirUsuario = pode(usuario, "usuario.excluir");
   const { dados: usuarios, carregando, recarregar } = useTabela("usuarios", { order: { coluna: "nome" } });
 
+  const [aba, setAba] = useState("geral"); // "geral" | "campo"
   const [modalAberto, setModalAberto] = useState(false);
+  const [loteAberto, setLoteAberto] = useState(false);
   const [editando, setEditando] = useState(null);
   const [pinGerado, setPinGerado] = useState(null);
   const [busca, setBusca] = useState("");
@@ -65,10 +64,13 @@ export default function UsuariosPage() {
     recarregar();
   };
 
+  // a aba "Usuários de Campo" lista quem é da equipe Campo; a principal, os demais
+  const daAba = usuarios.filter((u) => (aba === "campo" ? ehDeCampo(u) : !ehDeCampo(u)));
   const termo = busca.trim().toLowerCase();
-  const filtrados = usuarios.filter((u) =>
+  const filtrados = daAba.filter((u) =>
     (!filtroPerfil || u.perfil === filtroPerfil) && (!filtroEquipe || (u.equipes || []).includes(filtroEquipe)) && (mostrarInativos || u.ativo) &&
-    (!termo || [u.nome, u.email, u.funcao, u.empresa_terceira].some((c) => (c || "").toLowerCase().includes(termo))));
+    (!termo || [u.nome, u.email, loginDe(u), u.funcao, u.empresa_terceira].some((c) => (c || "").toLowerCase().includes(termo))));
+  const qtdCampo = usuarios.filter(ehDeCampo).length;
 
   return (
     <PainelShell>
@@ -76,15 +78,28 @@ export default function UsuariosPage() {
         <CabecalhoPagina
           titulo="Usuários e Acessos"
           subtitulo={`${usuarios.filter((u) => u.ativo).length} ativos de ${usuarios.length} cadastrados`}
-          acoes={souMaster
-            ? <button onClick={abrirNovo} className="btn btn-primario"><Icone nome="mais2" className="w-4 h-4" /> Novo usuário</button>
-            : <span className="text-xs text-muteddim">Seu usuário não pode gerenciar usuários</span>}
+          acoes={souMaster ? (
+            <>
+              {aba === "campo" && <button onClick={() => setLoteAberto(true)} className="btn btn-contorno !border-cyan !text-cyan hover:!bg-cyan/5"><Icone nome="mais2" className="w-4 h-4" /> Novos Usuários</button>}
+              <button onClick={abrirNovo} className="btn btn-primario"><Icone nome="mais2" className="w-4 h-4" /> Novo usuário</button>
+            </>
+          ) : <span className="text-xs text-muteddim">Seu usuário não pode gerenciar usuários</span>}
         />
+
+        <div className="flex gap-1 border-b border-line mb-4">
+          {[["geral", "Usuários", usuarios.length - qtdCampo], ["campo", "Usuários de Campo", qtdCampo]].map(([v, l, n]) => (
+            <button key={v} onClick={() => setAba(v)} className={`relative px-4 py-2.5 text-sm font-semibold ${aba === v ? "text-cyan" : "text-muted hover:text-textmain"}`}>
+              {l} <span className="selo bg-panel text-muted ml-1">{n}</span>
+              {aba === v && <span className="absolute left-0 right-0 -bottom-px h-0.5 bg-cyan rounded-full" />}
+            </button>
+          ))}
+        </div>
+        {aba === "campo" && <p className="text-sm text-muted mb-3">Usuários da equipe <strong>Campo</strong>. Use <strong>+ Novos Usuários</strong> para cadastrar várias pessoas de uma vez (ex: equipe nova numa obra).</p>}
 
         <div className="flex flex-col sm:flex-row gap-2 mb-4">
           <div className="relative flex-1">
             <Icone nome="buscar" className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muteddim" />
-            <input value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Buscar por nome, e-mail, função ou empresa" className="input pl-9" />
+            <input value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Buscar por nome, usuário, e-mail, função ou empresa" className="input pl-9" />
           </div>
           <select value={filtroPerfil} onChange={(e) => setFiltroPerfil(e.target.value)} className="input sm:!w-56">
             <option value="">Todos os perfis</option>
@@ -101,7 +116,11 @@ export default function UsuariosPage() {
         </div>
 
         {carregando && <Esqueleto linhas={5} altura={64} />}
-        {!carregando && filtrados.length === 0 && <EstadoVazio icone="usuarios" titulo="Ninguém encontrado" texto="Ajuste a busca ou os filtros." />}
+        {!carregando && filtrados.length === 0 && (
+          <EstadoVazio icone="usuarios" titulo="Ninguém encontrado"
+            texto={aba === "campo" && !daAba.length ? "Nenhum usuário da equipe Campo ainda." : "Ajuste a busca ou os filtros."}
+            acao={aba === "campo" && souMaster && !daAba.length && <button onClick={() => setLoteAberto(true)} className="btn btn-primario"><Icone nome="mais2" className="w-4 h-4" /> Novos Usuários</button>} />
+        )}
 
         <div className="flex flex-col gap-2">
           {filtrados.map((u) => (
@@ -121,22 +140,23 @@ export default function UsuariosPage() {
                 </div>
               </div>
               <div className="text-xs text-muted min-w-[160px] break-all">
-                {u.perfil === "terceiro" ? (
+                {u.perfil === "terceiro" && u.tipo_terceiro === "avulso" ? (
+                  <>{u.empresa_terceira || "—"}<div className="text-[11px]">Avulso · PIN {u.pin}</div></>
+                ) : (
                   <>
-                    {u.empresa_terceira || "—"}
-                    <div className="font-mono text-[11px]">{u.tipo_terceiro === "avulso" ? `Avulso · PIN ${u.pin}` : "Fixo · login"}</div>
+                    <div title="Usuário de acesso"><Icone nome="chave" className="w-3 h-3 inline -mt-0.5 mr-1" /><span className="text-textmain font-medium">{loginDe(u) || "—"}</span></div>
+                    {u.email && u.email !== loginDe(u) && <div>{u.email}</div>}
+                    {u.perfil === "terceiro" && <div>{u.empresa_terceira || "—"}</div>}
                   </>
-                ) : (u.email || "—")}
+                )}
               </div>
               <div className="flex items-center gap-2 ml-auto">
                 {podeVerSenha && u.auth_user_id && (
-                  <button onClick={() => setVendoSenha(u)} className="btn btn-contorno btn-sm" title="Ver senha registrada (somente Master)"><Icone nome="chave" className="w-4 h-4" /> Senha</button>
+                  <button onClick={() => setVendoSenha(u)} className="btn btn-contorno btn-sm" title="Ver senha registrada"><Icone nome="chave" className="w-4 h-4" /> Senha</button>
                 )}
-                {souMaster && (
-                  <button onClick={() => abrirEdicao(u)} className="btn btn-contorno btn-sm">Editar</button>
-                )}
+                {souMaster && <button onClick={() => abrirEdicao(u)} className="btn btn-contorno btn-sm">Editar</button>}
                 {podeExcluirUsuario && u.id !== usuario?.id && (
-                  <button onClick={() => setExcluindo(u)} className="p-2 rounded-lg text-muteddim hover:text-red hover:bg-red/5" title="Excluir usuário (somente Master)" aria-label={`Excluir ${u.nome}`}>
+                  <button onClick={() => setExcluindo(u)} className="p-2 rounded-lg text-muteddim hover:text-red hover:bg-red/5" title="Excluir usuário" aria-label={`Excluir ${u.nome}`}>
                     <Icone nome="lixo" className="w-4 h-4" />
                   </button>
                 )}
@@ -168,12 +188,13 @@ export default function UsuariosPage() {
         {vendoSenha && <VerSenhas authUserId={vendoSenha.auth_user_id} nome={vendoSenha.nome} onFechar={() => setVendoSenha(null)} />}
         {modalAberto && (
           <ModalUsuario
-            usuarioInicial={editando}
+            usuarioInicial={editando} deCampo={aba === "campo"}
             onClose={() => setModalAberto(false)}
             onSalvo={(msg) => { setModalAberto(false); avisar(msg); recarregar(); }}
             onPinGerado={setPinGerado}
           />
         )}
+        {loteAberto && <CadastroEmLote usuariosExistentes={usuarios} onFechar={() => setLoteAberto(false)} onCriados={recarregar} />}
 
         {pinGerado && (
           <Modal titulo="Código gerado" onFechar={() => setPinGerado(null)} largura="max-w-xs"
@@ -189,17 +210,22 @@ export default function UsuariosPage() {
   );
 }
 
-function ModalUsuario({ usuarioInicial, onClose, onSalvo, onPinGerado }) {
+function ModalUsuario({ usuarioInicial, deCampo, onClose, onSalvo, onPinGerado }) {
   const { usuario: usuarioAtual } = useAuth();
+  const ehMaster = usuarioAtual?.perfil === "master"; // só o Master define o usuário (login)
   const editando = !!usuarioInicial;
   const [nome, setNome] = useState(usuarioInicial?.nome || "");
-  const [perfil, setPerfil] = useState(usuarioInicial?.perfil || "lider");
+  const [perfil, setPerfil] = useState(usuarioInicial?.perfil || (deCampo ? "funcionario" : "lider"));
   const [funcao, setFuncao] = useState(usuarioInicial?.funcao || "");
   const [email, setEmail] = useState(usuarioInicial?.email || "");
+  const loginInicial = usuarioInicial ? loginDe(usuarioInicial) : "";
+  // "email" = o usuário de acesso é o próprio e-mail; "outro" = digitado
+  const [modoLogin, setModoLogin] = useState(!usuarioInicial || !loginInicial || loginInicial === (usuarioInicial.email || "") ? "email" : "outro");
+  const [loginDigitado, setLoginDigitado] = useState(modoLogin === "outro" ? loginInicial : "");
   const [senha, setSenha] = useState("");
   const [tipoTerceiro, setTipoTerceiro] = useState(usuarioInicial?.tipo_terceiro || "fixo");
   const [empresaTerceira, setEmpresaTerceira] = useState(usuarioInicial?.empresa_terceira || "");
-  const [equipes, setEquipes] = useState(usuarioInicial?.equipes || []);
+  const [equipes, setEquipes] = useState(usuarioInicial?.equipes || (deCampo ? [EQUIPE_CAMPO] : []));
   const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState("");
 
@@ -207,34 +233,24 @@ function ModalUsuario({ usuarioInicial, onClose, onSalvo, onPinGerado }) {
   const ehTerceiroAvulso = perfil === "terceiro" && tipoTerceiro === "avulso";
   const precisaLoginNovo = !ehTerceiroAvulso && (!editando || !usuarioInicial?.auth_user_id);
   const senhaCurta = senha && senha.length < 6;
-  const emailValido = !email || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
-  // login novo (criação, ou terceiro avulso que passa a ter login) exige e-mail e senha
-  const podeSalvar = nome.trim() && !senhaCurta && emailValido && (!precisaLoginNovo || (email.trim() && senha)) && !salvando;
+  const emailValido = !email || ehEmail(email);
+  const login = normalizarLogin(modoLogin === "email" ? email : loginDigitado);
+  const problemaLogin = !ehTerceiroAvulso && (modoLogin === "outro" || email) ? erroLogin(login) : null;
+  const semLogin = !ehTerceiroAvulso && !login;
+  const podeSalvar = nome.trim() && !senhaCurta && emailValido && !problemaLogin && !semLogin && (!precisaLoginNovo || senha) && !salvando;
 
   const salvar = async () => {
     if (!podeSalvar) return;
     setSalvando(true); setErro("");
-    if (editando) {
-      const { ok, json } = await chamarApi("/api/atualizar-usuario", {
-        id: usuarioInicial.id, nome, perfil, funcao: mostraFuncao ? funcao : null,
-        email: ehTerceiroAvulso ? null : email, novaSenha: senha || undefined,
-        tipoTerceiro, empresaTerceira, equipes,
-      });
-      setSalvando(false);
-      if (!ok) { setErro(json.error || "Não foi possível salvar."); return; }
-      await registrarLog(usuarioAtual, "Editou usuário", nome);
-      if (json.usuario?.pin && !usuarioInicial.pin) onPinGerado(json.usuario.pin);
-      onSalvo("Alterações salvas.");
-    } else {
-      const { ok, json } = await chamarApi("/api/criar-usuario", {
-        nome, perfil, funcao: mostraFuncao ? funcao : null, email, senha, tipoTerceiro, empresaTerceira, equipes,
-      });
-      setSalvando(false);
-      if (!ok) { setErro(json.error || "Não foi possível criar."); return; }
-      await registrarLog(usuarioAtual, "Criou usuário", `${nome} (${PERFIS.find((p) => p[0] === perfil)?.[1]})`);
-      if (json.usuario?.pin) onPinGerado(json.usuario.pin);
-      onSalvo(`${nome} criado.`);
-    }
+    const comum = { nome, perfil, funcao: mostraFuncao ? funcao : null, email: email || null, tipoTerceiro, empresaTerceira, equipes, ...(ehMaster ? { login } : {}) };
+    const { ok, json } = editando
+      ? await chamarApi("/api/atualizar-usuario", { id: usuarioInicial.id, ...comum, email: ehTerceiroAvulso ? null : comum.email, novaSenha: senha || undefined })
+      : await chamarApi("/api/criar-usuario", { ...comum, senha });
+    setSalvando(false);
+    if (!ok) { setErro(json.error || "Não foi possível salvar."); return; }
+    await registrarLog(usuarioAtual, editando ? "Editou usuário" : "Criou usuário", editando ? nome : `${nome} (${PERFIS.find((p) => p[0] === perfil)?.[1]})`);
+    if (json.usuario?.pin && !usuarioInicial?.pin) onPinGerado(json.usuario.pin);
+    onSalvo(editando ? "Alterações salvas." : `${nome} criado.`);
   };
 
   return (
@@ -259,12 +275,13 @@ function ModalUsuario({ usuarioInicial, onClose, onSalvo, onPinGerado }) {
               <select value={funcao} onChange={(e) => setFuncao(e.target.value)} className="input">
                 <option value="">Selecione...</option>
                 {FUNCOES.map((f) => <option key={f} value={f}>{f}</option>)}
+                {funcao && !FUNCOES.includes(funcao) && <option value={funcao}>{funcao} (antiga)</option>}
               </select>
             </Campo>
           )}
         </div>
 
-        <Campo rotulo="Equipes (opcional — pode marcar mais de uma)">
+        <Campo rotulo="Equipes (opcional — pode marcar mais de uma; quem é da equipe Campo aparece na aba Usuários de Campo)">
           <SeletorEquipes opcoes={AREAS} valor={equipes} onChange={setEquipes} />
         </Campo>
 
@@ -277,7 +294,7 @@ function ModalUsuario({ usuarioInicial, onClose, onSalvo, onPinGerado }) {
                 <button type="button" onClick={() => setTipoTerceiro("avulso")} className={`chip ${tipoTerceiro === "avulso" ? "!bg-amber !text-white !border-amber" : ""}`}>Avulso (PIN)</button>
               </div>
               {editando && usuarioInicial?.pin && ehTerceiroAvulso && (
-                <div className="text-xs font-mono text-muteddim mt-1.5">PIN atual: {usuarioInicial.pin}</div>
+                <div className="text-xs text-muteddim mt-1.5">PIN atual: {usuarioInicial.pin}</div>
               )}
             </div>
             <Campo rotulo="Empresa terceira"><input value={empresaTerceira} onChange={(e) => setEmpresaTerceira(e.target.value)} className="input" /></Campo>
@@ -285,22 +302,185 @@ function ModalUsuario({ usuarioInicial, onClose, onSalvo, onPinGerado }) {
         )}
 
         {!ehTerceiroAvulso && (
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <Campo rotulo="E-mail (login)">
+          <>
+            <Campo rotulo={modoLogin === "email" ? "E-mail (é também o usuário de acesso)" : "E-mail (opcional — contato)"}>
               <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} className="input" autoComplete="off" />
               {!emailValido && <span className="block text-xs text-red mt-1">E-mail inválido.</span>}
             </Campo>
+            <div>
+              <span className="rotulo">Usuário de acesso (login){!ehMaster && " — só o Master altera"}</span>
+              <div className="flex flex-wrap gap-2 mb-2">
+                <button type="button" disabled={!ehMaster} onClick={() => setModoLogin("email")} className={`chip ${modoLogin === "email" ? "chip-ativo" : ""}`}>Usar o e-mail</button>
+                <button type="button" disabled={!ehMaster} onClick={() => { setModoLogin("outro"); if (!loginDigitado) setLoginDigitado(sugerirLogin(nome)); }} className={`chip ${modoLogin === "outro" ? "chip-ativo" : ""}`}>Outro (digitar)</button>
+              </div>
+              {modoLogin === "outro" ? (
+                <input value={loginDigitado} onChange={(e) => setLoginDigitado(e.target.value.toLowerCase().replace(/\s/g, ""))} disabled={!ehMaster}
+                  className={`input ${problemaLogin ? "!border-red" : ""}`} placeholder="ex: joao.silva" autoComplete="off" />
+              ) : (
+                <div className="text-sm text-muted">{email ? <>A pessoa entra com <strong className="text-textmain">{normalizarLogin(email)}</strong></> : "Preencha o e-mail acima."}</div>
+              )}
+              {problemaLogin && <span className="block text-xs text-red mt-1">{problemaLogin}</span>}
+            </div>
             <Campo rotulo={editando && !precisaLoginNovo ? "Nova senha (opcional)" : "Senha inicial"}>
               <input type="password" value={senha} onChange={(e) => setSenha(e.target.value)} className="input" autoComplete="new-password"
                 placeholder={editando && !precisaLoginNovo ? "Deixe em branco para manter" : "Mínimo 6 caracteres"} />
               {senhaCurta && <span className="block text-xs text-red mt-1">Mínimo de 6 caracteres.</span>}
             </Campo>
-          </div>
+          </>
         )}
 
         {erro && <Aviso tipo="erro">{erro}</Aviso>}
         <button type="submit" className="hidden" />
       </form>
+    </Modal>
+  );
+}
+
+// ---------- cadastro em batelada (aba Usuários de Campo) ----------
+const PERFIS_LOTE = PERFIS.filter(([v]) => ["funcionario", "terceiro", "lider", "visualizador"].includes(v));
+const linhaVazia = () => ({ chave: Math.random().toString(36).slice(2), nome: "", login: "", loginEditado: false, email: "", senha: "", perfil: "funcionario", funcao: "", empresa: "", status: null, erro: "" });
+const gerarSenha = () => {
+  const letras = "abcdefghjkmnpqrstuvwxyz23456789";
+  return Array.from({ length: 8 }, () => letras[Math.floor(Math.random() * letras.length)]).join("");
+};
+
+function CadastroEmLote({ usuariosExistentes, onFechar, onCriados }) {
+  const { usuario: usuarioAtual } = useAuth();
+  const { avisar } = useToast();
+  const ehMaster = usuarioAtual?.perfil === "master";
+  const [linhas, setLinhas] = useState(() => Array.from({ length: 5 }, linhaVazia));
+  const [enviando, setEnviando] = useState(false);
+  const [criados, setCriados] = useState([]); // { nome, login, senha }
+
+  const alterar = (i, patch) => setLinhas((p) => p.map((l, k) => (k === i ? { ...l, ...patch } : l)));
+  const preenchidas = linhas.filter((l) => l.nome.trim() && l.status !== "ok");
+  const loginsUsados = new Set(usuariosExistentes.map((u) => normalizarLogin(loginDe(u))));
+  const problemaDa = (l, i) => {
+    if (!l.nome.trim()) return null;
+    const lg = normalizarLogin(l.login || l.email);
+    const e = erroLogin(lg);
+    if (e) return e;
+    if (loginsUsados.has(lg)) return "Usuário já existe.";
+    if (linhas.some((o, k) => k !== i && o.nome.trim() && normalizarLogin(o.login || o.email) === lg)) return "Usuário repetido na tabela.";
+    if (l.email && !ehEmail(l.email)) return "E-mail inválido.";
+    if (!l.senha || l.senha.length < 6) return "Senha com 6+ caracteres.";
+    if (l.perfil === "terceiro" && !l.empresa.trim()) return "Informe a empresa.";
+    return null;
+  };
+  const comProblema = linhas.some((l, i) => l.status !== "ok" && problemaDa(l, i));
+
+  // ao digitar o nome, sugere o usuário "nome.sobrenome" (se ainda não foi editado à mão)
+  const mudarNome = (i, nome) => setLinhas((p) => p.map((l, k) => (k === i ? { ...l, nome, ...(l.loginEditado || !ehMaster ? {} : { login: sugerirLogin(nome) }) } : l)));
+  const gerarSenhas = () => setLinhas((p) => p.map((l) => (l.nome.trim() && !l.senha ? { ...l, senha: gerarSenha() } : l)));
+  const repetirParaBaixo = (campo) => setLinhas((p) => { const v = p[0][campo]; return p.map((l) => ({ ...l, [campo]: v })); });
+
+  const enviar = async () => {
+    if (!preenchidas.length || comProblema) return;
+    setEnviando(true);
+    const alvo = linhas.map((l, i) => ({ l, i })).filter(({ l }) => l.nome.trim() && l.status !== "ok");
+    const { ok, json } = await chamarApi("/api/criar-usuario", {
+      lote: alvo.map(({ l }) => ({
+        nome: l.nome.trim(), email: l.email.trim() || null, login: ehMaster ? normalizarLogin(l.login || l.email) : undefined,
+        senha: l.senha, perfil: l.perfil, funcao: l.funcao || null, tipoTerceiro: "fixo", empresaTerceira: l.empresa.trim() || null,
+        equipes: [EQUIPE_CAMPO],
+      })),
+    });
+    setEnviando(false);
+    if (!ok) { avisar(json.error || "Não foi possível criar.", "erro", 7000); return; }
+    const novos = [];
+    setLinhas((p) => p.map((l, k) => {
+      const pos = alvo.findIndex((a) => a.i === k);
+      if (pos === -1) return l;
+      const r = json.resultados[pos];
+      if (r?.usuario) novos.push({ nome: l.nome.trim(), login: r.usuario.login || normalizarLogin(l.login || l.email), senha: l.senha });
+      return r?.usuario ? { ...l, status: "ok", erro: "" } : { ...l, status: "erro", erro: r?.erro || "Falhou." };
+    }));
+    setCriados((c) => [...c, ...novos]);
+    const falhas = json.resultados.filter((r) => !r.usuario).length;
+    avisar(`${json.resultados.length - falhas} usuário(s) criado(s)${falhas ? ` · ${falhas} com erro (veja na tabela)` : ""}.`, falhas ? "erro" : "sucesso", 7000);
+    onCriados();
+  };
+
+  const copiarCredenciais = async () => {
+    const texto = criados.map((c) => `${c.nome}\nUsuário: ${c.login}\nSenha: ${c.senha}`).join("\n\n");
+    try { await navigator.clipboard.writeText(texto); avisar("Credenciais copiadas."); } catch { avisar("Não foi possível copiar.", "erro"); }
+  };
+
+  const cel = "px-1.5 py-1.5 align-top";
+  const inp = "input !py-1.5 !px-2 !text-sm";
+  return (
+    <Modal titulo="Novos usuários de campo (em lote)" onFechar={() => !enviando && onFechar()} largura="max-w-[min(1200px,96vw)]"
+      rodape={<>
+        <span className="text-sm text-muted mr-auto self-center">{preenchidas.length} para criar{criados.length ? ` · ${criados.length} criado(s)` : ""}</span>
+        {criados.length > 0 && <button onClick={copiarCredenciais} className="btn btn-contorno"><Icone nome="copiar" className="w-4 h-4" /> Copiar usuários e senhas</button>}
+        <button onClick={onFechar} disabled={enviando} className="btn btn-fantasma">Fechar</button>
+        <button onClick={enviar} disabled={!preenchidas.length || comProblema || enviando} className="btn btn-primario">
+          {enviando ? <><Spinner /> Criando...</> : `Criar ${preenchidas.length || ""} usuário(s)`}
+        </button>
+      </>}>
+      <div className="flex flex-wrap items-center gap-2 mb-3">
+        <button onClick={() => setLinhas((p) => [...p, linhaVazia()])} className="btn btn-contorno btn-sm"><Icone nome="mais2" className="w-4 h-4" /> 1 linha</button>
+        <button onClick={() => setLinhas((p) => [...p, ...Array.from({ length: 10 }, linhaVazia)])} className="btn btn-contorno btn-sm"><Icone nome="mais2" className="w-4 h-4" /> 10 linhas</button>
+        <button onClick={gerarSenhas} className="btn btn-contorno btn-sm">Gerar senhas vazias</button>
+        <span className="texto-apoio">Todos entram na equipe <strong>Campo</strong>. O usuário é sugerido a partir do nome (nome.sobrenome){ehMaster ? " e pode ser editado" : ""}.</span>
+      </div>
+      <div className="overflow-auto rounded-xl border border-line">
+        <table className="w-full text-sm min-w-[1080px]">
+          <thead className="bg-panel sticky top-0 z-10">
+            <tr className="text-left">
+              <th className="px-2 py-2 titulo-secao w-8">#</th>
+              <th className="px-2 py-2 titulo-secao">Nome *</th>
+              <th className="px-2 py-2 titulo-secao">Usuário (login) *</th>
+              <th className="px-2 py-2 titulo-secao">E-mail</th>
+              <th className="px-2 py-2 titulo-secao">Senha *</th>
+              <th className="px-2 py-2 titulo-secao">Perfil <button onClick={() => repetirParaBaixo("perfil")} className="normal-case font-normal text-cyan hover:underline ml-1" title="Repetir o valor da 1ª linha em todas">↓ repetir</button></th>
+              <th className="px-2 py-2 titulo-secao">Função <button onClick={() => repetirParaBaixo("funcao")} className="normal-case font-normal text-cyan hover:underline ml-1" title="Repetir o valor da 1ª linha em todas">↓ repetir</button></th>
+              <th className="px-2 py-2 titulo-secao">Empresa (terceiro) <button onClick={() => repetirParaBaixo("empresa")} className="normal-case font-normal text-cyan hover:underline ml-1" title="Repetir o valor da 1ª linha em todas">↓ repetir</button></th>
+              <th className="px-2 py-2 titulo-secao w-10" />
+            </tr>
+          </thead>
+          <tbody>
+            {linhas.map((l, i) => {
+              const travada = l.status === "ok";
+              return (
+                <tr key={l.chave} className={`border-t border-line ${travada ? "bg-green/5" : l.status === "erro" ? "bg-red/5" : ""}`}>
+                  <td className={`${cel} text-muteddim pt-3`}>{i + 1}</td>
+                  <td className={cel}><input value={l.nome} disabled={travada} onChange={(e) => mudarNome(i, e.target.value)} className={inp} placeholder="Nome completo" /></td>
+                  <td className={cel}><input value={l.login} disabled={travada || !ehMaster} onChange={(e) => alterar(i, { login: e.target.value.toLowerCase().replace(/\s/g, ""), loginEditado: true })} className={inp} placeholder={ehMaster ? "nome.sobrenome" : "usa o e-mail"} /></td>
+                  <td className={cel}><input value={l.email} disabled={travada} onChange={(e) => alterar(i, { email: e.target.value })} className={inp} placeholder="opcional" /></td>
+                  <td className={cel}><input value={l.senha} disabled={travada} onChange={(e) => alterar(i, { senha: e.target.value })} className={`${inp} font-mono`} placeholder="6+ caracteres" /></td>
+                  <td className={cel}>
+                    <select value={l.perfil} disabled={travada} onChange={(e) => alterar(i, { perfil: e.target.value })} className={inp}>
+                      {PERFIS_LOTE.map(([v, t]) => <option key={v} value={v}>{t.split(" (")[0]}</option>)}
+                    </select>
+                  </td>
+                  <td className={cel}>
+                    <select value={l.funcao} disabled={travada} onChange={(e) => alterar(i, { funcao: e.target.value })} className={inp}>
+                      <option value="">—</option>
+                      {FUNCOES.map((f) => <option key={f} value={f}>{f}</option>)}
+                    </select>
+                  </td>
+                  <td className={cel}><input value={l.empresa} disabled={travada || l.perfil !== "terceiro"} onChange={(e) => alterar(i, { empresa: e.target.value })} className={inp} placeholder={l.perfil === "terceiro" ? "Empresa" : "—"} /></td>
+                  <td className={`${cel} pt-2`}>
+                    {travada ? <span className="text-green font-bold" title="Criado">✓</span> : (
+                      <button onClick={() => setLinhas((p) => (p.length > 1 ? p.filter((_, k) => k !== i) : [linhaVazia()]))} className="p-1.5 rounded-lg text-muteddim hover:text-red hover:bg-red/5" aria-label="Remover linha"><Icone nome="lixo" className="w-4 h-4" /></button>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+      {/* pendências por linha (antes de criar) e erros devolvidos pelo servidor */}
+      {linhas.some((l, i) => (l.status !== "ok" && problemaDa(l, i)) || l.erro) && (
+        <div className="mt-3 flex flex-col gap-1 text-xs">
+          {linhas.map((l, i) => {
+            const msg = l.erro || (l.status !== "ok" ? problemaDa(l, i) : null);
+            return msg ? <div key={l.chave} className="text-red">Linha {i + 1} ({l.nome || "sem nome"}): {msg}</div> : null;
+          })}
+        </div>
+      )}
     </Modal>
   );
 }

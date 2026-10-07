@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { exigirPermissao, PERFIS_VALIDOS, gerarPinUnico, registrarSenha } from "../../../lib/authServidor";
+import { normalizarLogin, erroLogin, emailAuthDe } from "../../../lib/login";
 
 const BANIDO = "876000h"; // ~100 anos = efetivamente desabilitado
 const equipesValidas = (v) => Array.isArray(v) ? [...new Set(v.map((x) => String(x).trim()).filter(Boolean))] : undefined;
@@ -31,6 +32,17 @@ export async function POST(req) {
 
   const ativoFinal = ativo !== undefined ? ativo : atual.ativo;
 
+  // usuário de acesso (login): só o Master altera; usuários antigos têm o e-mail como login
+  const loginAtual = normalizarLogin(atual.login || atual.email);
+  const loginNovo = solicitante.perfil === "master" && body.login !== undefined && body.login !== null ? normalizarLogin(body.login) : loginAtual;
+  const loginMudou = loginNovo !== loginAtual;
+  if (loginMudou) {
+    const erroL = erroLogin(loginNovo);
+    if (erroL) return NextResponse.json({ error: erroL }, { status: 400 });
+    const { data: outro } = await admin.from("usuarios").select("id").eq("login", loginNovo).neq("id", id).maybeSingle();
+    if (outro) return NextResponse.json({ error: `O usuário "${loginNovo}" já existe.` }, { status: 400 });
+  }
+
   const patch = {};
   if (nome !== undefined) {
     if (!String(nome).trim()) return NextResponse.json({ error: "Nome é obrigatório." }, { status: 400 });
@@ -59,9 +71,9 @@ export async function POST(req) {
       // precisa de login
       if (!authUserId) {
         // nunca teve login (era terceiro avulso) — cria agora
-        if (!email) return NextResponse.json({ error: "E-mail é obrigatório para esse perfil." }, { status: 400 });
+        if (erroLogin(loginNovo)) return NextResponse.json({ error: "Informe o usuário (login) ou o e-mail para esse perfil." }, { status: 400 });
         if (!novaSenha) return NextResponse.json({ error: "Defina uma senha para o novo login." }, { status: 400 });
-        const { data, error } = await admin.auth.admin.createUser({ email, password: novaSenha, email_confirm: true });
+        const { data, error } = await admin.auth.admin.createUser({ email: emailAuthDe(loginNovo), password: novaSenha, email_confirm: true });
         if (error) return NextResponse.json({ error: error.message }, { status: 400 });
         authUserId = data.user.id;
         patch.auth_user_id = authUserId;
@@ -69,7 +81,8 @@ export async function POST(req) {
         // se voltou de "avulso" para um perfil com login, o login antigo estava bloqueado:
         // libera de novo (respeitando o status ativo/desabilitado)
         const updates = { ban_duration: ativoFinal ? "none" : BANIDO };
-        if (email && email !== atual.email) updates.email = email;
+        // o e-mail do Supabase Auth acompanha o LOGIN (o e-mail de contato pode ser outro)
+        if (loginMudou) updates.email = emailAuthDe(loginNovo);
         if (novaSenha) updates.password = novaSenha;
         const { error } = await admin.auth.admin.updateUserById(authUserId, updates);
         if (error) return NextResponse.json({ error: error.message }, { status: 400 });
@@ -92,6 +105,13 @@ export async function POST(req) {
     await admin.auth.admin.updateUserById(usuario.auth_user_id, {
       ban_duration: ativo ? "none" : BANIDO,
     });
+  }
+
+  // login em gravação separada (tolera a coluna ainda não existir)
+  const ehAvulsoFinal = usuario.perfil === "terceiro" && usuario.tipo_terceiro === "avulso";
+  if (!ehAvulsoFinal && usuario.auth_user_id && loginNovo && (loginMudou || !atual.login)) {
+    const { error: erroLoginCol } = await admin.from("usuarios").update({ login: loginNovo }).eq("id", id);
+    if (!erroLoginCol) usuario.login = loginNovo;
   }
 
   // equipes em gravação separada: se a coluna ainda não existir (script não rodado), não trava o resto

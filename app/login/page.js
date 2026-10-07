@@ -8,7 +8,7 @@ import { Logo, Spinner, Aviso } from "../../components/ui";
 import Icone from "../../components/Icone";
 
 function traduzirErro(msg = "") {
-  if (/invalid login credentials/i.test(msg)) return "E-mail ou senha incorretos.";
+  if (/invalid login credentials/i.test(msg)) return "Usuário/e-mail ou senha incorretos.";
   if (/email not confirmed/i.test(msg)) return "E-mail ainda não confirmado.";
   if (/banned|user is banned/i.test(msg)) return "Seu acesso está desabilitado. Fale com o administrador.";
   if (/failed to fetch|network/i.test(msg)) return "Sem conexão. Verifique a internet e tente de novo.";
@@ -65,10 +65,10 @@ export default function LoginPage() {
           ) : (
             <form onSubmit={onSubmit} className="flex flex-col gap-4" noValidate={false}>
               <label className="block">
-                <span className="rotulo">E-mail</span>
-                <input type="email" required autoComplete="username" inputMode="email" autoCapitalize="none"
+                <span className="rotulo">E-mail ou usuário</span>
+                <input type="text" required autoComplete="username" autoCapitalize="none" autoCorrect="off" spellCheck={false}
                   value={email} onChange={(e) => setEmail(e.target.value)}
-                  placeholder="seu@email.com" className="input input-lg" />
+                  placeholder="seu@email.com ou nome.usuario" className="input input-lg" />
               </label>
               <label className="block">
                 <span className="rotulo">Senha</span>

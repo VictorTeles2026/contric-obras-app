@@ -6,7 +6,7 @@ import EmpresasTerceiras from "../../components/EmpresasTerceiras";
 import { useAuth, pode } from "../../lib/AuthContext";
 import { supabase } from "../../lib/supabase";
 import { hojeISO, formatarData } from "../../lib/datas";
-import { TIPOS_RECURSO, AREAS } from "../../lib/constantes";
+import { TIPOS_RECURSO, AREAS, FUNCOES } from "../../lib/constantes";
 import { useToast } from "../../lib/Toast";
 import PainelShell from "../../components/PainelShell";
 import { Modal, EstadoVazio, Esqueleto, Aviso, Campo, SeletorEquipes } from "../../components/ui";
@@ -560,6 +560,8 @@ function RecursoForm({ usuarios, recursoDoUsuario = () => null, recursoAtualId, 
 
   const ehMaoDeObra = (t) => t === "mao_obra_propria" || t === "mao_obra_terceira";
   const bloqueadoPorVinculo = !!usuarioId;
+  // a função só precisa ser escolhida quando o recurso NÃO está vinculado a um usuário
+  const faltaFuncao = ehMaoDeObra(tipo) && !bloqueadoPorVinculo && !funcao;
 
   const onSelecionarUsuario = (id) => {
     setUsuarioId(id);
@@ -576,7 +578,7 @@ function RecursoForm({ usuarios, recursoDoUsuario = () => null, recursoAtualId, 
   };
 
   return (
-    <form onSubmit={(e) => { e.preventDefault(); if (nome.trim() && !faltaEmpresa) onSalvar({ nome: nome.trim(), tipo, unidade, usuarioId, funcao, empresaId, equipes, ativo }); }}
+    <form onSubmit={(e) => { e.preventDefault(); if (nome.trim() && !faltaEmpresa && !faltaFuncao) onSalvar({ nome: nome.trim(), tipo, unidade, usuarioId, funcao, empresaId, equipes, ativo }); }}
       className="bg-panel border border-line rounded-xl p-3.5 flex flex-col gap-3">
       {ehEdicao && (
         <div>
@@ -617,12 +619,20 @@ function RecursoForm({ usuarios, recursoDoUsuario = () => null, recursoAtualId, 
           )}
         </Campo>
       )}
-      {ehMaoDeObra(tipo) && (
-        <Campo rotulo="Função">
-          <input value={funcao} onChange={(e) => setFuncao(e.target.value)} disabled={bloqueadoPorVinculo}
-            placeholder="Ex: Eletricista, Mecânico..." className="input" />
+      {ehMaoDeObra(tipo) && (bloqueadoPorVinculo ? (
+        // vinculado a um usuário: a função vem do cadastro dele
+        <Campo rotulo="Função" dica="Definida no cadastro do usuário vinculado.">
+          <input value={funcao || "—"} disabled className="input" />
         </Campo>
-      )}
+      ) : (
+        <Campo rotulo="Função (obrigatório)">
+          <select value={funcao} onChange={(e) => setFuncao(e.target.value)} className={`input ${faltaFuncao ? "!border-amber" : ""}`}>
+            <option value="">Selecione...</option>
+            {FUNCOES.map((f) => <option key={f} value={f}>{f}</option>)}
+            {funcao && !FUNCOES.includes(funcao) && <option value={funcao}>{funcao} (antiga)</option>}
+          </select>
+        </Campo>
+      ))}
       <Campo rotulo="Equipes (opcional)">
         <SeletorEquipes opcoes={AREAS} valor={equipes} onChange={setEquipes} />
       </Campo>
@@ -632,7 +642,7 @@ function RecursoForm({ usuarios, recursoDoUsuario = () => null, recursoAtualId, 
         </select>
       </Campo>
       <div className="flex gap-2">
-        <button type="submit" disabled={!nome.trim() || faltaEmpresa} className="btn btn-escuro flex-1">{rotuloBotao}</button>
+        <button type="submit" disabled={!nome.trim() || faltaEmpresa || faltaFuncao} className="btn btn-escuro flex-1">{rotuloBotao}</button>
         {onCancelar && <button type="button" onClick={onCancelar} className="btn btn-fantasma">Cancelar</button>}
       </div>
     </form>
