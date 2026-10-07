@@ -390,7 +390,7 @@ export default function RecursosPage() {
         )}
 
         {selecionado && (
-          <div className="max-w-3xl animar-fade">
+          <div className="animar-fade">
             <div className="cartao p-5 mb-4 flex flex-col sm:flex-row sm:items-start justify-between gap-3">
               <div className="min-w-0">
                 <div className="titulo-destaque flex flex-wrap items-center gap-2">

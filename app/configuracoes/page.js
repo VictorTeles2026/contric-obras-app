@@ -61,7 +61,7 @@ export default function ConfiguracoesPage() {
 
   return (
     <PainelShell>
-      <div className="p-4 md:p-8 max-w-6xl mx-auto">
+      <div className="p-4 md:p-8">
         <CabecalhoPagina titulo="Configurações" subtitulo="Ajustes estruturais do sistema — somente Master. Todas as alterações vão para a Auditoria." />
         {erro && <Aviso tipo="erro" className="mb-4">Rode o script <strong>configuracoes.sql</strong> no Supabase para poder salvar. Enquanto isso, valem os padrões.</Aviso>}
         <div className="flex flex-col md:flex-row gap-4">

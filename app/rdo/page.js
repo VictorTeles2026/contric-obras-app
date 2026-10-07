@@ -95,7 +95,7 @@ export default function RdoPage() {
 
   return (
     <PainelShell>
-      <div className="p-4 md:p-8 max-w-5xl mx-auto">
+      <div className="p-4 md:p-8">
         <CabecalhoPagina titulo="RDO" subtitulo="Relatório diário de obra de qualquer PI." />
 
         {pis.length === 0 ? <EstadoVazio icone="obra" titulo="Nenhum PI" texto="Cadastre um PI no Cronograma primeiro." /> : (

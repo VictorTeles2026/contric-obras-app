@@ -61,7 +61,7 @@ export default function ClientesPage() {
 
   return (
     <PainelShell>
-      <div className="p-4 md:p-8 max-w-5xl mx-auto">
+      <div className="p-4 md:p-8">
         <CabecalhoPagina titulo="Clientes" subtitulo="Acesso dos clientes às informações das suas obras (Acesso Clientes Contric)."
           acoes={podeGerenciar && <button onClick={() => setForm({})} className="btn btn-primario"><Icone nome="mais2" className="w-4 h-4" /> Novo cliente</button>} />
         {erroTabela && <Aviso tipo="erro" className="mb-4">O banco ainda não tem o cadastro de clientes. Rode o script <strong>clientes-senhas.sql</strong> no Supabase.</Aviso>}

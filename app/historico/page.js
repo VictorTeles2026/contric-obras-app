@@ -60,7 +60,7 @@ export default function HistoricoPage() {
 
   return (
     <PainelShell>
-      <div className="p-4 md:p-8 max-w-4xl mx-auto">
+      <div className="p-4 md:p-8">
         <CabecalhoPagina titulo="Histórico" subtitulo="Tudo o que já foi decidido — RDOs, horas e ocorrências." />
 
         <div className="flex flex-wrap items-center gap-2 mb-4">

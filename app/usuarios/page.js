@@ -78,7 +78,7 @@ export default function UsuariosPage() {
 
   return (
     <PainelShell>
-      <div className="p-4 md:p-8 max-w-5xl mx-auto">
+      <div className="p-4 md:p-8">
         <CabecalhoPagina
           titulo="Usuários e Acessos"
           subtitulo={`${usuarios.filter((u) => u.ativo).length} ativos de ${usuarios.length} cadastrados`}

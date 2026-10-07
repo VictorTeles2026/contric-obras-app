@@ -238,7 +238,7 @@ export default function DashboardPage() {
 
   return (
     <PainelShell>
-      <div className="p-4 md:p-8 max-w-7xl mx-auto">
+      <div className="p-4 md:p-8">
         <CabecalhoPagina
           titulo={`${saudacao()}, ${usuario?.nome?.split(" ")[0] || ""}`}
           subtitulo={podeMover ? "Arraste os quadros para reorganizar e puxe as bordas para mudar o tamanho." : "Visão geral das obras"}

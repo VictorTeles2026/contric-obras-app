@@ -72,7 +72,7 @@ export default function SolicitacoesCronogramaPage() {
         </div>
         <AbasCronograma piId={piId} qtdPendentes={pendentes.length} />
 
-        <div className="p-4 md:p-6 max-w-5xl w-full">
+        <div className="p-4 md:p-6 w-full">
           <div className="flex flex-wrap items-center gap-2 mb-4">
             {FILTROS.map(([v, l]) => (
               <button key={v} onClick={() => setFiltro(v)} className={`chip ${filtro === v ? "chip-ativo" : ""}`}>

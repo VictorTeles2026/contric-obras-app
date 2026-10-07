@@ -109,6 +109,7 @@ export default function LiderHomePage() {
               <AcaoRapida href="/lider/solicitar" icone="editar" titulo="Solicitar alteração" cor="text-[#8E5CD9] bg-[#8E5CD9]/10"
                 extra={solicitacoesAbertas > 0 ? `${solicitacoesAbertas} em análise` : null} />
               <AcaoRapida href="/lider/rdo" icone="rdo" titulo="Novo RDO" cor="text-green bg-green/10" />
+              <AcaoRapida href="/equipe/ocorrencia" icone="alerta" titulo="Registrar ocorrência" cor="text-red bg-red/10" />
             </div>
 
             {/* ocorrências da equipe para aprovar */}

@@ -82,7 +82,7 @@ export default function RelatoriosPage() {
 
   return (
     <PainelShell>
-      <div className="p-4 md:p-8 max-w-6xl mx-auto">
+      <div className="p-4 md:p-8">
         <CabecalhoPagina titulo="Relatórios" subtitulo="Orçado × realizado de cada PI e controle das horas lançadas." />
         <AbasRelatorios />
 

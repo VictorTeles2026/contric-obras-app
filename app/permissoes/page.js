@@ -28,7 +28,7 @@ export default function PermissoesPage() {
   const [aba, setAba] = useState("perfil");
   return (
     <PainelShell>
-      <div className="p-4 md:p-8 max-w-7xl mx-auto">
+      <div className="p-4 md:p-8">
         <CabecalhoPagina titulo="Permissões" subtitulo="S = permitido · P = só nos PIs em que a pessoa está alocada · N = não permitido. As alterações valem no próximo acesso de cada usuário." />
         <div className="flex gap-1 border-b border-line mb-5">
           {[["perfil", "Por perfil"], ["usuario", "Por usuário (exceções)"]].map(([v, l]) => (

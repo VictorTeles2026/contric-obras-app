@@ -5,7 +5,7 @@ import { registrarLog, useTabela, gravarTolerante } from "../../../lib/dados";
 import { useAuth } from "../../../lib/AuthContext";
 import { supabase } from "../../../lib/supabase";
 import { useMinhasPis, agruparPorCliente } from "../../../lib/minhasPis";
-import { NAV_EQUIPE } from "../../../lib/nav";
+import { NAV_EQUIPE, NAV_LIDER } from "../../../lib/nav";
 import { CATEGORIAS_OCORRENCIA } from "../../../lib/constantes";
 import { formatarDataHora } from "../../../lib/datas";
 import { gerarPdfOcorrenciaSeguro, nomeBaseAnexo } from "../../../lib/pdfRdo";
@@ -63,7 +63,8 @@ export default function EquipeOcorrenciaPage() {
   const codigoPi = (id) => todosPis.find((p) => p.id === id)?.codigo;
 
   return (
-    <MobileShell nav={NAV_EQUIPE} perfis={["funcionario", "terceiro"]}>
+    // o Líder também registra ocorrência avulsa (fora do RDO) — usa o menu do líder
+    <MobileShell nav={usuario?.perfil === "lider" ? NAV_LIDER : NAV_EQUIPE} perfis={["funcionario", "terceiro", "lider"]}>
       <div className="p-4 flex flex-col gap-5">
         <div className="pt-1">
           <div className="font-head font-bold text-2xl">Registrar ocorrência</div>

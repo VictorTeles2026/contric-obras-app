@@ -190,7 +190,7 @@ export default function DocumentosPage() {
 
   return (
     <PainelShell>
-      <div className="p-4 md:p-8 max-w-6xl mx-auto">
+      <div className="p-4 md:p-8">
         <CabecalhoPagina titulo="Documentos" subtitulo="Todos os arquivos de cada PI: PDFs dos RDOs, documentos enviados, fotos e vídeos das ocorrências." />
 
         <form onSubmit={(e) => { e.preventDefault(); buscar(); }} className="cartao p-4 mb-5 flex flex-col sm:flex-row sm:items-end gap-3">

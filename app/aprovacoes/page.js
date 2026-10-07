@@ -152,7 +152,7 @@ export default function AprovacoesPage() {
 
   return (
     <PainelShell>
-      <div className="p-4 md:p-8 max-w-5xl mx-auto">
+      <div className="p-4 md:p-8">
         <CabecalhoPagina titulo="Aprovações" subtitulo="RDOs, horas e alterações de cronograma aguardando aprovação." />
         {!editavel && <Aviso tipo="info" className="mb-4">Modo visualização — seu perfil não pode aprovar, editar ou reprovar.</Aviso>}
 

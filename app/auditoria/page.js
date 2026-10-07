@@ -24,7 +24,7 @@ export default function AuditoriaPage() {
 
   return (
     <PainelShell>
-      <div className="p-4 md:p-8 max-w-6xl mx-auto">
+      <div className="p-4 md:p-8">
         <CabecalhoPagina titulo="Log de Auditoria" subtitulo={`${logs.length} evento${logs.length !== 1 ? "s" : ""} registrado${logs.length !== 1 ? "s" : ""}.`} />
 
         <div className="flex flex-col sm:flex-row gap-2 mb-4">
