@@ -14,6 +14,7 @@ import { ConfirmarExclusao } from "../../components/AcoesMaster";
 import { EditorRdo, EditorOcorrencia } from "../../components/Editores";
 import { ehMaster, excluirDocumento } from "../../lib/exclusoes";
 import { marcarDocumentosLidos } from "../../lib/documentosLidos";
+import { CLASSIFICACOES_DOC } from "../../lib/constantes";
 
 const TIPOS = [["", "Todos"], ["rdo", "RDOs (PDF)"], ["ocorrencia", "Ocorrências (PDF)"], ["ata", "Atas de reuniões"], ["arquivo", "Outros documentos"], ["foto", "Fotos"], ["video", "Vídeos"]];
 const ICONE_TIPO = { rdo: "pdf", ocorrencia: "alerta", ata: "usuarios", arquivo: "pasta", foto: "camera", video: "video" };
@@ -21,10 +22,8 @@ const COR_TIPO = { rdo: "bg-red/10 text-red", ocorrencia: "bg-amber/10 text-ambe
 
 // Classificação dos arquivos enviados: o prefixo do nome identifica a classificação
 // (ex: ATA_REUNIAO_20260925_PI-2041_AMBEV.pdf). O nome sugerido pode ser editado, mas o prefixo é mantido.
-const CLASSIFICACOES = [
-  ["ATA_REUNIAO", "Ata de reunião"], ["CONTRATO", "Contrato"], ["PROPOSTA", "Proposta / orçamento"], ["PROJETO", "Projeto / desenho"],
-  ["RELATORIO", "Relatório"], ["NF", "Nota fiscal"], ["FOTO", "Foto"], ["DOC", "Outro documento"],
-];
+// A lista é editável em Configurações (lib/constantes → CLASSIFICACOES_DOC).
+const CLASSIFICACOES = CLASSIFICACOES_DOC;
 const rotuloClassificacao = (nome) => CLASSIFICACOES.find(([p]) => nome.startsWith(`${p}_`))?.[1];
 const limparParte = (t) => String(t || "").normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^A-Za-z0-9]+/g, "-").replace(/^-+|-+$/g, "").toUpperCase();
 function sugerirNome(prefixo, pi) {

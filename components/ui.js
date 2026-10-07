@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import Icone from "./Icone";
 
@@ -99,13 +99,29 @@ export function Modal({ titulo, onFechar, children, rodape, largura = "max-w-lg"
     vv.addEventListener("scroll", medir);
     return () => { vv.removeEventListener("resize", medir); vv.removeEventListener("scroll", medir); };
   }, []);
+  // proteção contra perder o que foi preenchido: clicar fora nunca fecha (a janela só "balança");
+  // depois que algo é digitado/alterado, fechar pelo X ou Esc pede confirmação.
+  // Os botões do rodapé (Cancelar, Salvar...) continuam funcionando normalmente.
+  const sujoRef = useRef(false);
+  const [balancar, setBalancar] = useState(false);
+  const fecharComCuidado = () => {
+    if (sujoRef.current && !window.confirm("Fechar a janela e descartar o que foi preenchido?")) return;
+    onFechar?.();
+  };
+  // clicar fora NUNCA fecha: só balança (fecha pelo X, Esc ou pelos botões da janela)
+  const cliqueFora = () => {
+    setBalancar(true);
+    setTimeout(() => setBalancar(false), 400);
+  };
+  const fecharRef = useRef(fecharComCuidado);
+  fecharRef.current = fecharComCuidado;
   useEffect(() => {
-    const onKey = (e) => e.key === "Escape" && onFechar?.();
+    const onKey = (e) => e.key === "Escape" && fecharRef.current();
     window.addEventListener("keydown", onKey);
     const overflowAnterior = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     return () => { window.removeEventListener("keydown", onKey); document.body.style.overflow = overflowAnterior; };
-  }, [onFechar]);
+  }, []);
 
   // renderiza direto no <body> (portal): aberto de dentro da barra lateral (ex: sininho),
   // ficava preso abaixo de outros elementos fixos da página e herdava o texto branco dela
@@ -113,12 +129,13 @@ export function Modal({ titulo, onFechar, children, rodape, largura = "max-w-lg"
   return createPortal(
     <div className="fixed inset-x-0 top-0 z-[60] flex items-end sm:items-center justify-center sm:p-4 animar-fade text-textmain text-left font-body" role="dialog" aria-modal="true"
       style={{ height: area ? area.altura : "100dvh", top: area ? area.topo : 0 }}>
-      <div className="absolute inset-0 bg-navy/50 backdrop-blur-[2px]" onClick={onFechar} />
-      <div className={`relative w-full ${largura} bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl flex flex-col max-h-[94%] animar-modal`}>
+      <div className="absolute inset-0 bg-navy/50 backdrop-blur-[2px]" onClick={cliqueFora} />
+      <div className={`relative w-full ${largura} bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl flex flex-col max-h-[94%] animar-modal ${balancar ? "animar-balancar" : ""}`}
+        onInput={() => { sujoRef.current = true; }} onChange={() => { sujoRef.current = true; }}>
         <div className="sm:hidden mx-auto mt-2 h-1.5 w-10 rounded-full bg-line" />
         <div className="flex items-center justify-between gap-3 px-5 pt-4 pb-3 border-b border-line">
           <div className="font-head font-bold text-lg leading-tight min-w-0 truncate">{titulo}</div>
-          <button onClick={onFechar} className="btn btn-fantasma !p-2 -mr-2 shrink-0" aria-label="Fechar">
+          <button onClick={fecharComCuidado} className="btn btn-fantasma !p-2 -mr-2 shrink-0" aria-label="Fechar">
             <Icone nome="fechar" className="w-5 h-5" />
           </button>
         </div>

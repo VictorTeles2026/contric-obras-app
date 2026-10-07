@@ -141,6 +141,15 @@ input[type="date"], input[type="time"] {
   from { transform: translateY(100%); }
   to { transform: none; }
 }
+/* janela com dados preenchidos: clique fora só "balança", não fecha */
+@keyframes balancar {
+  0%, 100% { transform: none; }
+  20% { transform: translateX(-6px); }
+  40% { transform: translateX(6px); }
+  60% { transform: translateX(-4px); }
+  80% { transform: translateX(4px); }
+}
+.animar-balancar { animation: balancar 0.35s ease; }
 @keyframes fade {
   from { opacity: 0; }
   to { opacity: 1; }

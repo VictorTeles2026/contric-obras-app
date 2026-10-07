@@ -3,7 +3,7 @@
 import { useState, useMemo, useEffect, useLayoutEffect, useRef } from "react";
 import { useTabela } from "../../lib/dados";
 import { tsLocal, diasAte as diffDias, formatarData as formatarDataIso } from "../../lib/datas";
-import { AREAS, STATUS_ETAPA } from "../../lib/constantes";
+import { AREAS, STATUS_ETAPA, PRAZOS } from "../../lib/constantes";
 import PainelShell from "../../components/PainelShell";
 import { CabecalhoPagina, EstadoVazio, Modal } from "../../components/ui";
 import Icone from "../../components/Icone";
@@ -418,8 +418,9 @@ export default function LinhaDoTempoPage() {
                       const width = Math.max(4, ((fim - inicio) / span) * largura);
                       const dias = e.data_prevista_fim ? diffDias(e.data_prevista_fim) : null;
                       const vencido = e.status !== "concluida" && dias !== null && dias < 0;
-                      const urgente = e.status !== "concluida" && dias !== null && dias >= 0 && dias <= 1;
-                      const atencao = e.status !== "concluida" && dias !== null && dias > 1 && dias <= 3;
+                      // prazos dos alertas editáveis em Configurações
+                      const urgente = e.status !== "concluida" && dias !== null && dias >= 0 && dias <= PRAZOS.urgente;
+                      const atencao = e.status !== "concluida" && dias !== null && dias > PRAZOS.urgente && dias <= PRAZOS.atencao;
                       const marcas2 = itensQueBatemNaEtapa(e);
                       return (
                         <div key={e.id} className="flex items-center border-b border-line/60">

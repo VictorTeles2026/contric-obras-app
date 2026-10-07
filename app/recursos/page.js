@@ -6,14 +6,13 @@ import EmpresasTerceiras from "../../components/EmpresasTerceiras";
 import { useAuth, pode } from "../../lib/AuthContext";
 import { supabase } from "../../lib/supabase";
 import { hojeISO, formatarData } from "../../lib/datas";
-import { TIPOS_RECURSO, AREAS, FUNCOES } from "../../lib/constantes";
+import { TIPOS_RECURSO, AREAS, FUNCOES, UNIDADES } from "../../lib/constantes";
 import { useToast } from "../../lib/Toast";
 import PainelShell from "../../components/PainelShell";
 import { Modal, EstadoVazio, Esqueleto, Aviso, Campo, SeletorEquipes } from "../../components/ui";
 import Icone from "../../components/Icone";
 import GraficoUtilizacao from "../../components/GraficoUtilizacao";
 import ConfirmacaoDupla from "../../components/ConfirmacaoDupla";
-const UNIDADES = [["hora", "Hora"], ["diaria", "Diária"], ["semana", "Semana"], ["quinzena", "Quinzena"], ["mes", "Mês"]];
 
 function sobrepoe(iniA, fimA, iniB, fimB) { return iniA <= fimB && iniB <= fimA; }
 // etapas do PI na ordem do Cronograma (macro seguida das suas sub-etapas), com rótulo "Macro › Sub"

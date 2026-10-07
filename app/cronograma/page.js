@@ -5,7 +5,7 @@ import { useTabela, registrarLog, chamarApi, gravarTolerante } from "../../lib/d
 import { useAuth, podeEditar, pode } from "../../lib/AuthContext";
 import { supabase } from "../../lib/supabase";
 import { hojeISO as todayISO, addDias, isoLocal } from "../../lib/datas";
-import { LISTA_STATUS_ETAPA as STATUS, AREAS, STATUS_PI, COR_STATUS_PI, STATUS_ETAPA } from "../../lib/constantes";
+import { LISTA_STATUS_ETAPA as STATUS, AREAS, STATUS_PI, COR_STATUS_PI, STATUS_ETAPA, FERIADOS_EXTRAS } from "../../lib/constantes";
 import { useToast } from "../../lib/Toast";
 import PainelShell from "../../components/PainelShell";
 import AbasCronograma from "../../components/AbasCronograma";
@@ -58,6 +58,12 @@ function feriadosDoAno(ano) {
     [isoDeDate(addDiasDate(pascoa, -2)), "Sexta-feira Santa"], [isoDeDate(addDiasDate(pascoa, 60)), "Corpus Christi"],
   ];
   const sp = [[`${ano}-07-09`, "Revolução Constitucionalista (SP)"]];
+  // feriados adicionais cadastrados em Configurações ("MM-DD" = todo ano; "AAAA-MM-DD" = só naquele ano)
+  FERIADOS_EXTRAS.forEach((f) => {
+    const d = String(f.data || "");
+    if (/^\d{2}-\d{2}$/.test(d)) nacionais.push([`${ano}-${d}`, f.nome]);
+    else if (d.startsWith(`${ano}-`)) nacionais.push([d, f.nome]);
+  });
   return { nacionais, sp };
 }
 function calcularDiasEFeriados(dataInicioStr, dataFimStr) {
@@ -569,16 +575,20 @@ function SubEtapasDropzone({ macroId, editavel, onDropTornarSub, children }) {
   );
 }
 
-function useCampoDebounced(valorExterno, aoSalvar, atraso = 500) {
+// `aoSair`: chamado ao sair do campo (ex: limpar espaços do começo/fim) — a limpeza NÃO é feita
+// durante a digitação, senão o espaço digitado entre duas palavras sumia e elas saíam coladas.
+function useCampoDebounced(valorExterno, aoSalvar, atraso = 500, aoSair) {
   const [valor, setValor] = useState(valorExterno);
   const sujoRef = useRef(false);
+  const focadoRef = useRef(false);
   const timeoutRef = useRef(null);
   const pendenteRef = useRef(undefined);
   const aoSalvarRef = useRef(aoSalvar);
   aoSalvarRef.current = aoSalvar;
 
+  // enquanto o campo está em uso, o valor que volta do banco não sobrescreve o que está sendo digitado
   useEffect(() => {
-    if (!sujoRef.current) setValor(valorExterno);
+    if (!sujoRef.current && !focadoRef.current) setValor(valorExterno);
   }, [valorExterno]);
 
   // ao desmontar (trocar de PI, sair da tela) salva o que ainda estava esperando —
@@ -600,7 +610,17 @@ function useCampoDebounced(valorExterno, aoSalvar, atraso = 500) {
     }, atraso);
   };
 
-  return [valor, onChangeLocal];
+  const eventos = {
+    onFocus: () => { focadoRef.current = true; },
+    onBlur: () => {
+      focadoRef.current = false;
+      if (!aoSair) return;
+      const final = aoSair(valor);
+      if (final !== valor) { setValor(final); onChangeLocal(final); }
+    },
+  };
+
+  return [valor, onChangeLocal, eventos];
 }
 
 function EtapaRow({ etapa, editavel, onChange, onDelete, deps, onRemoverDep, anchorRef, onCreateDependency, dragOverId, setDragOverId, onReordenar, dragOverRowId, setDragOverRowId, onToggleArea, recursos, alocs, onToggleRecurso }) {
@@ -617,7 +637,8 @@ function EtapaRow({ etapa, editavel, onChange, onDelete, deps, onRemoverDep, anc
   const fecharEquipe = useCallback(() => setEquipeAberta(false), []);
   const fecharAloc = useCallback(() => setAlocAberta(false), []);
   // nome em branco não é salvo (a etapa ficaria "invisível"); data apagada vira null (e não "", que o banco recusa)
-  const [nomeLocal, setNomeLocal] = useCampoDebounced(etapa.nome, (v) => v.trim() && onChange(etapa.id, { nome: v.trim() }));
+  // salva o texto como está (com o espaço do fim) enquanto digita; ao sair do campo, tira os espaços das pontas
+  const [nomeLocal, setNomeLocal, eventosNome] = useCampoDebounced(etapa.nome, (v) => v.trim() && onChange(etapa.id, { nome: v }), 500, (v) => v.trim() || v);
   const [inicioLocal, setInicioLocal] = useCampoDebounced(etapa.data_prevista_inicio || "", (v) => onChange(etapa.id, { data_prevista_inicio: v || null }), 300);
   const [fimLocal, setFimLocal] = useCampoDebounced(etapa.data_prevista_fim || "", (v) => onChange(etapa.id, { data_prevista_fim: v || null }), 300);
   const [percLocal, setPercLocal] = useCampoDebounced(etapa.percentual || 0, (v) => onChange(etapa.id, { percentual: Math.max(0, Math.min(100, Number(v) || 0)) }));
@@ -660,7 +681,7 @@ function EtapaRow({ etapa, editavel, onChange, onDelete, deps, onRemoverDep, anc
         style={{ width: isDragOver ? 14 : 10, height: isDragOver ? 14 : 10, transition: "width .1s, height .1s" }}
         className={`rounded-full shrink-0 cursor-grab ${isDragOver ? "bg-green" : "bg-cyan"}`}
       />
-      <input value={nomeLocal} disabled={!editavel} onChange={(e) => setNomeLocal(e.target.value)} aria-label="Nome da etapa"
+      <input value={nomeLocal} disabled={!editavel} onChange={(e) => setNomeLocal(e.target.value)} {...eventosNome} aria-label="Nome da etapa"
         className={`input !py-1.5 flex-1 min-w-[160px] font-head font-semibold disabled:!bg-transparent disabled:!border-transparent disabled:!text-textmain ${etapa.parent_etapa_id ? "!font-medium" : ""}`} />
 
       <div className="flex flex-col gap-0.5">
@@ -777,8 +798,10 @@ function PiModal({ modo, piInicial, categorias, valoresIniciais, onSalvar, onCan
   const [respTelefone, setRespTelefone] = useState(piInicial?.responsavel_cliente_telefone || "");
   const [valores, setValores] = useState(valoresIniciais || {});
 
-  const compraCats = categorias.filter((c) => c.grupo === "compra_reais");
-  const moiCats = categorias.filter((c) => c.grupo === "moi_horas");
+  // categorias desativadas em Configurações somem — a não ser que este PI já tenha valor nelas
+  const visivel = (c) => c.ativo !== false || Number(valoresIniciais?.[c.id]) > 0;
+  const compraCats = categorias.filter((c) => c.grupo === "compra_reais" && visivel(c));
+  const moiCats = categorias.filter((c) => c.grupo === "moi_horas" && visivel(c));
   const setValor = (catId, v) => setValores((prev) => ({ ...prev, [catId]: v === "" ? "" : Number(v) }));
   const [salvando, setSalvando] = useState(false);
   const [erroModal, setErroModal] = useState("");

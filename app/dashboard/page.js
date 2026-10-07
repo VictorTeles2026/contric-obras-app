@@ -8,7 +8,7 @@ import "react-resizable/css/styles.css";
 import { useTabela } from "../../lib/dados";
 import { useAuth } from "../../lib/AuthContext";
 import { diasAte, formatarData, saudacao } from "../../lib/datas";
-import { STATUS_PI, COR_STATUS_PI } from "../../lib/constantes";
+import { STATUS_PI, COR_STATUS_PI, PRAZOS } from "../../lib/constantes";
 import PainelShell from "../../components/PainelShell";
 import { CabecalhoPagina, Esqueleto, EstadoVazio } from "../../components/ui";
 import Icone from "../../components/Icone";
@@ -113,7 +113,7 @@ export default function DashboardPage() {
     })
     .filter((g) => g.itens.length > 0)
     .sort((a, b) => (a.itens[0].data_prevista_fim || "9999").localeCompare(b.itens[0].data_prevista_fim || "9999")), [pis, etapas]);
-  const medicoesProximas = gruposMedicoes.flatMap((g) => g.itens).filter((e) => { const d = diasAte(e.data_prevista_fim); return d !== null && d <= 20; }).length;
+  const medicoesProximas = gruposMedicoes.flatMap((g) => g.itens).filter((e) => { const d = diasAte(e.data_prevista_fim); return d !== null && d <= PRAZOS.medicoes; }).length;
 
   const progressoDoPi = (piId) => {
     const macros = etapas.filter((e) => e.pi_id === piId && !e.parent_etapa_id);
@@ -134,7 +134,7 @@ export default function DashboardPage() {
       cor={pendencias ? "text-amber bg-amber/10" : "text-green bg-green/10"} href="/aprovacoes" destaque={pendencias > 0} />,
     atrasadas: <Indicador titulo="Etapas atrasadas" valor={etapasAtrasadas.length} detalhe="em PIs ativos" icone="alerta"
       cor={etapasAtrasadas.length ? "text-red bg-red/10" : "text-green bg-green/10"} href="/linha-do-tempo" />,
-    "medicoes-20": <Indicador titulo="Medições em 20 dias" valor={medicoesProximas} detalhe="vencidas ou próximas" icone="calendario" cor="text-[#8E5CD9] bg-[#8E5CD9]/10" />,
+    "medicoes-20": <Indicador titulo={`Medições em ${PRAZOS.medicoes} dias`} valor={medicoesProximas} detalhe="vencidas ou próximas" icone="calendario" cor="text-[#8E5CD9] bg-[#8E5CD9]/10" />,
 
     "lista-pis": (
       <section className="cartao p-4 md:p-5 h-full flex flex-col min-h-0">
@@ -211,7 +211,7 @@ export default function DashboardPage() {
                     {itens.map((etapa) => {
                       const dias = diasAte(etapa.data_prevista_fim);
                       const vencida = dias !== null && dias < 0;
-                      const proxima = dias !== null && dias >= 0 && dias <= 20;
+                      const proxima = dias !== null && dias >= 0 && dias <= PRAZOS.medicoes;
                       return (
                         <tr key={etapa.id} className="border-b border-line/60 hover:bg-panel/60">
                           <td className="py-2 px-4 md:pl-0">{etapa.parent_etapa_id ? <span className="text-muteddim">· </span> : ""}{etapa.nome}</td>
