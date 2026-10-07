@@ -26,7 +26,18 @@ const COR_PERFIL = {
   master: "bg-navy text-white", gerente: "bg-cyan/10 text-cyan", coordenador: "bg-cyan/10 text-cyan",
   lider: "bg-green/10 text-green", funcionario: "bg-panel text-muted", terceiro: "bg-amber/10 text-amber", visualizador: "bg-panel text-muted",
 };
-const ehDeCampo = (u) => (u.equipes || []).includes(EQUIPE_CAMPO);
+// equipes do usuário como lista, venha do banco como vier (lista, texto "{A,B}" ou JSON)
+function equipesDe(u) {
+  const e = u?.equipes;
+  if (Array.isArray(e)) return e.map((x) => String(x));
+  if (typeof e === "string" && e.trim()) {
+    try { const j = JSON.parse(e); if (Array.isArray(j)) return j.map(String); } catch { /* formato {A,B} */ }
+    return e.replace(/^\{|\}$/g, "").split(",").map((x) => x.replace(/^"|"$/g, ""));
+  }
+  return [];
+}
+// é da equipe Campo? (sem diferenciar maiúsculas/minúsculas nem espaços nas pontas)
+const ehDeCampo = (u) => equipesDe(u).some((x) => x.trim().toLowerCase() === EQUIPE_CAMPO.toLowerCase());
 // login exibido: o campo "login"; usuários antigos (antes do campo existir) usam o e-mail
 const loginDe = (u) => u.login || u.email || "";
 
@@ -71,7 +82,7 @@ export default function UsuariosPage() {
   const daAba = usuarios.filter((u) => (aba === "campo" ? ehDeCampo(u) : !ehDeCampo(u)));
   const termo = busca.trim().toLowerCase();
   const filtrados = daAba.filter((u) =>
-    (!filtroPerfil || u.perfil === filtroPerfil) && (!filtroEquipe || (u.equipes || []).includes(filtroEquipe)) &&
+    (!filtroPerfil || u.perfil === filtroPerfil) && (!filtroEquipe || equipesDe(u).some((x) => x.trim().toLowerCase() === filtroEquipe.toLowerCase())) &&
     (aba !== "campo" || !filtroEmpresa || (filtroEmpresa === "__propria" ? u.perfil !== "terceiro" : (u.empresa_terceira || "").trim().toLowerCase() === filtroEmpresa)) && (mostrarInativos || u.ativo) &&
     (!termo || [u.nome, u.email, loginDe(u), u.funcao, u.empresa_terceira].some((c) => (c || "").toLowerCase().includes(termo))));
   const qtdCampo = usuarios.filter(ehDeCampo).length;
@@ -149,7 +160,7 @@ export default function UsuariosPage() {
                 <div className="text-xs text-muted flex items-center gap-1.5 flex-wrap mt-0.5">
                   <span className={`selo ${COR_PERFIL[u.perfil] || "bg-panel text-muted"}`}>{PERFIS.find((p) => p[0] === u.perfil)?.[1]?.split(" (")[0] || u.perfil}</span>
                   {u.funcao && <span>{u.funcao}</span>}
-                  {(u.equipes || []).map((a) => <span key={a} className="selo bg-cyan/10 text-cyan">{a}</span>)}
+                  {equipesDe(u).map((a) => <span key={a} className="selo bg-cyan/10 text-cyan">{a}</span>)}
                 </div>
               </div>
               <div className="text-xs text-muted min-w-[160px] break-all">
@@ -238,7 +249,10 @@ function ModalUsuario({ usuarioInicial, deCampo, empresas = [], onClose, onSalvo
   const [senha, setSenha] = useState("");
   const [tipoTerceiro, setTipoTerceiro] = useState(usuarioInicial?.tipo_terceiro || "fixo");
   const [empresaTerceira, setEmpresaTerceira] = useState(usuarioInicial?.empresa_terceira || "");
-  const [equipes, setEquipes] = useState(usuarioInicial?.equipes || (deCampo ? [EQUIPE_CAMPO] : []));
+  // ao editar, corrige a grafia das equipes para a da lista oficial (ex: "campo " → "Campo") — salvando, fica certo no banco
+  const [equipes, setEquipes] = useState(() => usuarioInicial
+    ? [...new Set(equipesDe(usuarioInicial).map((x) => AREAS.find((a) => a.toLowerCase() === x.trim().toLowerCase()) || x.trim()))]
+    : (deCampo ? [EQUIPE_CAMPO] : []));
   const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState("");
 
