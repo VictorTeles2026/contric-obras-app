@@ -13,7 +13,7 @@ import Icone from "../../components/Icone";
 import { ConfirmarExclusao } from "../../components/AcoesMaster";
 import { EditorRdo, EditorOcorrencia } from "../../components/Editores";
 import { ehMaster, excluirDocumento } from "../../lib/exclusoes";
-import { marcarDocumentosLidos } from "../../lib/documentosLidos";
+import { marcarDocumentosLidos } from "../../lib/dados";
 import { CLASSIFICACOES_DOC } from "../../lib/constantes";
 
 const TIPOS = [["", "Todos"], ["rdo", "RDOs (PDF)"], ["ocorrencia", "Ocorrências (PDF)"], ["ata", "Atas de reuniões"], ["arquivo", "Outros documentos"], ["foto", "Fotos"], ["video", "Vídeos"]];

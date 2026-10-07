@@ -10,7 +10,7 @@ import { CabecalhoPagina, EstadoVazio, Aviso, Spinner } from "../../components/u
 import Icone from "../../components/Icone";
 import { formatarData, horaCurta } from "../../lib/datas";
 import AcoesMaster from "../../components/AcoesMaster";
-import AbasRelatorios from "../../components/AbasRelatorios";
+import { AbasRelatorios } from "../../components/AbasCronograma";
 import { horasDoLancamento, fmtH } from "../../lib/horas";
 import { EditorHoras } from "../../components/Editores";
 import { excluirHoras, limparRealizados } from "../../lib/exclusoes";

@@ -3,9 +3,9 @@
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "../lib/AuthContext";
-import { rotaInicialPara } from "../lib/rotas";
+import { rotaInicialPara } from "../lib/nav";
 import { TelaCarregando } from "../components/ui";
-import TelaAcessoNegado from "../components/TelaAcessoNegado";
+import { TelaAcessoNegado } from "../components/ui";
 
 export default function Home() {
   const { sessao, usuario, carregando, erroCadastro, sair } = useAuth();

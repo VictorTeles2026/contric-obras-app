@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "../../lib/AuthContext";
-import { rotaInicialPara } from "../../lib/rotas";
+import { rotaInicialPara } from "../../lib/nav";
 import { Logo, Spinner, Aviso } from "../../components/ui";
 import Icone from "../../components/Icone";
 

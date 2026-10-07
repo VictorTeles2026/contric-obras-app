@@ -12,7 +12,7 @@ import PainelShell from "../../components/PainelShell";
 import { Modal, EstadoVazio, Esqueleto, Aviso, Campo, SeletorEquipes } from "../../components/ui";
 import Icone from "../../components/Icone";
 import GraficoUtilizacao from "../../components/GraficoUtilizacao";
-import ConfirmacaoDupla from "../../components/ConfirmacaoDupla";
+import { ConfirmacaoDupla } from "../../components/AcoesMaster";
 
 function sobrepoe(iniA, fimA, iniB, fimB) { return iniA <= fimB && iniB <= fimA; }
 // etapas do PI na ordem do Cronograma (macro seguida das suas sub-etapas), com rótulo "Macro › Sub"

@@ -10,7 +10,7 @@ import { AREAS, FUNCOES, EQUIPE_CAMPO } from "../../lib/constantes";
 import { normalizarLogin, erroLogin, ehEmail, sugerirLogin } from "../../lib/login";
 import Icone from "../../components/Icone";
 import VerSenhas from "../../components/VerSenhas";
-import ConfirmacaoDupla from "../../components/ConfirmacaoDupla";
+import { ConfirmacaoDupla } from "../../components/AcoesMaster";
 
 const PERFIS = [
   ["master", "Master (acesso total)"],

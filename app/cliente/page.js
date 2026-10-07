@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "../../lib/AuthContext";
 import { supabase } from "../../lib/supabase";
-import { rotaInicialPara } from "../../lib/rotas";
+import { rotaInicialPara } from "../../lib/nav";
 import { tsLocal, formatarData, formatarDataHora, diasAte } from "../../lib/datas";
 import { STATUS_ETAPA, etapasEmArvore } from "../../lib/constantes";
 import AlterarSenha from "../../components/AlterarSenha";

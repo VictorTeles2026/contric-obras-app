@@ -5,7 +5,7 @@ import { useTabela } from "../../../lib/dados";
 import { hojeISO, addDias, isoLocal, dataLocal, formatarData, horaCurta } from "../../../lib/datas";
 import { horasDoLancamento, fmtH } from "../../../lib/horas";
 import PainelShell from "../../../components/PainelShell";
-import AbasRelatorios from "../../../components/AbasRelatorios";
+import { AbasRelatorios } from "../../../components/AbasCronograma";
 import { CabecalhoPagina, EstadoVazio, Esqueleto, Campo } from "../../../components/ui";
 import Icone from "../../../components/Icone";
 

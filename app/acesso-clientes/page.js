@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "../../lib/AuthContext";
-import { rotaInicialPara } from "../../lib/rotas";
+import { rotaInicialPara } from "../../lib/nav";
 import { Spinner } from "../../components/ui";
 
 // Entrada do portal de clientes — identidade própria em cinza escuro.

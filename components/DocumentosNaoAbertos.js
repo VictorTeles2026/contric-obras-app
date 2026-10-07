@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState, useCallback } from "react";
 import { supabase } from "../lib/supabase";
 import { compararPis } from "../lib/dados";
 import { BUCKET_DOCUMENTOS, linkTemporario } from "../lib/pdfRdo";
-import { marcarDocumentosLidos } from "../lib/documentosLidos";
+import { marcarDocumentosLidos } from "../lib/dados";
 import { formatarDataHora } from "../lib/datas";
 import { useToast } from "../lib/Toast";
 import { Esqueleto, Spinner } from "./ui";
