@@ -7,6 +7,7 @@ import { AREAS, STATUS_ETAPA, PRAZOS } from "../../lib/constantes";
 import PainelShell from "../../components/PainelShell";
 import { CabecalhoPagina, EstadoVazio, Modal } from "../../components/ui";
 import Icone from "../../components/Icone";
+import { ModalQrPi } from "../../components/LeitorQR";
 import PainelSuspenso from "../../components/PainelSuspenso";
 
 const STATUS_COR = Object.fromEntries(Object.entries(STATUS_ETAPA).map(([k, v]) => [k, v.barra]));
@@ -47,6 +48,7 @@ export default function LinhaDoTempoPage() {
   const { dados: recursos } = useTabela("recursos");
   const { dados: alocacoesRecurso } = useTabela("alocacoes_recurso");
   const [selecionarAberto, setSelecionarAberto] = useState(false);
+  const [qrPi, setQrPi] = useState(null); // PI com o QR Code aberto (ver / PDF / imprimir)
   const [piIds, setPiIds] = useState([]);
   // na primeira carga já mostra os PIs ativos (antes a tela abria vazia)
   const iniciouRef = useRef(false);
@@ -373,9 +375,9 @@ export default function LinhaDoTempoPage() {
                     {/* faixa cinza do PI: fica parada (não rola na horizontal) e usa a largura visível
                         inteira, para o nome do cliente e do projeto aparecerem por completo */}
                     <div className="bg-panel border-y border-line" style={{ width: LABEL_W + largura }}>
+                      <div className="sticky left-0 z-10 flex items-center" style={{ width: larguraContainer || LABEL_W + larguraVisivel }}>
                       <button onClick={() => ciclarNivel(pi.id)} title={`Clique para ${dicaProximo}`}
-                        className="sticky left-0 z-10 px-3 py-2 text-sm flex items-center gap-2 text-left hover:bg-line/40 transition-colors"
-                        style={{ width: larguraContainer || LABEL_W + larguraVisivel }}>
+                        className="flex-1 min-w-0 px-3 py-2 text-sm flex items-center gap-2 text-left hover:bg-line/40 transition-colors">
                         <span className="text-[10px] w-4 shrink-0 text-cyan">{icone}</span>
                         <span className="min-w-0 truncate" title={`${pi.codigo} — ${pi.cliente}${pi.projeto ? ` · ${pi.projeto}` : ""}${pi.responsavel_cliente_nome ? ` · Resp. no cliente: ${[pi.responsavel_cliente_nome, pi.responsavel_cliente_email, pi.responsavel_cliente_telefone].filter(Boolean).join(" · ")}` : ""}`}>
                           <span className="font-mono text-cyan font-bold">{pi.codigo}</span>
@@ -393,6 +395,9 @@ export default function LinhaDoTempoPage() {
                           </span>
                         )}
                       </button>
+                      <button onClick={() => setQrPi(pi)} title="QR Code do PI (ver, gerar PDF e imprimir)" aria-label={`QR Code do PI ${pi.codigo}`}
+                        className="shrink-0 mx-2 p-1.5 rounded-lg text-cyan hover:bg-cyan/10"><Icone nome="qr" className="w-4 h-4" /></button>
+                      </div>
                     </div>
                     {nivel === "pi" && (
                     <div className="flex border-b border-line/60">
@@ -530,6 +535,7 @@ export default function LinhaDoTempoPage() {
         )}
       </div>
 
+      {qrPi && <ModalQrPi pi={qrPi} comPdf onFechar={() => setQrPi(null)} />}
       {selecionarAberto && (
         <SelecionarPisModal pis={pis} selecionados={piIds} onConfirmar={(ids) => { setPiIds(ids); setSelecionarAberto(false); }} onCancelar={() => setSelecionarAberto(false)} />
       )}

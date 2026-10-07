@@ -9,6 +9,7 @@ import { formatarDataCurta, diasAte } from "../../../lib/datas";
 import MobileShell from "../../../components/MobileShell";
 import { Esqueleto, EstadoVazio } from "../../../components/ui";
 import Icone from "../../../components/Icone";
+import { ModalQrPi } from "../../../components/LeitorQR";
 import { STATUS_ETAPA, porOrdem } from "../../../lib/constantes";
 
 export default function LiderCronogramaPage() {
@@ -18,6 +19,7 @@ export default function LiderCronogramaPage() {
   const [abertos, setAbertos] = useState({});
   const porCliente = agruparPorCliente(meusPis);
   const toggle = (id) => setAbertos((p) => ({ ...p, [id]: !p[id] }));
+  const [qrPi, setQrPi] = useState(null); // PI com o QR Code aberto
 
   return (
     <MobileShell nav={NAV_LIDER} perfis={["lider"]}>
@@ -35,10 +37,16 @@ export default function LiderCronogramaPage() {
               const macroEtapas = doPi.filter((e) => !e.parent_etapa_id).sort(porOrdem);
               return (
                 <div key={pi.id} className="flex flex-col gap-2.5">
-                  <div>
-                    <div className="text-xs font-mono text-cyan font-bold tracking-wide">{pi.codigo}</div>
-                    <div className="titulo-destaque">{pi.projeto || pi.cliente}</div>
-                    {pi.projeto && <div className="text-sm text-muted">{pi.cliente}</div>}
+                  <div className="flex items-start gap-3">
+                    <div className="flex-1 min-w-0">
+                      <div className="text-xs font-mono text-cyan font-bold tracking-wide">{pi.codigo}</div>
+                      <div className="titulo-destaque">{pi.projeto || pi.cliente}</div>
+                      {pi.projeto && <div className="text-sm text-muted">{pi.cliente}</div>}
+                    </div>
+                    <button onClick={() => setQrPi(pi)} className="shrink-0 flex flex-col items-center gap-0.5 rounded-xl border border-line bg-white px-2.5 py-1.5 text-cyan active:bg-panel" aria-label={`QR Code do PI ${pi.codigo}`}>
+                      <Icone nome="qr" className="w-6 h-6" />
+                      <span className="text-[10px] font-semibold">QR Code</span>
+                    </button>
                   </div>
                   {macroEtapas.map((e) => {
                     const subs = doPi.filter((s) => s.parent_etapa_id === e.id).sort(porOrdem);
@@ -68,6 +76,7 @@ export default function LiderCronogramaPage() {
           </div>
         ))}
       </div>
+      {qrPi && <ModalQrPi pi={qrPi} onFechar={() => setQrPi(null)} />}
     </MobileShell>
   );
 }

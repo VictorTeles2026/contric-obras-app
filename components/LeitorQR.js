@@ -2,7 +2,79 @@
 
 import { useEffect, useRef, useState } from "react";
 import jsQR from "jsqr";
+import QRCode from "qrcode";
 import Icone from "./Icone";
+import { Modal, Spinner } from "./ui";
+
+// ======================= QR Code do PI =======================
+// O QR guarda o NÚMERO do PI — o mesmo formato que o leitor de QR do líder reconhece.
+export const gerarQrPi = (pi, tamanho = 600) =>
+  QRCode.toDataURL(String(pi.codigo || ""), { width: tamanho, margin: 1, errorCorrectionLevel: "M", color: { dark: "#0B2E44", light: "#FFFFFF" } });
+
+// PDF A4 (retrato) com as informações GRANDES: nº do PI, cliente, descrição e o QR ocupando a folha
+async function pdfQrPi(pi) {
+  const { jsPDF } = await import("jspdf");
+  const doc = new jsPDF({ unit: "mm", format: "a4" });
+  const L = 210, M = 15;
+  const qr = await gerarQrPi(pi, 1200);
+  doc.setTextColor(11, 46, 68);
+  doc.setFont("helvetica", "bold"); doc.setFontSize(14);
+  doc.text("CONTRIC — GESTÃO DE OBRAS", L / 2, 20, { align: "center" });
+  doc.setFontSize(54);
+  doc.text(`PI ${pi.codigo}`, L / 2, 46, { align: "center" });
+  doc.setFontSize(26);
+  const cliente = doc.splitTextToSize(String(pi.cliente || ""), L - 2 * M);
+  doc.text(cliente, L / 2, 62, { align: "center" });
+  let y = 62 + cliente.length * 10;
+  if (pi.projeto) {
+    doc.setFont("helvetica", "normal"); doc.setFontSize(18);
+    const proj = doc.splitTextToSize(String(pi.projeto), L - 2 * M);
+    doc.text(proj, L / 2, y + 2, { align: "center" });
+    y += proj.length * 7.5 + 4;
+  }
+  // QR o maior possível no espaço que sobra (até 165 mm)
+  const lado = Math.min(165, 282 - y - 22);
+  doc.addImage(qr, "PNG", (L - lado) / 2, y + 6, lado, lado);
+  doc.setFont("helvetica", "normal"); doc.setFontSize(11); doc.setTextColor(91, 107, 133);
+  doc.text("Aponte a câmera do app Contric (Ler QR) para abrir esta obra.", L / 2, Math.min(287, y + lado + 16), { align: "center" });
+  return doc;
+}
+export async function baixarPdfQrPi(pi) {
+  (await pdfQrPi(pi)).save(`QR_PI_${String(pi.codigo).replace(/[^\w-]+/g, "-")}.pdf`);
+}
+// imprime o mesmo PDF (já ajustado para A4) — abre a janela de impressão do navegador
+export async function imprimirQrPi(pi) {
+  const janela = window.open("", "_blank"); // abre antes do await: senão o navegador bloqueia como pop-up
+  const doc = await pdfQrPi(pi);
+  doc.autoPrint();
+  const url = doc.output("bloburl");
+  if (janela) janela.location.href = url; else window.open(url, "_blank");
+}
+
+// Janela com o QR Code + cliente e descrição. `comPdf`: mostra os botões PDF e Imprimir (painel)
+export function ModalQrPi({ pi, onFechar, comPdf = false }) {
+  const [img, setImg] = useState(null);
+  const [ocupado, setOcupado] = useState(null);
+  useEffect(() => { let vivo = true; gerarQrPi(pi).then((u) => vivo && setImg(u)); return () => { vivo = false; }; }, [pi]);
+  const acao = async (tipo) => { setOcupado(tipo); try { await (tipo === "pdf" ? baixarPdfQrPi(pi) : imprimirQrPi(pi)); } finally { setOcupado(null); } };
+  return (
+    <Modal titulo={`QR Code — PI ${pi.codigo}`} onFechar={onFechar} confirmarAoFechar={false} largura="max-w-md"
+      rodape={comPdf ? <>
+        <button onClick={() => acao("pdf")} disabled={!!ocupado} className="btn btn-contorno">{ocupado === "pdf" ? <Spinner /> : <Icone nome="download" className="w-4 h-4" />} Gerar PDF</button>
+        <button onClick={() => acao("imprimir")} disabled={!!ocupado} className="btn btn-primario">{ocupado === "imprimir" ? <Spinner /> : <Icone nome="pdf" className="w-4 h-4" />} Imprimir</button>
+      </> : <button onClick={onFechar} className="btn btn-primario w-full">Fechar</button>}>
+      <div className="text-center">
+        <div className="font-head font-bold text-3xl text-navy">PI {pi.codigo}</div>
+        <div className="text-lg font-semibold mt-1">{pi.cliente}</div>
+        {pi.projeto && <div className="text-sm text-muted mt-0.5">{pi.projeto}</div>}
+        <div className="mx-auto mt-4 w-64 h-64 max-w-full aspect-square flex items-center justify-center rounded-xl border border-line bg-white p-2">
+          {img ? <img src={img} alt={`QR Code do PI ${pi.codigo}`} className="w-full h-full" /> : <Spinner className="w-6 h-6 text-cyan" />}
+        </div>
+        <p className="texto-apoio mt-3">O QR Code contém o número do PI — use “Ler QR” no app para abrir a obra.</p>
+      </div>
+    </Modal>
+  );
+}
 
 export default function LeitorQR({ onLido, onFechar }) {
   const videoRef = useRef(null);
