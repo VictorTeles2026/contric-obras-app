@@ -37,6 +37,8 @@ export default function UsuariosPage() {
   const podeVerSenha = pode(usuario, "usuario.senha");
   const podeExcluirUsuario = pode(usuario, "usuario.excluir");
   const { dados: usuarios, carregando, recarregar } = useTabela("usuarios", { order: { coluna: "nome" } });
+  const { dados: empresas } = useTabela("empresas_terceiras", { order: { coluna: "nome" } });
+  const empresasAtivas = empresas.filter((e) => e.ativa !== false);
 
   const [aba, setAba] = useState("geral"); // "geral" | "campo"
   const [modalAberto, setModalAberto] = useState(false);
@@ -46,6 +48,7 @@ export default function UsuariosPage() {
   const [busca, setBusca] = useState("");
   const [filtroPerfil, setFiltroPerfil] = useState("");
   const [filtroEquipe, setFiltroEquipe] = useState("");
+  const [filtroEmpresa, setFiltroEmpresa] = useState(""); // aba Usuários de Campo
   const [mostrarInativos, setMostrarInativos] = useState(true);
   const [alternando, setAlternando] = useState(null);
   const [vendoSenha, setVendoSenha] = useState(null);
@@ -68,7 +71,8 @@ export default function UsuariosPage() {
   const daAba = usuarios.filter((u) => (aba === "campo" ? ehDeCampo(u) : !ehDeCampo(u)));
   const termo = busca.trim().toLowerCase();
   const filtrados = daAba.filter((u) =>
-    (!filtroPerfil || u.perfil === filtroPerfil) && (!filtroEquipe || (u.equipes || []).includes(filtroEquipe)) && (mostrarInativos || u.ativo) &&
+    (!filtroPerfil || u.perfil === filtroPerfil) && (!filtroEquipe || (u.equipes || []).includes(filtroEquipe)) &&
+    (aba !== "campo" || !filtroEmpresa || (filtroEmpresa === "__propria" ? u.perfil !== "terceiro" : (u.empresa_terceira || "").trim().toLowerCase() === filtroEmpresa)) && (mostrarInativos || u.ativo) &&
     (!termo || [u.nome, u.email, loginDe(u), u.funcao, u.empresa_terceira].some((c) => (c || "").toLowerCase().includes(termo))));
   const qtdCampo = usuarios.filter(ehDeCampo).length;
 
@@ -109,6 +113,15 @@ export default function UsuariosPage() {
             <option value="">Todas as equipes</option>
             {AREAS.map((a) => <option key={a} value={a}>{a}</option>)}
           </select>
+          {aba === "campo" && (
+            <select value={filtroEmpresa} onChange={(e) => setFiltroEmpresa(e.target.value)} className={`input sm:!w-52 ${filtroEmpresa ? "!border-cyan/40 !text-cyan" : ""}`} aria-label="Filtrar por empresa terceira">
+              <option value="">Todas as empresas</option>
+              <option value="__propria">Contric (mão de obra própria)</option>
+              {[...new Set([...empresas.map((e) => e.nome), ...daAba.map((u) => u.empresa_terceira).filter(Boolean)].map((n) => n.trim()))]
+                .sort((a, b) => a.localeCompare(b, "pt-BR"))
+                .map((n) => <option key={n} value={n.toLowerCase()}>{n}</option>)}
+            </select>
+          )}
           <label className="flex items-center gap-2 text-sm text-muted whitespace-nowrap px-1 cursor-pointer">
             <input type="checkbox" className="accent-cyan w-4 h-4" checked={mostrarInativos} onChange={(e) => setMostrarInativos(e.target.checked)} />
             Mostrar desabilitados
@@ -188,13 +201,13 @@ export default function UsuariosPage() {
         {vendoSenha && <VerSenhas authUserId={vendoSenha.auth_user_id} nome={vendoSenha.nome} onFechar={() => setVendoSenha(null)} />}
         {modalAberto && (
           <ModalUsuario
-            usuarioInicial={editando} deCampo={aba === "campo"}
+            usuarioInicial={editando} deCampo={aba === "campo"} empresas={empresasAtivas}
             onClose={() => setModalAberto(false)}
             onSalvo={(msg) => { setModalAberto(false); avisar(msg); recarregar(); }}
             onPinGerado={setPinGerado}
           />
         )}
-        {loteAberto && <CadastroEmLote usuariosExistentes={usuarios} onFechar={() => setLoteAberto(false)} onCriados={recarregar} />}
+        {loteAberto && <CadastroEmLote usuariosExistentes={usuarios} empresas={empresasAtivas} onFechar={() => setLoteAberto(false)} onCriados={recarregar} />}
 
         {pinGerado && (
           <Modal titulo="Código gerado" onFechar={() => setPinGerado(null)} largura="max-w-xs"
@@ -210,7 +223,7 @@ export default function UsuariosPage() {
   );
 }
 
-function ModalUsuario({ usuarioInicial, deCampo, onClose, onSalvo, onPinGerado }) {
+function ModalUsuario({ usuarioInicial, deCampo, empresas = [], onClose, onSalvo, onPinGerado }) {
   const { usuario: usuarioAtual } = useAuth();
   const ehMaster = usuarioAtual?.perfil === "master"; // só o Master define o usuário (login)
   const editando = !!usuarioInicial;
@@ -237,7 +250,8 @@ function ModalUsuario({ usuarioInicial, deCampo, onClose, onSalvo, onPinGerado }
   const login = normalizarLogin(modoLogin === "email" ? email : loginDigitado);
   const problemaLogin = !ehTerceiroAvulso && (modoLogin === "outro" || email) ? erroLogin(login) : null;
   const semLogin = !ehTerceiroAvulso && !login;
-  const podeSalvar = nome.trim() && !senhaCurta && emailValido && !problemaLogin && !semLogin && (!precisaLoginNovo || senha) && !salvando;
+  const faltaEmpresa = perfil === "terceiro" && !empresaTerceira.trim();
+  const podeSalvar = nome.trim() && !faltaEmpresa && !senhaCurta && emailValido && !problemaLogin && !semLogin && (!precisaLoginNovo || senha) && !salvando;
 
   const salvar = async () => {
     if (!podeSalvar) return;
@@ -297,7 +311,9 @@ function ModalUsuario({ usuarioInicial, deCampo, onClose, onSalvo, onPinGerado }
                 <div className="text-xs text-muteddim mt-1.5">PIN atual: {usuarioInicial.pin}</div>
               )}
             </div>
-            <Campo rotulo="Empresa terceira"><input value={empresaTerceira} onChange={(e) => setEmpresaTerceira(e.target.value)} className="input" /></Campo>
+            <Campo rotulo="Empresa terceira (obrigatório)">
+              <SeletorEmpresa empresas={empresas} valor={empresaTerceira} onChange={setEmpresaTerceira} />
+            </Campo>
           </>
         )}
 
@@ -344,7 +360,7 @@ const gerarSenha = () => {
   return Array.from({ length: 8 }, () => letras[Math.floor(Math.random() * letras.length)]).join("");
 };
 
-function CadastroEmLote({ usuariosExistentes, onFechar, onCriados }) {
+function CadastroEmLote({ usuariosExistentes, empresas = [], onFechar, onCriados }) {
   const { usuario: usuarioAtual } = useAuth();
   const { avisar } = useToast();
   const ehMaster = usuarioAtual?.perfil === "master";
@@ -460,7 +476,9 @@ function CadastroEmLote({ usuariosExistentes, onFechar, onCriados }) {
                       {FUNCOES.map((f) => <option key={f} value={f}>{f}</option>)}
                     </select>
                   </td>
-                  <td className={cel}><input value={l.empresa} disabled={travada || l.perfil !== "terceiro"} onChange={(e) => alterar(i, { empresa: e.target.value })} className={inp} placeholder={l.perfil === "terceiro" ? "Empresa" : "—"} /></td>
+                  <td className={cel}>{l.perfil === "terceiro"
+                    ? <SeletorEmpresa empresas={empresas} valor={l.empresa} disabled={travada} onChange={(v) => alterar(i, { empresa: v })} compacto />
+                    : <span className="text-muteddim text-xs pl-1">—</span>}</td>
                   <td className={`${cel} pt-2`}>
                     {travada ? <span className="text-green font-bold" title="Criado">✓</span> : (
                       <button onClick={() => setLinhas((p) => (p.length > 1 ? p.filter((_, k) => k !== i) : [linhaVazia()]))} className="p-1.5 rounded-lg text-muteddim hover:text-red hover:bg-red/5" aria-label="Remover linha"><Icone nome="lixo" className="w-4 h-4" /></button>
@@ -482,5 +500,23 @@ function CadastroEmLote({ usuariosExistentes, onFechar, onCriados }) {
         </div>
       )}
     </Modal>
+  );
+}
+
+// Lista das empresas terceiras cadastradas (Recursos → Empresas terceiras).
+// O cadastro do usuário guarda o NOME da empresa; um nome antigo fora da lista continua aparecendo.
+function SeletorEmpresa({ empresas, valor, onChange, disabled, compacto }) {
+  const nomes = empresas.map((e) => e.nome);
+  const fora = valor && !nomes.some((n) => n.trim().toLowerCase() === valor.trim().toLowerCase());
+  return (
+    <>
+      <select value={fora ? valor : (nomes.find((n) => n.trim().toLowerCase() === (valor || "").trim().toLowerCase()) || "")} disabled={disabled}
+        onChange={(e) => onChange(e.target.value)} className={compacto ? "input !py-1.5 !px-2 !text-sm" : `input ${!valor ? "!border-amber" : ""}`}>
+        <option value="">Selecione a empresa...</option>
+        {empresas.map((e) => <option key={e.id} value={e.nome}>{e.nome}{e.cnpj && !compacto ? ` — ${e.cnpj}` : ""}</option>)}
+        {fora && <option value={valor}>{valor} (não cadastrada)</option>}
+      </select>
+      {!compacto && !empresas.length && <span className="block text-xs text-amber mt-1">Nenhuma empresa cadastrada — cadastre em Recursos → Empresas terceiras.</span>}
+    </>
   );
 }
