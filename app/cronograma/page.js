@@ -396,6 +396,11 @@ export default function CronogramaPage() {
               <Icone nome="mais2" className="w-4 h-4" /> Novo PI
             </button>
           )}
+          {piAtual && (
+            <a href={`/pi?id=${piAtual.id}`} className="btn btn-contorno btn-sm !py-2" title="Tudo deste PI num só lugar">
+              <Icone nome="obra" className="w-4 h-4" /> Página do PI
+            </a>
+          )}
           {pode(usuario, "pi.editar") && piAtual && (
             <button onClick={() => { setPisModalModo("edit"); setPisModalAberto(true); }} className="btn btn-contorno btn-sm !py-2">
               <Icone nome="editar" className="w-4 h-4" /> Editar PI

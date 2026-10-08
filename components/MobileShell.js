@@ -6,8 +6,7 @@ import { useRouter, usePathname } from "next/navigation";
 import { useAuth, podeAcessarDesktop, ROTULO_PERFIL, pode } from "../lib/AuthContext";
 import { primeiraRotaPainel } from "../lib/nav";
 import { rotaInicialPara } from "../lib/nav";
-import { TelaCarregando } from "./ui";
-import { TelaAcessoNegado } from "./ui";
+import { TelaCarregando, TelaAcessoNegado, BotaoTema } from "./ui";
 import Icone from "./Icone";
 import SinoNotificacoes from "./SinoNotificacoes";
 import AlterarSenha from "./AlterarSenha";
@@ -56,6 +55,7 @@ export default function MobileShell({ children, nav, perfis, titulo }) {
             </div>
           </div>
           <div className="flex items-center gap-1 shrink-0">
+            <BotaoTema className="!text-slate-200 hover:!bg-white/10 !p-2.5" />
             <SinoNotificacoes usuario={usuario} />
             <button onClick={() => setTrocandoSenha(true)} className="p-2.5 rounded-lg text-slate-200 hover:bg-white/10" aria-label="Alterar minha senha" title="Alterar minha senha">
               <Icone nome="chave" className="w-5 h-5" />

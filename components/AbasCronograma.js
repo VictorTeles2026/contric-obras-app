@@ -28,6 +28,27 @@ export default function AbasCronograma({ piId, qtdPendentes = 0 }) {
   );
 }
 
+// Abas de Aprovações: o que está pendente e o que já foi decidido (antigo "Histórico")
+export function AbasAprovacoes({ qtdPendentes = 0 }) {
+  const pathname = usePathname();
+  const abas = [["/aprovacoes", "Pendentes"], ["/historico", "Já decididas"]];
+  return (
+    <div className="flex gap-1 border-b border-line mb-5 overflow-x-auto" role="tablist">
+      {abas.map(([href, rotulo]) => {
+        const ativa = pathname === href;
+        return (
+          <Link key={href} href={href} role="tab" aria-selected={ativa}
+            className={`relative px-4 py-2.5 text-sm font-semibold whitespace-nowrap transition-colors ${ativa ? "text-cyan" : "text-muted hover:text-textmain"}`}>
+            {rotulo}
+            {href === "/aprovacoes" && qtdPendentes > 0 && <span className="ml-2 selo bg-amber/15 text-amber">{qtdPendentes}</span>}
+            {ativa && <span className="absolute left-0 right-0 -bottom-px h-0.5 bg-cyan rounded-full" />}
+          </Link>
+        );
+      })}
+    </div>
+  );
+}
+
 // Abas dos Relatorios
 export function AbasRelatorios() {
   const pathname = usePathname();

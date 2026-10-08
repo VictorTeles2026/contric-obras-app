@@ -8,6 +8,7 @@ import { STATUS_ETAPA } from "../../lib/constantes";
 import { excluirRdo, excluirHoras, excluirOcorrencia } from "../../lib/exclusoes";
 import { supabase } from "../../lib/supabase";
 import PainelShell from "../../components/PainelShell";
+import { AbasAprovacoes } from "../../components/AbasCronograma";
 import AcoesMaster from "../../components/AcoesMaster";
 import { EditorRdo, EditorHoras, EditorOcorrencia } from "../../components/Editores";
 import { CabecalhoPagina, EstadoVazio, Esqueleto } from "../../components/ui";
@@ -61,7 +62,8 @@ export default function HistoricoPage() {
   return (
     <PainelShell>
       <div className="p-4 md:p-8">
-        <CabecalhoPagina titulo="Histórico" subtitulo="Tudo o que já foi decidido — RDOs, horas e ocorrências." />
+        <CabecalhoPagina titulo="Aprovações" subtitulo="Tudo o que já foi decidido — RDOs, horas e ocorrências." />
+        <AbasAprovacoes />
 
         <div className="flex flex-wrap items-center gap-2 mb-4">
           {[["", "Todos"], ["rdo", "RDOs"], ["horas", "Horas"], ["ocorrencia", "Ocorrências"]].map(([v, l]) => (

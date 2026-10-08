@@ -15,6 +15,7 @@ import { CabecalhoPagina, EstadoVazio, Esqueleto, Aviso, Spinner } from "../../c
 import Icone from "../../components/Icone";
 import CartaoOcorrencia from "../../components/CartaoOcorrencia";
 import AcoesMaster from "../../components/AcoesMaster";
+import { AbasAprovacoes } from "../../components/AbasCronograma";
 import { excluirRdo, excluirHoras, excluirOcorrencia, excluirSolicitacao } from "../../lib/exclusoes";
 
 const ROTULO_CAMPO = { data_prevista_inicio: "Data de início", data_prevista_fim: "Data de término", nome: "Nome da etapa", outro: "Outro" };
@@ -154,6 +155,7 @@ export default function AprovacoesPage() {
     <PainelShell>
       <div className="p-4 md:p-8">
         <CabecalhoPagina titulo="Aprovações" subtitulo="RDOs, horas e alterações de cronograma aguardando aprovação." />
+        <AbasAprovacoes qtdPendentes={abas.reduce((s, [, , n]) => s + n, 0)} />
         {!editavel && <Aviso tipo="info" className="mb-4">Modo visualização — seu perfil não pode aprovar, editar ou reprovar.</Aviso>}
 
         <div className="flex gap-1 border-b border-line mb-5 overflow-x-auto">

@@ -161,7 +161,7 @@ export default function DashboardPage() {
           {pisFiltrados.map((pi) => {
             const prog = progressoDoPi(pi.id);
             return (
-              <Link key={pi.id} href={`/cronograma?pi=${pi.id}`} draggable={false} className="group block p-3 rounded-xl border border-transparent bg-panel hover:bg-white hover:border-line hover:shadow-sm transition-all">
+              <Link key={pi.id} href={`/pi?id=${pi.id}`} draggable={false} className="group block p-3 rounded-xl border border-transparent bg-panel hover:bg-white hover:border-line hover:shadow-sm transition-all">
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0">
                     <div className="font-semibold text-sm truncate"><span className="font-mono text-cyan">{pi.codigo}</span> · {pi.cliente || "—"}</div>

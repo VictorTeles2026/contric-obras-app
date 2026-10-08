@@ -2,6 +2,58 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ---------- cores (modo claro / escuro) ----------
+   Valores "R G B" usados pelo tailwind.config.js. O botão de tema (menu do usuário)
+   grava data-theme="dark" no <html>; sem ele vale o claro. */
+:root {
+  --cor-navy: 11 46 68;
+  --cor-navysoft: 19 67 94;
+  --cor-cyan: 23 128 174;
+  --cor-green: 46 158 68;
+  --cor-amber: 201 122 33;
+  --cor-red: 214 69 69;
+  --cor-panel: 244 247 251;
+  --cor-superficie: 255 255 255;
+  --cor-line: 220 228 238;
+  --cor-muted: 91 107 133;
+  --cor-muteddim: 138 153 174;
+  --cor-textmain: 15 42 68;
+  color-scheme: light;
+}
+html[data-theme="dark"] {
+  --cor-navy: 14 58 87;
+  --cor-navysoft: 22 76 108;
+  --cor-cyan: 36 144 194;
+  --cor-green: 92 194 116;
+  --cor-amber: 227 160 78;
+  --cor-red: 238 122 122;
+  --cor-panel: 8 22 34;
+  --cor-superficie: 15 36 54;
+  --cor-line: 32 57 80;
+  --cor-muted: 167 182 201;
+  --cor-muteddim: 111 129 153;
+  --cor-textmain: 230 238 246;
+  color-scheme: dark;
+}
+/* no escuro, os fundos brancos escritos direto nas telas (bg-white) viram superfície escura */
+html[data-theme="dark"] .bg-white { background-color: rgb(var(--cor-superficie)); }
+html[data-theme="dark"] .bg-white\/95 { background-color: rgb(var(--cor-superficie) / 0.95); }
+html[data-theme="dark"] .bg-white\/80 { background-color: rgb(var(--cor-superficie) / 0.8); }
+html[data-theme="dark"] .hover\:bg-white:hover { background-color: rgb(var(--cor-superficie)); }
+/* texto em azul-marinho (títulos, ícones) precisa clarear sobre fundo escuro */
+html[data-theme="dark"] .text-navy { color: #CFE3F2; }
+html[data-theme="dark"] .rolagem-linha-tempo { scrollbar-color: #3A5A78 #0F2436; }
+html[data-theme="dark"] .rolagem-linha-tempo::-webkit-scrollbar-track,
+html[data-theme="dark"] .rolagem-linha-tempo::-webkit-scrollbar-corner { background: #0F2436; }
+html[data-theme="dark"] .rolagem-linha-tempo::-webkit-scrollbar-thumb { background: #3A5A78; border-color: #0F2436; }
+html[data-theme="dark"] .esqueleto { background: linear-gradient(90deg, #12293D 0px, #183550 80px, #12293D 160px); background-size: 200px 100%; }
+html[data-theme="dark"] .rolagem-fina::-webkit-scrollbar-thumb { background: #24405A; }
+
+/* logo: a versão de texto escuro no claro e a de texto branco no escuro */
+.logo-no-escuro { display: none; }
+html[data-theme="dark"] .logo-no-claro { display: none; }
+html[data-theme="dark"] .logo-no-escuro { display: inline-block; }
+
 html, body {
   min-height: 100%;
 }
@@ -42,7 +94,7 @@ input[type="date"], input[type="time"] {
 @layer components {
   /* ---------- campos ---------- */
   .input {
-    @apply w-full rounded-lg border border-line bg-white px-3 py-2 text-sm text-textmain
+    @apply w-full rounded-lg border border-line bg-superficie px-3 py-2 text-sm text-textmain
       transition-colors placeholder:text-muteddim
       hover:border-muteddim focus:border-cyan focus:outline-none focus:ring-2 focus:ring-cyan/20
       disabled:cursor-not-allowed disabled:bg-panel disabled:text-muted;
@@ -71,20 +123,20 @@ input[type="date"], input[type="time"] {
   .btn-sucesso { @apply bg-green text-white shadow-sm hover:bg-[#288a3b]; }
   .btn-alerta { @apply bg-amber text-white shadow-sm hover:bg-[#b36c1d]; }
   .btn-perigo { @apply bg-red text-white shadow-sm hover:bg-[#c03c3c]; }
-  .btn-contorno { @apply border border-line bg-white text-textmain hover:border-muteddim hover:bg-panel; }
-  .btn-contorno-perigo { @apply border border-red/40 bg-white text-red hover:bg-red/5; }
+  .btn-contorno { @apply border border-line bg-superficie text-textmain hover:border-muteddim hover:bg-panel; }
+  .btn-contorno-perigo { @apply border border-red/40 bg-superficie text-red hover:bg-red/5; }
   .btn-fantasma { @apply text-muted hover:bg-panel hover:text-textmain; }
 
   /* ---------- chips / filtros ---------- */
   .chip {
-    @apply inline-flex items-center gap-1.5 rounded-full border border-line bg-white px-3 py-1.5 text-xs font-medium text-muted
+    @apply inline-flex items-center gap-1.5 rounded-full border border-line bg-superficie px-3 py-1.5 text-xs font-medium text-muted
       transition-colors hover:border-muteddim hover:text-textmain;
   }
   .chip-ativo { @apply border-cyan bg-cyan text-white hover:border-cyan hover:text-white; }
 
   /* ---------- superfícies ---------- */
   .cartao {
-    @apply rounded-xl border border-line bg-white shadow-[0_1px_2px_rgba(14,27,61,0.04)];
+    @apply rounded-xl border border-line bg-superficie shadow-[0_1px_2px_rgba(14,27,61,0.04)];
   }
   .cartao-interativo {
     @apply transition-all hover:-translate-y-px hover:border-cyan/40 hover:shadow-md active:translate-y-0;
@@ -95,9 +147,9 @@ input[type="date"], input[type="time"] {
      titulo-quadro   → título de quadro / cartão / seção (h2)
      titulo-secao    → rótulo pequeno em maiúsculas (cabeçalho de tabela, grupo)
      texto-apoio     → linha secundária (datas, detalhes) */
-  .titulo-pagina { @apply font-head text-xl font-bold leading-tight text-textmain md:text-2xl; }
-  .titulo-destaque { @apply font-head text-lg font-bold leading-tight; }
-  .titulo-quadro { @apply font-head text-base font-bold leading-tight; }
+  .titulo-pagina { @apply font-head text-xl font-semibold leading-tight tracking-tight text-textmain md:text-2xl; }
+  .titulo-destaque { @apply font-head text-lg font-semibold leading-tight tracking-tight; }
+  .titulo-quadro { @apply font-head text-[15px] font-semibold leading-tight; }
   .texto-apoio { @apply text-xs text-muted; }
   .titulo-secao {
     @apply text-[11px] font-semibold uppercase tracking-wider text-muteddim;

@@ -5,10 +5,9 @@ import Link from "next/link";
 import { useRouter, usePathname } from "next/navigation";
 import { useAuth, podeAcessarDesktop, ROTULO_PERFIL } from "../lib/AuthContext";
 import { rotaInicialPara } from "../lib/nav";
-import { navPermitida, itemDaRota, itemPermitido, primeiraRotaPainel } from "../lib/nav";
+import { navPermitida, navAgrupada, itemDaRota, itemAtivo, itemPermitido, primeiraRotaPainel } from "../lib/nav";
 import { useTabela } from "../lib/dados";
-import { Logo, TelaCarregando } from "./ui";
-import { TelaAcessoNegado } from "./ui";
+import { Logo, TelaCarregando, TelaAcessoNegado, BotaoTema } from "./ui";
 import Icone from "./Icone";
 import SinoNotificacoes from "./SinoNotificacoes";
 import AlterarSenha from "./AlterarSenha";
@@ -41,8 +40,19 @@ export default function PainelShell({ children }) {
 
   useEffect(() => { setMenuAberto(false); }, [pathname]);
 
+  // "?aba=..." da URL: diferencia itens que abrem abas da mesma página (Recursos × Utilização × Empresas).
+  // Atualiza ao trocar de página, ao clicar no menu e quando a página troca de aba sozinha.
+  const [busca, setBusca] = useState("");
+  useEffect(() => {
+    const ler = () => setBusca(window.location.search);
+    ler();
+    window.addEventListener("aba-mudou", ler);
+    window.addEventListener("popstate", ler);
+    return () => { window.removeEventListener("aba-mudou", ler); window.removeEventListener("popstate", ler); };
+  }, [pathname]);
+
   // página que o usuário não tem permissão de ver: vai para a primeira que ele pode
-  const itemAtual = itemDaRota(pathname || "");
+  const itemAtual = itemDaRota(pathname || "", busca);
   const paginaNegada = !!usuario && podeAcessarDesktop(usuario) && itemAtual && !itemPermitido(usuario, itemAtual);
   useEffect(() => {
     if (paginaNegada) router.replace(primeiraRotaPainel(usuario));
@@ -53,36 +63,39 @@ export default function PainelShell({ children }) {
   if (!usuario) return <TelaAcessoNegado mensagem={erroCadastro} onSair={sair} />;
   if (!podeAcessarDesktop(usuario) || paginaNegada) return <TelaCarregando texto="Redirecionando..." />;
 
+  // ---- visual "Clean SaaS": menu claro, em grupos, item ativo em cartão ----
   const itemMenu = (item, compacto = false) => {
-    const ativo = pathname === item.href || pathname.startsWith(`${item.href}/`);
+    const ativo = itemAtivo(item, pathname, busca);
     return (
       <Link key={item.href} href={item.href} aria-current={ativo ? "page" : undefined}
-        className={`group flex items-center gap-3 rounded-lg px-3 ${compacto ? "py-3" : "py-2"} text-sm transition-colors ${
-          ativo ? "bg-white/10 text-white font-semibold" : "text-slate-300 hover:bg-white/5 hover:text-white"
+        onClick={() => setTimeout(() => setBusca(window.location.search), 0)}
+        className={`group flex items-center gap-2.5 rounded-lg px-2.5 ${compacto ? "py-3" : "py-[7px]"} text-[13.5px] transition-colors ${
+          ativo ? "bg-superficie text-textmain font-semibold shadow-[0_1px_2px_rgba(15,42,68,0.08)] ring-1 ring-line" : "text-muted hover:bg-superficie/70 hover:text-textmain"
         }`}>
-        <Icone nome={item.icone} className={`w-[18px] h-[18px] shrink-0 ${ativo ? "text-cyan" : "text-slate-400 group-hover:text-slate-200"}`} />
-        <span className="flex-1">{item.label}</span>
+        <Icone nome={item.icone} className={`w-[17px] h-[17px] shrink-0 ${ativo ? "text-cyan" : "text-muteddim group-hover:text-muted"}`} />
+        <span className="flex-1 truncate">{item.label}</span>
         {item.href === "/aprovacoes" && pendencias > 0 && (
-          <span className="min-w-[20px] h-5 px-1.5 rounded-full bg-amber text-white text-[11px] font-bold flex items-center justify-center">{pendencias}</span>
+          <span className="min-w-[20px] h-5 px-1.5 rounded-full bg-amber/15 text-amber text-[11px] font-semibold flex items-center justify-center tabular-nums">{pendencias}</span>
         )}
       </Link>
     );
   };
 
   const rodapeUsuario = (
-    <div className="pt-3 mt-3 border-t border-white/10 flex items-center gap-3 px-1">
-      <div className="w-9 h-9 rounded-full bg-navysoft flex items-center justify-center text-xs font-bold shrink-0">
+    <div className="pt-3 mt-3 border-t border-line flex items-center gap-2 px-1">
+      <div className="w-8 h-8 rounded-full bg-navy text-white flex items-center justify-center text-[11px] font-semibold shrink-0">
         {(usuario.nome || "?").split(" ").slice(0, 2).map((p) => p[0]).join("").toUpperCase()}
       </div>
       <div className="min-w-0 flex-1">
-        <div className="text-sm text-white truncate">{usuario.nome}</div>
-        <div className="text-xs text-slate-400">{ROTULO_PERFIL[usuario.perfil] || usuario.perfil}</div>
+        <div className="text-[13px] font-medium text-textmain truncate">{usuario.nome}</div>
+        <div className="text-[11px] text-muteddim">{ROTULO_PERFIL[usuario.perfil] || usuario.perfil}</div>
       </div>
-      <button onClick={() => setTrocandoSenha(true)} title="Alterar minha senha" aria-label="Alterar minha senha" className="p-2 rounded-lg text-slate-300 hover:bg-white/10 hover:text-white">
-        <Icone nome="chave" className="w-[18px] h-[18px]" />
+      <BotaoTema />
+      <button onClick={() => setTrocandoSenha(true)} title="Alterar minha senha" aria-label="Alterar minha senha" className="p-2 rounded-lg text-muted hover:bg-panel hover:text-textmain">
+        <Icone nome="chave" className="w-[17px] h-[17px]" />
       </button>
-      <button onClick={sair} title="Sair" aria-label="Sair" className="p-2 rounded-lg text-slate-300 hover:bg-white/10 hover:text-white">
-        <Icone nome="sair" className="w-[18px] h-[18px]" />
+      <button onClick={sair} title="Sair" aria-label="Sair" className="p-2 rounded-lg text-muted hover:bg-panel hover:text-textmain">
+        <Icone nome="sair" className="w-[17px] h-[17px]" />
       </button>
     </div>
   );
@@ -90,25 +103,33 @@ export default function PainelShell({ children }) {
   // menu conforme a matriz de permissões do usuário
   const navVisivel = navPermitida(usuario);
   const principais = navVisivel.filter((i) => i.principal);
+  // menu em grupos (Visão geral, Obras, Campo, Análise, Cadastros, Administração)
+  const menuAgrupado = (compacto) => navAgrupada(navVisivel).map(([grupo, itens]) => (
+    <div key={grupo} className="mb-3 flex flex-col gap-px">
+      <div className="px-2.5 pb-1 text-[11px] font-medium text-muteddim">{grupo}</div>
+      {itens.map((item) => itemMenu(item, compacto))}
+    </div>
+  ));
 
   return (
     <div className="min-h-[100dvh] flex flex-col md:flex-row bg-panel">
       {/* Sidebar — desktop */}
-      <aside className="hidden md:flex md:flex-col print:!hidden w-60 shrink-0 bg-navy text-white p-4 sticky top-0 h-screen">
-        <div className="mb-6 px-1 flex items-center justify-between"><Logo tamanho="lg" claro /><SinoNotificacoes usuario={usuario} /></div>
-        <nav className="flex flex-col gap-0.5 overflow-y-auto rolagem-fina -mx-1 px-1">
-          {navVisivel.map((item) => itemMenu(item))}
+      <aside className="hidden md:flex md:flex-col print:!hidden w-60 shrink-0 bg-panel border-r border-line px-3 py-4 sticky top-0 h-screen">
+        <div className="mb-5 px-1 flex items-center justify-between"><Logo tamanho="md" adaptavel /><SinoNotificacoes usuario={usuario} escuro={false} /></div>
+        <nav className="flex flex-col overflow-y-auto rolagem-fina -mx-1 px-1">
+          {menuAgrupado(false)}
         </nav>
         <div className="mt-auto">{rodapeUsuario}</div>
       </aside>
 
       {/* Topbar — mobile */}
-      <header className="md:hidden print:hidden sticky top-0 z-30 bg-navy text-white" style={{ paddingTop: "env(safe-area-inset-top)" }}>
+      <header className="md:hidden print:hidden sticky top-0 z-30 bg-superficie/95 backdrop-blur border-b border-line" style={{ paddingTop: "env(safe-area-inset-top)" }}>
         <div className="flex items-center justify-between px-4 h-14">
-          <Logo tamanho="sm" claro />
+          <Logo tamanho="sm" adaptavel />
           <div className="flex items-center gap-1 min-w-0">
-            <div className="text-xs text-slate-300 truncate max-w-[160px]">{usuario.nome}</div>
-            <SinoNotificacoes usuario={usuario} />
+            <div className="text-xs text-muted truncate max-w-[140px]">{usuario.nome}</div>
+            <BotaoTema />
+            <SinoNotificacoes usuario={usuario} escuro={false} />
           </div>
         </div>
       </header>
@@ -117,11 +138,11 @@ export default function PainelShell({ children }) {
         <div className="animar-pagina h-full" key={pathname}>{children}</div>
       </main>
 
-      {/* Nav inferior — mobile: 4 atalhos + "Mais" com o restante do menu */}
-      <nav className="md:hidden print:hidden fixed bottom-0 left-0 right-0 z-30 bg-white/95 backdrop-blur border-t border-line" style={{ paddingBottom: "env(safe-area-inset-bottom)" }}>
+      {/* Nav inferior — mobile: atalhos principais + "Mais" com o restante do menu */}
+      <nav className="md:hidden print:hidden fixed bottom-0 left-0 right-0 z-30 bg-superficie/95 backdrop-blur border-t border-line" style={{ paddingBottom: "env(safe-area-inset-bottom)" }}>
         <div className="flex justify-around px-1">
           {principais.map((item) => {
-            const ativo = pathname === item.href || pathname.startsWith(`${item.href}/`);
+            const ativo = itemAtivo(item, pathname, busca);
             return (
               <Link key={item.href} href={item.href}
                 className={`relative flex-1 flex flex-col items-center gap-1 pt-2.5 pb-2 min-h-[58px] text-[11px] font-medium ${ativo ? "text-cyan" : "text-muteddim"}`}>
@@ -137,7 +158,7 @@ export default function PainelShell({ children }) {
             );
           })}
           <button onClick={() => setMenuAberto(true)}
-            className={`flex-1 flex flex-col items-center gap-1 pt-2.5 pb-2 min-h-[58px] text-[11px] font-medium ${!principais.some((i) => i.href === pathname) ? "text-cyan" : "text-muteddim"}`}>
+            className={`flex-1 flex flex-col items-center gap-1 pt-2.5 pb-2 min-h-[58px] text-[11px] font-medium ${!principais.some((i) => itemAtivo(i, pathname, busca)) ? "text-cyan" : "text-muteddim"}`}>
             <Icone nome="menu" className="w-[22px] h-[22px]" />
             Mais
           </button>
@@ -149,17 +170,17 @@ export default function PainelShell({ children }) {
       {/* Menu completo — mobile */}
       {menuAberto && (
         <div className="md:hidden fixed inset-0 z-50 animar-fade">
-          <div className="absolute inset-0 bg-navy/50" onClick={() => setMenuAberto(false)} />
-          <div className="absolute bottom-0 left-0 right-0 bg-navy text-white rounded-t-2xl p-4 animar-subir max-h-[85dvh] overflow-y-auto"
+          <div className="absolute inset-0 bg-navy/40" onClick={() => setMenuAberto(false)} />
+          <div className="absolute bottom-0 left-0 right-0 bg-panel rounded-t-2xl p-4 animar-subir max-h-[85dvh] overflow-y-auto"
             style={{ paddingBottom: "max(1rem, env(safe-area-inset-bottom))" }}>
-            <div className="mx-auto mb-3 h-1.5 w-10 rounded-full bg-white/20" />
+            <div className="mx-auto mb-3 h-1.5 w-10 rounded-full bg-line" />
             <div className="flex items-center justify-between mb-3 px-1">
-              <Logo tamanho="sm" claro />
-              <button onClick={() => setMenuAberto(false)} className="p-2 rounded-lg text-slate-300 hover:bg-white/10" aria-label="Fechar menu">
+              <Logo tamanho="sm" adaptavel />
+              <button onClick={() => setMenuAberto(false)} className="p-2 rounded-lg text-muted hover:bg-superficie" aria-label="Fechar menu">
                 <Icone nome="fechar" />
               </button>
             </div>
-            <nav className="grid grid-cols-1 gap-0.5">{navVisivel.map((item) => itemMenu(item, true))}</nav>
+            <nav className="grid grid-cols-1">{menuAgrupado(true)}</nav>
             {rodapeUsuario}
           </div>
         </div>

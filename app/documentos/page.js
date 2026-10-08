@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useTabela, registrarLog, chamarApi } from "../../lib/dados";
 import { useAuth, pode } from "../../lib/AuthContext";
 import { supabase } from "../../lib/supabase";
@@ -64,6 +64,16 @@ export default function DocumentosPage() {
   const [docsCliente, setDocsCliente] = useState([]); // [{ id, cliente_id, caminho }]
   const [liberando, setLiberando] = useState(null);   // item (documento) sendo liberado a clientes
   const liberadosDe = (caminho) => docsCliente.filter((d) => d.caminho === caminho);
+
+  // aberto pela Página do PI (?pi=...): já busca os arquivos daquele PI (assim que a lista de PIs carregar)
+  const abriuDoLinkRef = useRef(false);
+  useEffect(() => {
+    if (abriuDoLinkRef.current || !pis.length) return;
+    abriuDoLinkRef.current = true;
+    const doLink = new URLSearchParams(window.location.search).get("pi");
+    if (doLink && pis.some((p) => p.id === doLink)) { setPiId(doLink); buscar(doLink); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pis]);
 
   const buscar = async (id = piId) => {
     if (!id) return;

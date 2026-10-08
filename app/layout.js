@@ -19,14 +19,16 @@ export const viewport = {
 
 export default function RootLayout({ children }) {
   return (
-    <html lang="pt-BR">
+    <html lang="pt-BR" suppressHydrationWarning>
       <head>
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
         <link
-          href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap"
+          href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500;600&display=swap"
           rel="stylesheet"
         />
+        {/* aplica o tema escolhido (claro/escuro) antes de desenhar a página — evita "piscar" */}
+        <script dangerouslySetInnerHTML={{ __html: "try{var t=localStorage.getItem('contric:tema');if(t==='dark')document.documentElement.setAttribute('data-theme','dark')}catch(e){}" }} />
       </head>
       <body className="font-body bg-panel text-textmain">
         <AuthProvider>

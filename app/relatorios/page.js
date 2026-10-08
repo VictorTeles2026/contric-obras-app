@@ -65,6 +65,11 @@ export default function RelatoriosPage() {
   const podeVisualizar = piId && (comCusto || comHoras);
   const visualizar = () => podeVisualizar && setVisualizando({ piId, custo: comCusto, horas: comHoras });
   const piVisto = pis.find((p) => p.id === visualizando?.piId);
+  // aberto pela Página do PI (?pi=...): já mostra o relatório daquele PI
+  useEffect(() => {
+    const doLink = new URLSearchParams(window.location.search).get("pi");
+    if (doLink) { setPiId(doLink); setVisualizando({ piId: doLink, custo: true, horas: true }); }
+  }, []);
   const itensDoPi = orcamentos.filter((o) => o.pi_id === visualizando?.piId);
   const categoriasHoras = categorias.filter((c) => c.grupo === "moi_horas");
 

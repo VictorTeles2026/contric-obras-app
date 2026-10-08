@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useMemo, useEffect, useLayoutEffect, useRef } from "react";
+import Link from "next/link";
 import { useTabela } from "../../lib/dados";
 import { tsLocal, diasAte as diffDias, formatarData as formatarDataIso } from "../../lib/datas";
 import { AREAS, STATUS_ETAPA, PRAZOS } from "../../lib/constantes";
@@ -395,6 +396,8 @@ export default function LinhaDoTempoPage() {
                           </span>
                         )}
                       </button>
+                      <Link href={`/pi?id=${pi.id}`} title="Abrir a Página do PI" aria-label={`Abrir a Página do PI ${pi.codigo}`}
+                        className="shrink-0 ml-2 p-1.5 rounded-lg text-cyan hover:bg-cyan/10"><Icone nome="obra" className="w-4 h-4" /></Link>
                       <button onClick={() => setQrPi(pi)} title="QR Code do PI (ver, gerar PDF e imprimir)" aria-label={`QR Code do PI ${pi.codigo}`}
                         className="shrink-0 mx-2 p-1.5 rounded-lg text-cyan hover:bg-cyan/10"><Icone nome="qr" className="w-4 h-4" /></button>
                       </div>

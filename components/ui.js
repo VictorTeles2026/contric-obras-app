@@ -4,10 +4,39 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import Icone from "./Icone";
 
-export function Logo({ tamanho = "md", claro = false }) {
-  // logo oficial: versão "claro" (texto branco) para fundos escuros
+export function Logo({ tamanho = "md", claro = false, adaptavel = false }) {
+  // logo oficial: versão "claro" (texto branco) para fundos escuros.
+  // `adaptavel`: troca sozinha conforme o tema (texto escuro no claro, branco no escuro)
   const h = tamanho === "xl" ? "h-28" : tamanho === "lg" ? "h-16" : tamanho === "sm" ? "h-10" : "h-12";
+  if (adaptavel) return (
+    <>
+      <img src="/logo.png" alt="Contric" className={`${h} w-auto select-none logo-no-claro`} draggable={false} />
+      <img src="/logo-claro.png" alt="Contric" className={`${h} w-auto select-none logo-no-escuro`} draggable={false} />
+    </>
+  );
   return <img src={claro ? "/logo-claro.png" : "/logo.png"} alt="Contric" className={`${h} w-auto select-none`} draggable={false} />;
+}
+
+// Botão discreto de tema claro/escuro (grava a escolha neste navegador)
+export function BotaoTema({ className = "" }) {
+  const [escuro, setEscuro] = useState(false);
+  useEffect(() => { setEscuro(document.documentElement.getAttribute("data-theme") === "dark"); }, []);
+  const alternar = () => {
+    const novo = !escuro;
+    setEscuro(novo);
+    if (novo) document.documentElement.setAttribute("data-theme", "dark"); else document.documentElement.removeAttribute("data-theme");
+    try { localStorage.setItem("contric:tema", novo ? "dark" : "light"); } catch { /* sem armazenamento: vale só nesta visita */ }
+  };
+  return (
+    <button onClick={alternar} title={escuro ? "Usar modo claro" : "Usar modo escuro"} aria-label={escuro ? "Usar modo claro" : "Usar modo escuro"}
+      className={`p-2 rounded-lg text-muted hover:bg-panel hover:text-textmain transition-colors ${className}`}>
+      {escuro ? (
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" className="w-[18px] h-[18px]" aria-hidden="true"><circle cx="12" cy="12" r="4" /><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" /></svg>
+      ) : (
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" className="w-[18px] h-[18px]" aria-hidden="true"><path d="M20 14.5A8 8 0 0 1 9.5 4 8 8 0 1 0 20 14.5Z" /></svg>
+      )}
+    </button>
+  );
 }
 
 export function TelaCarregando({ texto = "Carregando..." }) {

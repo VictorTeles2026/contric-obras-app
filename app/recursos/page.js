@@ -3,6 +3,7 @@
 import { useState, useMemo, useRef, useEffect } from "react";
 import { useTabela, registrarLog, gravarTolerante } from "../../lib/dados";
 import EmpresasTerceiras from "../../components/EmpresasTerceiras";
+import { useRouter } from "next/navigation";
 import { useAuth, pode } from "../../lib/AuthContext";
 import { supabase } from "../../lib/supabase";
 import { hojeISO, formatarData } from "../../lib/datas";
@@ -32,7 +33,8 @@ function tipoParaPerfil(perfil) {
   return "mao_obra_propria";
 }
 
-export default function RecursosPage() {
+export default function RecursosPage({ searchParams }) {
+  const router = useRouter();
   const { usuario } = useAuth();
   const editavel = pode(usuario, "recurso.editar");
   const podeAlocar = pode(usuario, "recurso.alocar");
@@ -251,16 +253,18 @@ export default function RecursosPage() {
   };
 
   // abas: cadastro/alocação e o gráfico de utilização (que antes era uma página separada)
+  // a aba acompanha a URL: os itens do menu "Utilização de recursos" e "Empresas terceiras"
+  // abrem esta mesma página com ?aba=utilizacao / ?aba=empresas
   const [aba, setAbaEstado] = useState("cadastro");
+  const abaDaUrl = searchParams?.aba;
   useEffect(() => {
-    const abaUrl = new URLSearchParams(window.location.search).get("aba");
-    if (abaUrl === "utilizacao" || abaUrl === "empresas") setAbaEstado(abaUrl);
-  }, []);
+    setAbaEstado(abaDaUrl === "utilizacao" || abaDaUrl === "empresas" ? abaDaUrl : "cadastro");
+  }, [abaDaUrl]);
   const setAba = (v) => {
     setAbaEstado(v);
-    const url = new URL(window.location.href);
-    if (v !== "cadastro") url.searchParams.set("aba", v); else url.searchParams.delete("aba");
-    window.history.replaceState(null, "", url.toString());
+    // pelo roteador (e não history.replaceState): assim a URL "oficial" muda junto e o menu continua sincronizado
+    router.replace(v !== "cadastro" ? `/recursos?aba=${v}` : "/recursos", { scroll: false });
+    setTimeout(() => window.dispatchEvent(new Event("aba-mudou")), 50); // o menu lateral acende o item certo
   };
   const sobrealocados = useMemo(() => recursos.filter((r) => {
     const eventos = [];
