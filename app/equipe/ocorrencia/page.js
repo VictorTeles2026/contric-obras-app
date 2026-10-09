@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { registrarLog, useTabela, gravarTolerante } from "../../../lib/dados";
 import { useAuth } from "../../../lib/AuthContext";
 import { supabase } from "../../../lib/supabase";
@@ -31,6 +31,11 @@ export default function EquipeOcorrenciaPage() {
   });
 
   const [piIdEscolhido, setPiId] = useState("");
+  // aberto pelo botão "Ocorrência" de uma obra (?pi=...): já vem com a obra escolhida
+  useEffect(() => {
+    const doLink = new URLSearchParams(window.location.search).get("pi");
+    if (doLink) setPiId(doLink);
+  }, []);
   const piId = piIdEscolhido || (meusPis.length === 1 ? meusPis[0].id : "");
   const [categoria, setCategoria] = useState(null);
   const [descricao, setDescricao] = useState("");

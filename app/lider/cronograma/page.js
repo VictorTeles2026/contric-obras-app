@@ -43,6 +43,10 @@ export default function LiderCronogramaPage() {
                       <div className="titulo-destaque">{pi.projeto || pi.cliente}</div>
                       {pi.projeto && <div className="text-sm text-muted">{pi.cliente}</div>}
                     </div>
+                    <a href={`/equipe/ocorrencia?pi=${pi.id}`} className="shrink-0 flex flex-col items-center gap-0.5 rounded-xl border border-line bg-white px-2.5 py-1.5 text-amber active:bg-panel" aria-label={`Registrar ocorrência no PI ${pi.codigo}`}>
+                      <Icone nome="alerta" className="w-6 h-6" />
+                      <span className="text-[10px] font-semibold">Ocorrência</span>
+                    </a>
                     <button onClick={() => setQrPi(pi)} className="shrink-0 flex flex-col items-center gap-0.5 rounded-xl border border-line bg-white px-2.5 py-1.5 text-cyan active:bg-panel" aria-label={`QR Code do PI ${pi.codigo}`}>
                       <Icone nome="qr" className="w-6 h-6" />
                       <span className="text-[10px] font-semibold">QR Code</span>
