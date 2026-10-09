@@ -7,6 +7,32 @@ import { Spinner } from "./ui";
 
 const LIMITE_MB = 50;
 
+// Fotos de celular saem com 3–8 MB; antes de enviar, reduz para no máximo 1920 px em JPEG 80%
+// (~300–500 KB), suficiente para ver na tela e nos PDFs. Se não der para converter
+// (formato que o navegador não abre), envia o original.
+async function reduzirFoto(arquivo, maxLado = 1920, qualidade = 0.8) {
+  if (!/^image\//.test(arquivo.type) || /gif|svg/.test(arquivo.type)) return arquivo;
+  try {
+    let origem;
+    try { origem = await createImageBitmap(arquivo, { imageOrientation: "from-image" }); }
+    catch {
+      origem = await new Promise((ok, erro) => { const i = new Image(); i.onload = () => ok(i); i.onerror = erro; i.src = URL.createObjectURL(arquivo); });
+    }
+    const escala = Math.min(1, maxLado / Math.max(origem.width, origem.height));
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.round(origem.width * escala);
+    canvas.height = Math.round(origem.height * escala);
+    const ctx = canvas.getContext("2d");
+    ctx.fillStyle = "#FFFFFF"; ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(origem, 0, 0, canvas.width, canvas.height);
+    const blob = await new Promise((ok) => canvas.toBlob(ok, "image/jpeg", qualidade));
+    if (!blob || blob.size >= arquivo.size) return arquivo; // já era pequena
+    return new File([blob], arquivo.name.replace(/\.[^.]+$/, "") + ".jpg", { type: "image/jpeg" });
+  } catch {
+    return arquivo;
+  }
+}
+
 function extensaoDe(arquivo) {
   return (arquivo.name.split(".").pop() || "").toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 5)
     || (arquivo.type.split("/")[1] || "bin").replace(/[^a-z0-9]/g, "").slice(0, 5);
@@ -24,8 +50,9 @@ export default function CapturaMidia({ value, onChange, compacto, baseNome }) {
   const midiasRef = useRef(value || []);
   midiasRef.current = value || [];
 
-  const enviarArquivo = async (arquivo, tipo) => {
+  const enviarArquivo = async (original, tipo) => {
     setErro("");
+    const arquivo = tipo === "foto" ? await reduzirFoto(original) : original;
     if (arquivo.size > LIMITE_MB * 1024 * 1024) {
       setErro(`Arquivo muito grande (máx. ${LIMITE_MB} MB). Grave um vídeo mais curto.`);
       return;

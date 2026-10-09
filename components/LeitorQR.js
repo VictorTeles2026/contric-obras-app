@@ -14,9 +14,8 @@ export const gerarQrPi = (pi, tamanho = 600) =>
 // PDF A4 (retrato) com as informações GRANDES: nº do PI, cliente, descrição e o QR ocupando a folha
 async function pdfQrPi(pi) {
   const { jsPDF } = await import("jspdf");
-  const doc = new jsPDF({ unit: "mm", format: "a4" });
+  const doc = new jsPDF({ unit: "mm", format: "a4", compress: true });
   const L = 210, M = 15;
-  const qr = await gerarQrPi(pi, 1200);
   doc.setTextColor(11, 46, 68);
   doc.setFont("helvetica", "bold"); doc.setFontSize(14);
   doc.text("CONTRIC — GESTÃO DE OBRAS", L / 2, 20, { align: "center" });
@@ -34,7 +33,25 @@ async function pdfQrPi(pi) {
   }
   // QR o maior possível no espaço que sobra (até 165 mm)
   const lado = Math.min(165, 282 - y - 22);
-  doc.addImage(qr, "PNG", (L - lado) / 2, y + 6, lado, lado);
+  // QR desenhado em VETOR (um quadrado por módulo): arquivo de poucos KB e impressão nítida.
+  // (antes ia como imagem PNG de 1200 px, o que deixava o PDF com ~4 MB)
+  const qrModelo = QRCode.create(String(pi.codigo || ""), { errorCorrectionLevel: "M" });
+  const n = qrModelo.modules.size, dados = qrModelo.modules.data;
+  const margem = 1; // módulos de borda branca (o fundo da folha já é branco)
+  const passo = lado / (n + 2 * margem);
+  const x0 = (L - lado) / 2 + margem * passo, y0 = y + 6 + margem * passo;
+  doc.setFillColor(11, 46, 68);
+  for (let lin = 0; lin < n; lin++) {
+    // junta módulos escuros vizinhos da mesma linha num só retângulo (menos objetos no PDF)
+    let col = 0;
+    while (col < n) {
+      if (!dados[lin * n + col]) { col++; continue; }
+      let fim = col;
+      while (fim + 1 < n && dados[lin * n + fim + 1]) fim++;
+      doc.rect(x0 + col * passo, y0 + lin * passo, (fim - col + 1) * passo + 0.02, passo + 0.02, "F");
+      col = fim + 1;
+    }
+  }
   doc.setFont("helvetica", "normal"); doc.setFontSize(11); doc.setTextColor(91, 107, 133);
   doc.text("Aponte a câmera do app Contric (Ler QR) para abrir esta obra.", L / 2, Math.min(287, y + lado + 16), { align: "center" });
   return doc;
