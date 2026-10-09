@@ -262,8 +262,10 @@ export default function RecursosPage({ searchParams }) {
   }, [abaDaUrl]);
   const setAba = (v) => {
     setAbaEstado(v);
-    // pelo roteador (e não history.replaceState): assim a URL "oficial" muda junto e o menu continua sincronizado
-    router.replace(v !== "cadastro" ? `/recursos?aba=${v}` : "/recursos", { scroll: false });
+    // pelo roteador (e não history.replaceState): assim a URL "oficial" muda junto e o menu continua sincronizado.
+    // A aba "Recursos e alocações" mantém ?aba=alocacao se veio pelo item "Alocação de recursos" (Planejamento)
+    const cadastro = abaDaUrl === "alocacao" ? "/recursos?aba=alocacao" : "/recursos";
+    router.replace(v !== "cadastro" ? `/recursos?aba=${v}` : cadastro, { scroll: false });
     setTimeout(() => window.dispatchEvent(new Event("aba-mudou")), 50); // o menu lateral acende o item certo
   };
   const sobrealocados = useMemo(() => recursos.filter((r) => {

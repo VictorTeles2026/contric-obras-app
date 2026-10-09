@@ -25,8 +25,6 @@ export default function PainelShell({ children }) {
   const pathname = usePathname();
   const [menuAberto, setMenuAberto] = useState(false);
   const [trocandoSenha, setTrocandoSenha] = useState(false);
-  // seção do menu aberta: undefined = a da tela atual (automático); null = todas fechadas
-  const [secaoAberta, setSecaoAberta] = useState(undefined);
   const liberado = !!usuario && podeAcessarDesktop(usuario);
   const pendencias = usePendencias(liberado);
 
@@ -105,39 +103,23 @@ export default function PainelShell({ children }) {
   // menu conforme a matriz de permissões do usuário
   const navVisivel = navPermitida(usuario);
   const principais = navVisivel.filter((i) => i.principal);
-  // ---- menu "seções recolhíveis" ----
-  // topo: Dashboard e Aprovações sempre à mão · meio: Obras, Campo, Análise, Cadastros, uma
-  // seção aberta por vez (a da tela atual abre sozinha) · rodapé: Auditoria e Administração
-  const noTopo = (i) => i.href === "/dashboard" || i.href === "/aprovacoes";
+  // ---- menu sempre aberto, em todos os níveis (mais fácil de aprender) ----
+  // topo: Dashboard e Aprovações · meio: Obras, Campo, Análise, Cadastros (títulos fixos,
+  // itens sempre visíveis) · rodapé: Auditoria e Administração
+  const noTopo = (i) => i.href === "/dashboard" || i.href === "/aprovacoes" || i.href === "/pi";
   const noRodape = (i) => i.href === "/auditoria" || i.grupo === "Administração";
   const topo = navVisivel.filter(noTopo);
   const rodape = navVisivel.filter(noRodape);
   const secoes = navAgrupada(navVisivel.filter((i) => !noTopo(i) && !noRodape(i)));
-  const secaoDaTela = secoes.find(([, itens]) => itens.some((i) => itemAtivo(i, pathname, busca)))?.[0];
-  const secaoVisivel = secaoAberta === undefined ? secaoDaTela : secaoAberta;
   const menuAgrupado = (compacto) => (
     <>
       <div className="flex flex-col gap-px">{topo.map((item) => itemMenu(item, compacto))}</div>
-      <div className="h-px bg-line mx-2 my-3" />
-      {secoes.map(([grupo, itens]) => {
-        const aberta = secaoVisivel === grupo;
-        const temAtivo = grupo === secaoDaTela;
-        return (
-          <div key={grupo} className="flex flex-col gap-px mb-1">
-            <button onClick={() => setSecaoAberta(aberta ? null : grupo)} aria-expanded={aberta}
-              className={`flex items-center gap-2 px-2.5 ${compacto ? "py-3" : "py-1.5"} rounded-lg text-[12.5px] font-semibold text-left transition-colors hover:bg-superficie/70 ${aberta || temAtivo ? "text-textmain" : "text-muted"}`}>
-              <span className="flex-1">{grupo}</span>
-              {!aberta && <span className="text-[11px] font-normal text-muteddim tabular-nums">{itens.length}</span>}
-              <Icone nome="seta" className={`w-3.5 h-3.5 text-muteddim transition-transform ${aberta ? "rotate-90" : ""}`} />
-            </button>
-            {aberta && (
-              <div className="ml-[18px] pl-2 border-l border-line flex flex-col gap-px animar-fade">
-                {itens.map((item) => itemMenu(item, compacto))}
-              </div>
-            )}
-          </div>
-        );
-      })}
+      {secoes.map(([grupo, itens]) => (
+        <div key={grupo} className="flex flex-col gap-px mt-4">
+          <div className="px-2.5 pb-1 text-[11px] font-semibold uppercase tracking-[0.08em] text-muteddim">{grupo}</div>
+          {itens.map((item) => itemMenu(item, compacto))}
+        </div>
+      ))}
     </>
   );
   const menuRodape = (compacto) => rodape.length > 0 && (
