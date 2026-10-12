@@ -398,6 +398,7 @@ function AbaCampo({ pi }) {
 
   return (
     <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+      <AgoraEmCampo pi={pi} horasPi={horasPi} nome={nome} />
       <Secao titulo={`RDOs (${rdos.length})`} acao={<Link href="/rdo" className="text-sm text-cyan hover:underline">Ir para RDO</Link>}>
         {carregando && <Esqueleto linhas={3} altura={36} />}
         {!carregando && !rdos.length && <div className="text-sm text-muteddim">Nenhum RDO registrado.</div>}
@@ -439,6 +440,71 @@ function AbaCampo({ pi }) {
         </div>
       </Secao>
     </div>
+  );
+}
+
+// quadro "Agora em campo": quem está com check-in aberto neste PI e as etapas em andamento
+// (status "Em andamento" ou, sem status, dentro do período previsto hoje)
+function AgoraEmCampo({ pi, horasPi, nome }) {
+  const { dados: etapas } = useTabela("etapas", { filtro: [["pi_id", pi.id]], order: { coluna: "ordem" } });
+  const [agora, setAgora] = useState(Date.now());
+  useEffect(() => { const t = setInterval(() => setAgora(Date.now()), 30000); return () => clearInterval(t); }, []);
+  const hoje = new Date().toLocaleDateString("sv-SE");
+  const abertos = horasPi.filter((h) => h.entrada && !h.saida).sort((a, b) => a.entrada.localeCompare(b.entrada));
+  const desde = (iso) => {
+    const min = Math.max(0, Math.floor((agora - new Date(iso).getTime()) / 60000));
+    return `${Math.floor(min / 60)}h ${String(min % 60).padStart(2, "0")}min`;
+  };
+  const andamento = etapasEmArvore(etapas)
+    .filter((e) => e.status === "em_andamento" || (e.status !== "concluida" && e.status !== "parada" && e.data_prevista_inicio && e.data_prevista_inicio <= hoje && (!e.data_prevista_fim || e.data_prevista_fim >= hoje)));
+  const macro = (e) => (e.parent_etapa_id ? etapas.find((m) => m.id === e.parent_etapa_id)?.nome : null);
+
+  return (
+    <Secao titulo="Agora em campo" className="xl:col-span-2">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <div>
+          <div className="text-xs font-semibold text-muted uppercase tracking-wide mb-2">Check-in em aberto ({abertos.length})</div>
+          {!abertos.length && <div className="text-sm text-muteddim">Ninguém com check-in aberto neste PI agora.</div>}
+          <div className="flex flex-col gap-1.5">
+            {abertos.map((h) => {
+              const antigo = h.data && h.data !== hoje;
+              return (
+                <div key={h.id} className="rounded-lg bg-panel px-3 py-2 flex items-center gap-2 text-sm">
+                  <span className="w-2 h-2 rounded-full bg-green animate-pulse shrink-0" />
+                  <span className="flex-1 min-w-0 truncate font-medium">{nome(h.usuario_id)}</span>
+                  <span className="texto-apoio tabular-nums">desde {formatarDataHora(h.entrada)}</span>
+                  <span className={`selo ${antigo ? "bg-red/10 text-red" : "bg-green/10 text-green"}`}>{antigo ? "esquecido?" : desde(h.entrada)}</span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+        <div>
+          <div className="text-xs font-semibold text-muted uppercase tracking-wide mb-2">Etapas em andamento ({andamento.length})</div>
+          {!andamento.length && <div className="text-sm text-muteddim">Nenhuma etapa em andamento hoje.</div>}
+          <div className="flex flex-col gap-1.5">
+            {andamento.map((e) => {
+              const atrasada = e.data_prevista_fim && e.data_prevista_fim < hoje;
+              const pct = Number(e.percentual) || 0;
+              return (
+                <div key={e.id} className="rounded-lg bg-panel px-3 py-2 text-sm">
+                  <div className="flex items-center gap-2">
+                    <span className="flex-1 min-w-0 truncate"><strong className="font-semibold">{e.nome}</strong>{macro(e) && <span className="texto-apoio"> · {macro(e)}</span>}</span>
+                    <span className="texto-apoio tabular-nums shrink-0">{formatarData(e.data_prevista_inicio)} – {formatarData(e.data_prevista_fim)}</span>
+                    {atrasada && <span className="selo bg-red/10 text-red">atrasada</span>}
+                    {e.status !== "em_andamento" && <span className="selo bg-amber/10 text-amber" title="Dentro do período previsto, mas o status ainda não foi marcado como Em andamento">pelo prazo</span>}
+                  </div>
+                  <div className="mt-1.5 flex items-center gap-2">
+                    <div className="flex-1 h-1.5 rounded-full bg-line overflow-hidden"><div className="h-full bg-cyan" style={{ width: `${Math.min(100, pct)}%` }} /></div>
+                    <span className="text-xs tabular-nums w-9 text-right">{pct}%</span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+    </Secao>
   );
 }
 
