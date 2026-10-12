@@ -7,6 +7,7 @@ import { supabase } from "../lib/supabase";
 import { useMinhasPis, encontrarPiPorCodigo } from "../lib/minhasPis";
 import { hojeISO, horaCurta, formatarData, formatarHoras } from "../lib/datas";
 import { useToast } from "../lib/Toast";
+import { horasPontoComAlmoco } from "../lib/horas";
 import FormHoras from "./FormHoras";
 import UltimosLancamentos from "./UltimosLancamentos";
 import { Esqueleto, EstadoVazio, Segmentado, Aviso, Spinner } from "./ui";
@@ -39,8 +40,9 @@ export default function PontoHoras({ usuario }) {
   );
 }
 
+// horas entre check-in e check-out, já sem o intervalo de almoço (Configurações → Jornada)
 function horasEntre(iniISO, fimISO) {
-  return Math.max(0, (new Date(fimISO) - new Date(iniISO)) / 3600000);
+  return horasPontoComAlmoco(iniISO, fimISO);
 }
 
 function Cronometro({ desde }) {
@@ -203,7 +205,7 @@ function ConfirmacaoPonto({ tipo, pi, entrada, foraDasMinhasObras, processando, 
   const [agora, setAgora] = useState(new Date());
   useEffect(() => { const t = setInterval(() => setAgora(new Date()), 15000); return () => clearInterval(t); }, []);
   const ehCheckin = tipo === "checkin";
-  const horas = !ehCheckin && entrada ? Math.max(0, (agora - new Date(entrada)) / 3600000) : 0;
+  const horas = !ehCheckin && entrada ? horasPontoComAlmoco(entrada, agora.toISOString()) : 0; // já sem o almoço
   const hora = agora.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
   return (
     <div className="fixed inset-0 z-50 bg-navy/60 backdrop-blur-[2px] flex items-end sm:items-center justify-center animar-fade" role="dialog" aria-modal="true">
@@ -223,7 +225,7 @@ function ConfirmacaoPonto({ tipo, pi, entrada, foraDasMinhasObras, processando, 
               <>
                 <div><div className="text-muted text-xs">Entrada</div><strong className="text-lg">{entrada ? new Date(entrada).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) : "—"}</strong></div>
                 <div><div className="text-muted text-xs">Saída</div><strong className="text-lg">{hora}</strong></div>
-                <div className="col-span-2 pt-1 border-t border-line"><span className="text-muted">Total:</span> <strong className="text-lg">{formatarHoras(horas)}</strong></div>
+                <div className="col-span-2 pt-1 border-t border-line"><span className="text-muted">Total:</span> <strong className="text-lg">{formatarHoras(horas)}</strong> <span className="text-xs text-muted">(sem o almoço)</span></div>
               </>
             )}
           </div>

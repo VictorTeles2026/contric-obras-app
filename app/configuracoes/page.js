@@ -23,6 +23,7 @@ const SECOES = [
   ["status_etapa", "Status das etapas", "Nomes e cores das barras do cronograma e da Linha do Tempo."],
   ["status_pi", "Status dos PIs", "Nomes exibidos para os status do PI."],
   ["prazos", "Prazos de alerta", "Quando as etapas e medições ficam em destaque."],
+  ["jornada", "Jornada", "Intervalo de almoço descontado automaticamente dos lançamentos de horas."],
   ["feriados_extras", "Feriados adicionais", "Feriados municipais / da empresa no cálculo de dias úteis."],
   ["atalhos", "Outras configurações", "Permissões, empresas terceiras, usuários."],
 ];
@@ -87,6 +88,7 @@ export default function ConfiguracoesPage() {
             {secao === "status_etapa" && <EditorStatusEtapa {...props("status_etapa")} />}
             {secao === "status_pi" && <EditorStatusPi {...props("status_pi")} />}
             {secao === "prazos" && <EditorPrazos {...props("prazos")} />}
+            {secao === "jornada" && <EditorJornada {...props("jornada")} />}
             {secao === "feriados_extras" && <EditorFeriados {...props("feriados_extras")} />}
             {secao === "atalhos" && <Atalhos />}
           </section>
@@ -272,6 +274,28 @@ function EditorStatusPi({ chave, valor, personalizado, onSalvar, onRestaurar }) 
         ))}
       </div>
       <Rodape alterado={alterado} salvando={salvando} onSalvar={async () => { setSalvando(true); await onSalvar(chave, v); setSalvando(false); }}
+        onDescartar={() => setV(valor)} personalizado={personalizado} onRestaurar={onRestaurar} />
+    </>
+  );
+}
+
+function EditorJornada({ chave, valor, personalizado, onSalvar, onRestaurar }) {
+  const [v, setV] = useState(valor);
+  const [salvando, setSalvando] = useState(false);
+  useEffect(() => { setV(valor); }, [JSON.stringify(valor)]); // eslint-disable-line react-hooks/exhaustive-deps
+  const alterado = JSON.stringify(v) !== JSON.stringify(valor);
+  const invalido = !v.almocoInicio || !v.almocoFim || v.almocoFim <= v.almocoInicio;
+  return (
+    <>
+      <p className="texto-apoio mb-3">Vale para todo lançamento de horas, manual e por check-in/check-out: o sistema desconta só a parte do trabalho que cai dentro do intervalo. Quem trabalhou das 07:00 às 12:00 não tem desconto; das 07:00 às 17:00 desconta o intervalo inteiro.</p>
+      <div className="flex flex-wrap items-end gap-3">
+        <label className="block"><span className="rotulo">Almoço — início</span>
+          <input type="time" value={v.almocoInicio} onChange={(e) => setV((p) => ({ ...p, almocoInicio: e.target.value }))} className="input !w-36" /></label>
+        <label className="block"><span className="rotulo">Almoço — fim</span>
+          <input type="time" value={v.almocoFim} onChange={(e) => setV((p) => ({ ...p, almocoFim: e.target.value }))} className="input !w-36" /></label>
+      </div>
+      {invalido && <div className="text-sm text-red mt-2">O fim do almoço precisa ser depois do início.</div>}
+      <Rodape alterado={alterado && !invalido} salvando={salvando} onSalvar={async () => { setSalvando(true); await onSalvar(chave, v, `${v.almocoInicio}–${v.almocoFim}`); setSalvando(false); }}
         onDescartar={() => setV(valor)} personalizado={personalizado} onRestaurar={onRestaurar} />
     </>
   );

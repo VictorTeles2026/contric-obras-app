@@ -2,11 +2,12 @@ import { NextResponse } from "next/server";
 import { identificar, rotaSegura } from "../../../lib/authServidor";
 
 // Configurações estruturais — SOMENTE Master. Tudo vai para a Auditoria.
-const CHAVES = ["equipes", "funcoes", "categorias_ocorrencia", "tipos_recurso", "unidades", "classificacoes_doc", "prazos", "feriados_extras", "status_etapa", "status_pi"];
+const CHAVES = ["equipes", "funcoes", "categorias_ocorrencia", "tipos_recurso", "unidades", "classificacoes_doc", "prazos", "feriados_extras", "status_etapa", "status_pi", "jornada"];
 const ROTULO = {
   equipes: "Equipes", funcoes: "Funções", categorias_ocorrencia: "Categorias de ocorrência", tipos_recurso: "Tipos de recurso",
   unidades: "Modos de apropriação", classificacoes_doc: "Classificações de documentos", prazos: "Prazos de alerta",
   feriados_extras: "Feriados adicionais", status_etapa: "Status das etapas", status_pi: "Status dos PIs",
+  jornada: "Jornada (intervalo de almoço)",
 };
 const ausente = (e) => /does not exist|could not find|schema cache/i.test(e?.message || "");
 
