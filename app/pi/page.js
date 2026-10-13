@@ -14,6 +14,7 @@ import PainelShell from "../../components/PainelShell";
 import { CabecalhoPagina, EstadoVazio, Esqueleto, Aviso } from "../../components/ui";
 import Icone from "../../components/Icone";
 import { ModalQrPi } from "../../components/LeitorQR";
+import { horasDoLancamento } from "../../lib/horas";
 
 // Página do PI: tudo de uma obra num só lugar (Resumo, Cronograma, Equipe, Campo,
 // Documentos, Financeiro, Cliente). Sem ?id=... mostra a lista de PIs para escolher.
@@ -546,7 +547,23 @@ function AbaFinanceiro({ pi, usuario }) {
   const { dados: itens, carregando } = useTabela("orcamento_pi_item", { filtro: [["pi_id", pi.id]] });
   const { dados: categorias } = useTabela("categorias_orcamento", { order: { coluna: "ordem" } });
   const { dados: etapas } = useTabela("etapas", { select: "id,nome,medicao,medicao_valor,medicao_percentual,status,data_prevista_fim", filtro: [["pi_id", pi.id]] });
-  const grupo = (g) => categorias.filter((c) => c.grupo === g).map((c) => ({ c, it: itens.find((i) => i.categoria_id === c.id) })).filter(({ it }) => it && (Number(it.valor_orcado) || Number(it.valor_realizado)));
+  // horas realizadas = ajuste manual (valor_realizado) + horas classificadas nos lançamentos — igual ao Relatório
+  const { dados: apontamentos } = useTabela("apontamentos_horas", { filtro: [["pi_id", pi.id]] });
+  const apontado = useMemo(() => {
+    const a = {};
+    apontamentos.filter((l) => l.status !== "rejeitado").forEach((l) => {
+      const h = horasDoLancamento(l);
+      if (l.categoria_normal_id) a[l.categoria_normal_id] = (a[l.categoria_normal_id] || 0) + h.normais;
+      if (l.categoria_extra_id) a[l.categoria_extra_id] = (a[l.categoria_extra_id] || 0) + h.extras;
+    });
+    return a;
+  }, [apontamentos]);
+  const grupo = (g) => categorias.filter((c) => c.grupo === g).map((c) => {
+    const base = itens.find((i) => i.categoria_id === c.id);
+    const ap = g === "moi_horas" ? apontado[c.id] || 0 : 0;
+    const it = base || ap ? { valor_orcado: base?.valor_orcado, valor_realizado: base?.valor_realizado == null && !ap ? null : (Number(base?.valor_realizado) || 0) + ap } : null;
+    return { c, it };
+  }).filter(({ it }) => it && (Number(it.valor_orcado) || Number(it.valor_realizado)));
   const soma = (l, campo) => l.reduce((s, { it }) => s + Number(it[campo] || 0), 0);
   const compra = grupo("compra_reais"), moi = grupo("moi_horas");
   const medicoes = etapas.filter((e) => e.medicao);
