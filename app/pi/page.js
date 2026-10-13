@@ -567,21 +567,36 @@ function AbaFinanceiro({ pi, usuario }) {
   const soma = (l, campo) => l.reduce((s, { it }) => s + Number(it[campo] || 0), 0);
   const compra = grupo("compra_reais"), moi = grupo("moi_horas");
   const medicoes = etapas.filter((e) => e.medicao);
+  // diferença = Orçado − Realizado (positivo = dentro do orçado, negativo = acima), igual ao Relatório
+  const difCelulas = (orc, real, fmt) => {
+    const o = Number(orc) || 0, r = Number(real) || 0, dif = o - r;
+    const perc = o ? (dif / o) * 100 : null;
+    const cor = dif >= 0 ? "text-green" : "text-red";
+    return (<>
+      <td className={`py-1.5 text-right tabular-nums ${cor}`}>{dif > 0 ? "+" : ""}{fmt(dif)}</td>
+      <td className={`py-1.5 text-right tabular-nums ${perc === null ? "text-muteddim" : cor}`}>{perc === null ? "—" : `${perc > 0 ? "+" : ""}${perc.toLocaleString("pt-BR", { maximumFractionDigits: 1 })}%`}</td>
+    </>);
+  };
   const tabela = (titulo, l, fmt) => (
     <Secao titulo={titulo}>
       {!l.length && <div className="text-sm text-muteddim">Sem valores lançados.</div>}
       {l.length > 0 && (
+        <div className="overflow-x-auto">
         <table className="w-full text-sm">
-          <thead><tr className="text-left border-b border-line"><th className="py-2 titulo-secao">Categoria</th><th className="py-2 titulo-secao text-right">Orçado</th><th className="py-2 titulo-secao text-right">Realizado</th></tr></thead>
+          <thead><tr className="text-left border-b border-line"><th className="py-2 titulo-secao">Categoria</th><th className="py-2 titulo-secao text-right">Orçado</th><th className="py-2 titulo-secao text-right">Realizado</th><th className="py-2 titulo-secao text-right">Diferença</th><th className="py-2 titulo-secao text-right">%</th></tr></thead>
           <tbody>
             {l.map(({ c, it }) => (
               <tr key={c.id} className="border-b border-line/60"><td className="py-1.5"><span className="text-muted text-xs mr-1.5">{c.codigo}</span>{c.nome}</td>
-                <td className="py-1.5 text-right tabular-nums">{fmt(it.valor_orcado)}</td><td className="py-1.5 text-right tabular-nums">{it.valor_realizado != null ? fmt(it.valor_realizado) : "—"}</td></tr>
+                <td className="py-1.5 text-right tabular-nums">{fmt(it.valor_orcado)}</td><td className="py-1.5 text-right tabular-nums">{it.valor_realizado != null ? fmt(it.valor_realizado) : "—"}</td>
+                {difCelulas(it.valor_orcado, it.valor_realizado, fmt)}</tr>
             ))}
-            <tr className="font-semibold"><td className="py-2">Total</td><td className="py-2 text-right tabular-nums">{fmt(soma(l, "valor_orcado"))}</td><td className="py-2 text-right tabular-nums">{fmt(soma(l, "valor_realizado"))}</td></tr>
+            <tr className="font-semibold"><td className="py-2">Total</td><td className="py-2 text-right tabular-nums">{fmt(soma(l, "valor_orcado"))}</td><td className="py-2 text-right tabular-nums">{fmt(soma(l, "valor_realizado"))}</td>
+              {difCelulas(soma(l, "valor_orcado"), soma(l, "valor_realizado"), fmt)}</tr>
           </tbody>
         </table>
+        </div>
       )}
+      {l.length > 0 && <div className="texto-apoio mt-2">Diferença = Orçado − Realizado. Verde: dentro do orçado · vermelho: acima do orçado.</div>}
     </Secao>
   );
   return (
