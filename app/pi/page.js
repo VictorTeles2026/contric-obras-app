@@ -227,6 +227,31 @@ const Indicador = ({ titulo, valor, detalhe, cor = "text-textmain", onClick }) =
 };
 
 // ---------------- Resumo ----------------
+// Avanço do cronograma + % de consumo de material (R$) e de horas (do Relatório):
+// consumo abaixo/igual ao avanço = verde; acima = vermelho
+function IndicadorAvanco({ avanco, macros, material, horas, irPara }) {
+  const Consumo = ({ rotulo, v, aba }) => (
+    <button onClick={() => irPara(aba)} className="text-left min-w-0 hover:opacity-80" title={v === null ? "Sem valor orçado" : v <= avanco ? "Consumo abaixo do avanço" : "Consumo acima do avanço"}>
+      <div className="text-xs text-muted">{rotulo}</div>
+      <div className={`font-head font-bold text-2xl tabular-nums ${v === null ? "text-muteddim" : v <= avanco ? "text-green" : "text-red"}`}>{v === null ? "—" : `${v}%`}</div>
+    </button>
+  );
+  return (
+    <div className={`cartao p-4 flex items-start gap-4 ${material !== undefined ? "col-span-2" : ""}`}>
+      <button onClick={() => irPara("cronograma")} className="text-left min-w-0 hover:opacity-80">
+        <div className="text-xs text-muted">Avanço</div>
+        <div className="font-head font-bold text-2xl tabular-nums text-cyan">{avanco}%</div>
+        <div className="texto-apoio">{macros} macro-etapa(s)</div>
+      </button>
+      {material !== undefined && <>
+        <div className="w-px self-stretch bg-line" />
+        <Consumo rotulo="Consumo material" v={material} aba="financeiro" />
+        <Consumo rotulo="Consumo horas" v={horas} aba="financeiro" />
+      </>}
+    </div>
+  );
+}
+
 function AbaResumo({ pi, usuario, irPara }) {
   const { dados: etapas } = useTabela("etapas", { filtro: [["pi_id", pi.id]] });
   const { dados: rdos } = useTabela("rdos", { select: "id,status", filtro: [["pi_id", pi.id]] });
@@ -234,6 +259,7 @@ function AbaResumo({ pi, usuario, irPara }) {
   const { dados: ocs } = useTabela("ocorrencias", { select: "id,status,rdo_id", filtro: [["pi_id", pi.id]] });
   const { dados: solic } = useTabela("solicitacoes_alteracao_cronograma", { select: "id,etapa_id,status" });
   const verValores = pode(usuario, "dashboard.valores") || pode(usuario, "relatorio.ver");
+  const fin = useFinanceiroPi(pi);
 
   const macros = etapas.filter((e) => !e.parent_etapa_id);
   const avanco = macros.length ? Math.round(macros.reduce((s, e) => s + (e.status === "concluida" ? 100 : Number(e.percentual) || 0), 0) / macros.length) : 0;
@@ -253,8 +279,9 @@ function AbaResumo({ pi, usuario, irPara }) {
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <Indicador titulo="Avanço" valor={`${avanco}%`} detalhe={`${macros.length} macro-etapa(s)`} cor="text-cyan" onClick={() => irPara("cronograma")} />
+      <div className={`grid grid-cols-2 ${verValores ? "lg:grid-cols-5" : "lg:grid-cols-4"} gap-3`}>
+        <IndicadorAvanco avanco={avanco} macros={macros.length} material={verValores ? consumo(fin, "compra_reais") : undefined} horas={verValores ? consumo(fin, "moi_horas") : undefined}
+          irPara={irPara} />
         <Indicador titulo="Etapas atrasadas" valor={atrasadas.length} detalhe={`${abertas.length} em aberto`} cor={atrasadas.length ? "text-red" : "text-green"} onClick={() => irPara("cronograma")} />
         <Indicador titulo={`Medições em ${PRAZOS.medicoes} dias`} valor={medProximas.length}
           detalhe={verValores && medProximas.length ? reais(medProximas.reduce((s, e) => s + Number(e.medicao_valor || 0), 0)) : `${medicoes.length} em aberto`} cor="text-[#8E5CD9]" />
@@ -543,10 +570,10 @@ function AbaDocumentos({ pi }) {
 }
 
 // ---------------- Financeiro ----------------
-function AbaFinanceiro({ pi, usuario }) {
+// orçado × realizado do PI por grupo ("compra_reais" | "moi_horas"), com as mesmas regras do Relatório
+function useFinanceiroPi(pi) {
   const { dados: itens, carregando } = useTabela("orcamento_pi_item", { filtro: [["pi_id", pi.id]] });
   const { dados: categorias } = useTabela("categorias_orcamento", { order: { coluna: "ordem" } });
-  const { dados: etapas } = useTabela("etapas", { select: "id,nome,medicao,medicao_valor,medicao_percentual,status,data_prevista_fim", filtro: [["pi_id", pi.id]] });
   // horas realizadas = ajuste manual (valor_realizado) + horas classificadas nos lançamentos — igual ao Relatório
   const { dados: apontamentos } = useTabela("apontamentos_horas", { filtro: [["pi_id", pi.id]] });
   const apontado = useMemo(() => {
@@ -565,6 +592,18 @@ function AbaFinanceiro({ pi, usuario }) {
     return { c, it };
   }).filter(({ it }) => it && (Number(it.valor_orcado) || Number(it.valor_realizado)));
   const soma = (l, campo) => l.reduce((s, { it }) => s + Number(it[campo] || 0), 0);
+  return { grupo, soma, carregando };
+}
+
+// % consumido = realizado ÷ orçado do grupo (null sem orçado)
+function consumo(fin, g) {
+  const l = fin.grupo(g), orc = fin.soma(l, "valor_orcado");
+  return orc ? Math.round((fin.soma(l, "valor_realizado") / orc) * 100) : null;
+}
+
+function AbaFinanceiro({ pi, usuario }) {
+  const { grupo, soma, carregando } = useFinanceiroPi(pi);
+  const { dados: etapas } = useTabela("etapas", { select: "id,nome,medicao,medicao_valor,medicao_percentual,status,data_prevista_fim", filtro: [["pi_id", pi.id]] });
   const compra = grupo("compra_reais"), moi = grupo("moi_horas");
   const medicoes = etapas.filter((e) => e.medicao);
   // diferença = Orçado − Realizado (positivo = dentro do orçado, negativo = acima), igual ao Relatório
