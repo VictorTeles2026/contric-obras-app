@@ -134,7 +134,12 @@ export function EditorHoras({ registro, pis, comoAprovador, onFechar, onSalvo })
 
   const calculado = ehCheckin ? horasEntreHorarios(entrada, saida) : null;
   const totalFinal = ehCheckin ? (saida ? Math.round(calculado.horas * 100) / 100 : null) : (total === "" ? null : Number(total));
-  const valido = piId && data && (ehCheckin ? !!entrada : totalFinal > 0 && totalFinal <= 24);
+  // aprovador (Relatórios/Aprovações/Histórico) também ajusta a divisão normais × extras
+  const [normais, setNormais] = useState(registro.horas_normais ?? registro.horas_totais ?? "");
+  const normaisNum = normais === "" ? 0 : Number(normais);
+  const extras = totalFinal !== null ? Math.round((totalFinal - normaisNum) * 100) / 100 : null;
+  const divisaoOk = !comoAprovador || totalFinal === null || (normaisNum >= 0 && extras >= 0);
+  const valido = piId && data && divisaoOk && (ehCheckin ? !!entrada : totalFinal > 0 && totalFinal <= 24);
 
   const paraIso = (dia, hhmm, somarDia = false) => {
     const [h, m] = hhmm.split(":").map(Number);
@@ -147,6 +152,7 @@ export function EditorHoras({ registro, pis, comoAprovador, onFechar, onSalvo })
   const salvar = async () => {
     setSalvando(true); setErro("");
     const novo = { pi_id: piId, data, horas_totais: totalFinal };
+    if (comoAprovador && totalFinal !== null) { novo.horas_normais = normaisNum; novo.horas_extras = extras; }
     if (ehCheckin) {
       novo.entrada = paraIso(data, entrada);
       novo.saida = saida ? paraIso(data, saida, calculado.viraDia) : null;
@@ -184,6 +190,17 @@ export function EditorHoras({ registro, pis, comoAprovador, onFechar, onSalvo })
           <Campo rotulo="Total de horas">
             <input type="number" step="0.25" min="0" max="24" value={total} onChange={(e) => setTotal(e.target.value)} className="input" />
           </Campo>
+        )}
+        {comoAprovador && totalFinal !== null && (
+          <div className="grid grid-cols-2 gap-3">
+            <Campo rotulo="Horas normais">
+              <input type="number" step="0.25" min="0" max={totalFinal} value={normais} onChange={(e) => setNormais(e.target.value)} className="input" />
+            </Campo>
+            <Campo rotulo="Horas extras">
+              <div className={`input bg-panel tabular-nums ${extras < 0 ? "text-red" : ""}`}>{extras.toLocaleString("pt-BR")}h</div>
+            </Campo>
+            {!divisaoOk && <div className="col-span-2 text-xs text-red">As horas normais não podem passar do total ({totalFinal.toLocaleString("pt-BR")}h).</div>}
+          </div>
         )}
         {comoAprovador && <Aviso tipo="info">A pessoa receberá uma notificação com o que foi alterado.</Aviso>}
         {erro && <Aviso tipo="erro">{erro}</Aviso>}
