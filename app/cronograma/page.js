@@ -2,6 +2,7 @@
 
 import { useState, useMemo, useRef, useEffect, useLayoutEffect, useCallback } from "react";
 import { useTabela, registrarLog, chamarApi, gravarTolerante } from "../../lib/dados";
+import { avisarAlocacao } from "../../lib/notificacoes";
 import { useAuth, podeEditar, pode } from "../../lib/AuthContext";
 import { supabase } from "../../lib/supabase";
 import { hojeISO as todayISO, addDias, isoLocal } from "../../lib/datas";
@@ -322,14 +323,16 @@ export default function CronogramaPage() {
   // ---- Alocação de recursos na etapa ----
   const toggleRecursoNaEtapa = async (etapa, recursoId) => {
     const existente = alocacoesRecurso.find((a) => a.etapa_id === etapa.id && a.recurso_id === recursoId);
+    const nova = {
+      recurso_id: recursoId, pi_id: etapa.pi_id, etapa_id: etapa.id,
+      modo: "periodo_percentual", periodo_inicio: etapa.data_prevista_inicio || todayISO(),
+      periodo_fim: etapa.data_prevista_fim || todayISO(), percentual: 100,
+    };
     const { error } = existente
       ? await supabase.from("alocacoes_recurso").delete().eq("id", existente.id)
-      : await supabase.from("alocacoes_recurso").insert({
-        recurso_id: recursoId, pi_id: etapa.pi_id, etapa_id: etapa.id,
-        modo: "periodo_percentual", periodo_inicio: etapa.data_prevista_inicio || todayISO(),
-        periodo_fim: etapa.data_prevista_fim || todayISO(), percentual: 100,
-      });
+      : await supabase.from("alocacoes_recurso").insert(nova);
     if (error) { setErro(error.message); return; }
+    avisarAlocacao(existente ? "removida" : "criada", existente || nova);
     recarregarAlocacoesRecurso();
   };
 

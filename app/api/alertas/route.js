@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { identificar, permissoesDe, supabaseAdmin, enviarEmail, emailCliente, urlApp, rotaSegura } from "../../../lib/authServidor";
 import { resolverPermissoes } from "../../../lib/permissoes";
-import { ALERTAS, PRAZOS } from "../../../lib/constantes";
+import { ALERTAS, PRAZOS, TIPOS_ALERTA, MODELO_EMAIL, montarEmailEquipe } from "../../../lib/constantes";
 
 // Alertas automáticos por e-mail.
 // - Toda notificação do sininho entra numa fila (notificacoes.email_status = null). O app chama
@@ -38,6 +38,8 @@ async function despachar(admin, { ignorarSilencio = false } = {}) {
   if (!fila?.length) return { enviados: 0 };
   const cfg = await padraoAlertas(admin);
   const silencio = !ignorarSilencio && emSilencio(cfg);
+  const { data: linhaModelo } = await admin.from("configuracoes").select("valor").eq("chave", "modelo_email").maybeSingle();
+  const modelo = { ...MODELO_EMAIL, ...(linhaModelo?.valor || {}) };
   const ids = [...new Set(fila.map((n) => n.usuario_id))];
   const { data: us } = await admin.from("usuarios").select("id,nome,email,ativo,alertas").in("id", ids);
   const marcar = (id, status) => admin.from("notificacoes").update({ email_status: status }).eq("id", id);
@@ -52,12 +54,8 @@ async function despachar(admin, { ignorarSilencio = false } = {}) {
     const { data: reservada } = await admin.from("notificacoes").update({ email_status: "enviando" }).eq("id", n.id).is("email_status", null).select("id");
     if (!reservada?.length) continue;
     const link = n.link ? `${urlApp()}${n.link}` : urlApp();
-    const r = await enviarEmail({
-      para: u.email, assunto: n.titulo,
-      texto: `Olá, ${u.nome}!\n\n${n.titulo}\n${n.mensagem || ""}\n\nAbrir no sistema: ${link}`,
-      html: emailCliente(esc(n.titulo), [`Olá, <strong>${esc(u.nome)}</strong>!`, ...String(n.mensagem || "").split("\n").filter(Boolean).map(esc)],
-        { url: link, texto: "Abrir no SGO Contric" }, "SGO Contric"),
-    });
+    const email = montarEmailEquipe(modelo, { nome: u.nome, titulo: n.titulo, mensagem: n.mensagem, tipo, link, data: dataBR(agoraSP().dia) });
+    const r = await enviarEmail({ para: u.email, assunto: email.assunto, texto: email.texto, html: email.html });
     await marcar(n.id, r.enviado ? "enviado" : `erro: ${String(r.motivo || "").slice(0, 180)}`);
     if (r.enviado) enviados++;
   }
@@ -65,69 +63,178 @@ async function despachar(admin, { ignorarSilencio = false } = {}) {
 }
 
 // ---------------- resumo diário (cron) ----------------
+// Alçada: cada pessoa só recebe o que a função dela cobre (permissões do perfil + exceções) e
+// só dos PIs em que está ALOCADA ou é RESPONSÁVEL por alguma etapa. O Master vê todos os PIs.
+const diaSemana = (iso) => new Date(`${iso}T12:00:00`).getDay(); // 0 = domingo
+const somarDias = (iso, n) => new Date(new Date(`${iso}T12:00:00`).getTime() + n * 86400000).toISOString().slice(0, 10);
+const cobre = (a, d) => (!a.periodo_inicio || a.periodo_inicio <= d) && (!a.periodo_fim || a.periodo_fim >= d);
+
 async function resumoDiario(admin) {
   const { dia } = agoraSP();
-  const em = (n) => new Date(new Date(`${dia}T12:00:00`).getTime() + n * 86400000).toISOString().slice(0, 10);
+  const desde = somarDias(dia, -30);
+  const cfg = await padraoAlertas(admin);
   const [usuarios, perfis, excecoes, recursos, alocs, pis, rdos, horas, ocs, solic, etapas] = await Promise.all([
     admin.from("usuarios").select("id,nome,perfil,ativo"),
     admin.from("permissoes_perfil").select("perfil,codigo,valor"),
     admin.from("permissoes_usuario").select("usuario_id,codigo,valor,valido_ate"),
     admin.from("recursos").select("id,usuario_id"),
-    admin.from("alocacoes_recurso").select("recurso_id,pi_id"),
+    admin.from("alocacoes_recurso").select("recurso_id,pi_id,etapa_id,periodo_inicio,periodo_fim"),
     admin.from("pis").select("id,codigo,status"),
-    admin.from("rdos").select("id,pi_id").eq("status", "pendente"),
-    admin.from("apontamentos_horas").select("id,pi_id,usuario_id,entrada,saida,data,status"),
-    admin.from("ocorrencias").select("id,pi_id,rdo_id").eq("status", "pendente"),
+    admin.from("rdos").select("id,pi_id,lider_id,data,status,created_at").gte("data", desde),
+    admin.from("apontamentos_horas").select("id,pi_id,usuario_id,entrada,saida,data,status,created_at").gte("data", desde),
+    admin.from("ocorrencias").select("id,pi_id,rdo_id,status,registrado_por,categoria,created_at").gte("created_at", `${desde}T00:00:00`),
     admin.from("solicitacoes_alteracao_cronograma").select("id,etapa_id,status"),
-    admin.from("etapas").select("id,pi_id,nome,status,data_prevista_fim,medicao"),
+    admin.from("etapas").select("*"),
   ]).then((rs) => rs.map((r) => r.data || []));
 
   const codigo = (id) => pis.find((p) => p.id === id)?.codigo || "?";
+  const nomeEtapa = (id) => etapas.find((e) => e.id === id)?.nome || "etapa";
   const piDaEtapa = (id) => etapas.find((e) => e.id === id)?.pi_id;
   const ativos = new Set(pis.filter((p) => p.status === "ativo" || !p.status).map((p) => p.id));
   const horasPend = horas.filter((h) => h.status === "pendente" && !(h.entrada && !h.saida));
   const solicPend = solic.filter((s) => String(s.status || "").startsWith("pendente")).map((s) => ({ ...s, pi_id: piDaEtapa(s.etapa_id) }));
-  const ocsPend = ocs.filter((o) => !o.rdo_id);
+  const rdosPend = rdos.filter((r) => r.status === "pendente");
+  const ocsPend = ocs.filter((o) => o.status === "pendente" && !o.rdo_id);
   const abertas = etapas.filter((e) => e.status !== "concluida" && e.data_prevista_fim && ativos.has(e.pi_id));
   const atrasadas = abertas.filter((e) => e.data_prevista_fim < dia);
-  const vencendo = abertas.filter((e) => e.data_prevista_fim >= dia && e.data_prevista_fim <= em(PRAZOS.atencao));
-  const medicoes = abertas.filter((e) => e.medicao && e.data_prevista_fim >= dia && e.data_prevista_fim <= em(PRAZOS.medicoes));
+  const vencendo = abertas.filter((e) => e.data_prevista_fim >= dia && e.data_prevista_fim <= somarDias(dia, PRAZOS.atencao));
+  const medicoes = abertas.filter((e) => e.medicao && e.data_prevista_fim >= dia && e.data_prevista_fim <= somarDias(dia, PRAZOS.medicoes));
+  // últimos 7 dias úteis (seg–sex), sem contar hoje
+  const diasUteis = [];
+  for (let i = 1; diasUteis.length < 7 && i < 15; i++) { const d = somarDias(dia, -i); if (diaSemana(d) % 6 !== 0) diasUteis.push(d); }
+  const segunda = diaSemana(dia) === 1;
+  const lista = (l, fmt) => l.slice(0, 10).map((x) => `  • ${fmt(x)}`).join("\n") + (l.length > 10 ? `\n  • … e mais ${l.length - 10}` : "");
+  const lEtapa = (e) => `${codigo(e.pi_id)} — ${e.nome} (${dataBR(e.data_prevista_fim)})`;
 
   const novas = [];
   for (const u of usuarios.filter((x) => x.ativo !== false)) {
     const mapa = resolverPermissoes(u.perfil, perfis.filter((p) => p.perfil === u.perfil), excecoes.filter((e) => e.usuario_id === u.id));
-    const meusRec = recursos.filter((r) => r.usuario_id === u.id).map((r) => r.id);
-    const meusPis = new Set(alocs.filter((a) => meusRec.includes(a.recurso_id)).map((a) => a.pi_id));
-    const no = (cod, lista) => (mapa[cod] === "S" ? lista : mapa[cod] === "P" ? lista.filter((x) => meusPis.has(x.pi_id)) : []);
+    const tem = (c) => mapa[c] === "S" || mapa[c] === "P";
+    const meusRec = new Set(recursos.filter((r) => r.usuario_id === u.id).map((r) => r.id));
+    const minhasAlocs = alocs.filter((a) => meusRec.has(a.recurso_id));
+    const responsavel = etapas.filter((e) => e.responsavel_id === u.id);
+    const meusPis = new Set([...minhasAlocs.map((a) => a.pi_id), ...responsavel.map((e) => e.pi_id)]);
+    const todos = u.perfil === "master";
+    const doEscopo = (l) => (todos ? l : l.filter((x) => meusPis.has(x.pi_id)));
+    const no = (cod, l) => (tem(cod) ? doEscopo(l) : []);
+    const add = (tipo, link, titulo, linhas) => linhas.length && novas.push({ usuario_id: u.id, tipo, link, titulo: `${titulo} — ${dataBR(dia)}`, mensagem: linhas.join("\n\n") });
 
-    const pend = [["RDO", no("rdo.aprovar", rdos)], ["lançamento(s) de horas", no("horas.aprovar", horasPend)],
+    // aprovações pendentes (quem aprova cada tipo)
+    const pend = [["RDO", no("rdo.aprovar", rdosPend)], ["lançamento(s) de horas", no("horas.aprovar", horasPend)],
       ["ocorrência(s)", no("ocorrencia.aprovar", ocsPend)], ["solicitação(ões) de cronograma", no("cronograma.aprovar", solicPend)]].filter(([, l]) => l.length);
-    if (pend.length) {
-      novas.push({ usuario_id: u.id, tipo: "aprovacoes", link: "/aprovacoes", titulo: `Aprovações pendentes — ${dataBR(dia)}`,
-        mensagem: pend.map(([r, l]) => `${l.length} ${r} (${[...new Set(l.map((x) => codigo(x.pi_id)))].slice(0, 6).join(", ")})`).join("\n") });
-    }
+    add("aprovacoes", "/aprovacoes", "Aprovações pendentes", pend.map(([r, l]) => `${l.length} ${r} (${[...new Set(l.map((x) => codigo(x.pi_id)))].slice(0, 6).join(", ")})`));
 
-    const linhas = [];
+    // prazos e atrasos (quem cuida do cronograma)
+    const pz = [];
     const at = no("etapa.editar", atrasadas), ve = no("etapa.editar", vencendo), me = no("etapa.editar", medicoes);
-    const lista = (l) => l.slice(0, 8).map((e) => `  • ${codigo(e.pi_id)} — ${e.nome} (${dataBR(e.data_prevista_fim)})`).join("\n") + (l.length > 8 ? `\n  • … e mais ${l.length - 8}` : "");
-    if (at.length) linhas.push(`${at.length} etapa(s) atrasada(s):\n${lista(at)}`);
-    if (ve.length) linhas.push(`${ve.length} etapa(s) vencendo em até ${PRAZOS.atencao} dia(s):\n${lista(ve)}`);
-    if (me.length) linhas.push(`${me.length} medição(ões) nos próximos ${PRAZOS.medicoes} dias:\n${lista(me)}`);
+    if (at.length) pz.push(`${at.length} etapa(s) atrasada(s):\n${lista(at, lEtapa)}`);
+    if (ve.length) pz.push(`${ve.length} etapa(s) vencendo em até ${PRAZOS.atencao} dia(s):\n${lista(ve, lEtapa)}`);
+    if (me.length) pz.push(`${me.length} medição(ões) nos próximos ${PRAZOS.medicoes} dias:\n${lista(me, lEtapa)}`);
     const esquecidos = horas.filter((h) => h.usuario_id === u.id && h.entrada && !h.saida && h.data && h.data < dia);
-    if (esquecidos.length) linhas.push(`Você tem check-in aberto desde ${dataBR(esquecidos[0].data)} em ${codigo(esquecidos[0].pi_id)} — faça o check-out ou corrija o lançamento.`);
-    if (linhas.length) {
-      novas.push({ usuario_id: u.id, tipo: "prazos", link: at.length || ve.length || me.length ? "/linha-do-tempo" : "/minhas-horas",
-        titulo: `Prazos e atrasos — ${dataBR(dia)}`, mensagem: linhas.join("\n\n") });
+    if (esquecidos.length) pz.push(`Check-in aberto desde ${dataBR(esquecidos[0].data)} em ${codigo(esquecidos[0].pi_id)} — faça o check-out ou corrija o lançamento.`);
+    add("prazos", at.length || ve.length || me.length ? "/linha-do-tempo" : "/minhas-horas", "Prazos e atrasos", pz);
+
+    // atividades pendentes da própria pessoa
+    const pe = [];
+    if (tem("horas.lancar_proprias")) {
+      const semHoras = diasUteis.filter((d) => minhasAlocs.some((a) => cobre(a, d) && ativos.has(a.pi_id))
+        && !horas.some((h) => h.usuario_id === u.id && h.data === d && h.status !== "rejeitado"));
+      if (semHoras.length) pe.push(`Horas não lançadas em ${semHoras.length} dia(s) em que você estava alocado:\n${lista(semHoras.reverse(), dataBR)}`);
     }
+    if (tem("rdo.criar") && u.perfil === "lider") {
+      const faltam = [];
+      diasUteis.forEach((d) => [...new Set(minhasAlocs.filter((a) => cobre(a, d) && ativos.has(a.pi_id)).map((a) => a.pi_id))]
+        .forEach((p) => { if (!rdos.some((r) => r.lider_id === u.id && r.pi_id === p && r.data === d)) faltam.push({ d, p }); }));
+      if (faltam.length) pe.push(`RDO não enviado (${faltam.length}):\n${lista(faltam.reverse(), (f) => `${codigo(f.p)} — ${dataBR(f.d)}`)}`);
+    }
+    const rep = [];
+    horas.filter((h) => h.usuario_id === u.id && h.status === "rejeitado" && !horas.some((o) => o.usuario_id === u.id && o.data === h.data && o.status !== "rejeitado"))
+      .forEach((h) => rep.push(`Horas de ${dataBR(h.data)} (${codigo(h.pi_id)})`));
+    rdos.filter((r) => r.lider_id === u.id && String(r.status).startsWith("rejeit") && !rdos.some((o) => o.lider_id === u.id && o.pi_id === r.pi_id && o.data === r.data && !String(o.status).startsWith("rejeit")))
+      .forEach((r) => rep.push(`RDO de ${dataBR(r.data)} (${codigo(r.pi_id)})`));
+    ocs.filter((o) => o.registrado_por === u.id && String(o.status).startsWith("rejeit")).forEach((o) => rep.push(`Ocorrência ${o.categoria || ""} (${codigo(o.pi_id)})`));
+    if (rep.length) pe.push(`${rep.length} item(ns) reprovado(s) a corrigir:\n${lista(rep, (x) => x)}`);
+    if (tem("etapa.percentual")) {
+      const limite = new Date(Date.now() - (Number(cfg.diasSemPercentual) || 7) * 86400000).toISOString();
+      const minhasEtapas = new Set([...minhasAlocs.map((a) => a.etapa_id).filter(Boolean), ...responsavel.map((e) => e.id)]);
+      const paradas = etapas.filter((e) => minhasEtapas.has(e.id) && e.status === "em_andamento" && ativos.has(e.pi_id)
+        && (e.percentual_atualizado_em || e.created_at || "") < limite);
+      if (paradas.length) pe.push(`${paradas.length} etapa(s) em andamento sem % atualizado há mais de ${cfg.diasSemPercentual || 7} dias:\n${lista(paradas, (e) => `${codigo(e.pi_id)} — ${e.nome} (${Number(e.percentual) || 0}%)`)}`);
+    }
+    add("pendentes", "/minhas-horas", "Atividades pendentes", pe);
+
+    // agenda: atividades em que está alocado (hoje e próximos 3 dias; na segunda, a semana)
+    const ag = [];
+    const comEtapa = minhasAlocs.filter((a) => a.etapa_id && ativos.has(a.pi_id)).map((a) => ({ a, e: etapas.find((x) => x.id === a.etapa_id) })).filter(({ e }) => e && e.status !== "concluida");
+    const fmtA = ({ a, e }) => `${codigo(a.pi_id)} — ${e.nome} · ${dataBR(a.periodo_inicio)} a ${dataBR(a.periodo_fim)} · ${Number(e.percentual) || 0}%${e.data_prevista_fim && e.data_prevista_fim < dia ? " · ATRASADA" : ""}`;
+    const hoje = comEtapa.filter(({ a }) => cobre(a, dia));
+    const proximos = comEtapa.filter(({ a }) => !cobre(a, dia) && a.periodo_inicio > dia && a.periodo_inicio <= somarDias(dia, 3));
+    if (hoje.length) ag.push(`Hoje (${hoje.length}):\n${lista(hoje, fmtA)}`);
+    if (proximos.length) ag.push(`Começam nos próximos 3 dias:\n${lista(proximos, fmtA)}`);
+    if (segunda) {
+      const sexta = somarDias(dia, 4);
+      const semana = comEtapa.filter(({ a }) => (!a.periodo_inicio || a.periodo_inicio <= sexta) && (!a.periodo_fim || a.periodo_fim >= dia));
+      if (semana.length) ag.push(`Sua semana (${dataBR(dia)} a ${dataBR(sexta)}):\n${lista(semana, fmtA)}`);
+    }
+    add("agenda", "/minhas-horas", segunda ? "Sua agenda da semana" : "Sua agenda", ag);
   }
   // não repete o resumo se o cron rodar duas vezes no mesmo dia
-  const { data: jaHoje } = await admin.from("notificacoes").select("usuario_id,titulo").in("titulo", [`Aprovações pendentes — ${dataBR(dia)}`, `Prazos e atrasos — ${dataBR(dia)}`]);
+  const titulos = [...new Set(novas.map((n) => n.titulo))];
+  const { data: jaHoje } = titulos.length ? await admin.from("notificacoes").select("usuario_id,titulo").in("titulo", titulos) : { data: [] };
   const inserir = novas.filter((n) => !(jaHoje || []).some((j) => j.usuario_id === n.usuario_id && j.titulo === n.titulo));
   if (inserir.length) {
     const { error } = await admin.from("notificacoes").insert(inserir);
     if (error) return { resumos: 0, motivo: error.message };
   }
   return { resumos: inserir.length };
+}
+
+// ---------------- alocação em PI (na hora) ----------------
+// evento: "criada" | "alterada" | "removida". Avisa a pessoa do recurso e, com cópia, os
+// coordenadores/gerentes alocados ou responsáveis naquele PI (menos quem fez a alteração).
+async function avisarAlocacao(admin, interno, { evento, alocacoes }) {
+  if (!["criada", "alterada", "removida"].includes(evento) || !Array.isArray(alocacoes) || !alocacoes.length) {
+    return NextResponse.json({ error: "Dados inválidos." }, { status: 400 });
+  }
+  const lista = alocacoes.slice(0, 200);
+  const recIds = [...new Set(lista.map((a) => a.recurso_id))], piIds = [...new Set(lista.map((a) => a.pi_id))];
+  const [{ data: recs }, { data: pis }, { data: etapas }, { data: chefes }, { data: todosRec }, { data: alocsPi }] = await Promise.all([
+    admin.from("recursos").select("id,nome,usuario_id").in("id", recIds),
+    admin.from("pis").select("id,codigo,cliente").in("id", piIds),
+    admin.from("etapas").select("id,nome,pi_id,responsavel_id").in("pi_id", piIds),
+    admin.from("usuarios").select("id,perfil,ativo").in("perfil", ["coordenador", "gerente"]),
+    admin.from("recursos").select("id,usuario_id"),
+    admin.from("alocacoes_recurso").select("recurso_id,pi_id").in("pi_id", piIds),
+  ]);
+  const VERBO = { criada: "Você foi alocado", alterada: "Sua alocação mudou", removida: "Você saiu de uma alocação" };
+  const VERBO3 = { criada: "alocado", alterada: "teve a alocação alterada", removida: "removido" };
+  const novas = [];
+  for (const a of lista) {
+    const r = (recs || []).find((x) => x.id === a.recurso_id);
+    const pi = (pis || []).find((x) => x.id === a.pi_id);
+    const etapa = (etapas || []).find((x) => x.id === a.etapa_id);
+    const onde = `${pi?.codigo || "PI"}${pi?.cliente ? ` (${pi.cliente})` : ""}${etapa ? ` · ${etapa.nome}` : ""}`;
+    const periodo = a.periodo_inicio ? `Período: ${dataBR(a.periodo_inicio)} a ${dataBR(a.periodo_fim)}` : "";
+    if (r?.usuario_id && r.usuario_id !== interno.id) {
+      novas.push({ usuario_id: r.usuario_id, tipo: "alocacao", link: "/minhas-horas", titulo: `${VERBO[evento]} — ${pi?.codigo || "PI"}`,
+        mensagem: [onde, evento !== "removida" ? periodo : "", `Por ${interno.nome}.`].filter(Boolean).join("\n") });
+    }
+    // cópia: coordenadores/gerentes do PI (alocados nele ou responsáveis por etapa dele)
+    const doPi = new Set([
+      ...(alocsPi || []).filter((x) => x.pi_id === a.pi_id).map((x) => (todosRec || []).find((t) => t.id === x.recurso_id)?.usuario_id),
+      ...(etapas || []).filter((e) => e.pi_id === a.pi_id).map((e) => e.responsavel_id),
+    ].filter(Boolean));
+    (chefes || []).filter((c) => c.ativo !== false && doPi.has(c.id) && c.id !== interno.id && c.id !== r?.usuario_id).forEach((c) => {
+      novas.push({ usuario_id: c.id, tipo: "alocacao", link: `/pi?id=${a.pi_id}&aba=equipe`, titulo: `Alocação em ${pi?.codigo || "PI"}: ${r?.nome || "recurso"} ${VERBO3[evento]}`,
+        mensagem: [onde, evento !== "removida" ? periodo : "", `Por ${interno.nome}.`].filter(Boolean).join("\n") });
+    });
+  }
+  if (novas.length) {
+    const { error } = await admin.from("notificacoes").insert(novas);
+    if (error) return NextResponse.json({ avisados: 0, motivo: error.message });
+    await despachar(admin);
+  }
+  return NextResponse.json({ avisados: novas.length });
 }
 
 // ---------------- clientes do portal ----------------
@@ -171,6 +278,7 @@ export const POST = rotaSegura(async (req) => {
   const corpo = await req.json().catch(() => ({}));
   if (corpo.acao === "despachar") return NextResponse.json(await despachar(admin));
   if (corpo.acao === "cliente") return avisarClientes(admin, corpo);
+  if (corpo.acao === "alocacao") return avisarAlocacao(admin, interno, corpo);
   // preferências: do próprio usuário, ou de vários usuários (Usuários → Alertas, exige usuario.editar)
   // corpo.itens = [{ usuarioId, alertas }] — sem itens, vale para quem chama
   if (corpo.acao === "preferencias") {
@@ -181,7 +289,7 @@ export const POST = rotaSegura(async (req) => {
     }
     for (const i of itens.slice(0, 500)) {
       const prefs = {};
-      ["decisoes", "aprovacoes", "prazos"].forEach((k) => { if (typeof i.alertas?.[k] === "boolean") prefs[k] = i.alertas[k]; });
+      TIPOS_ALERTA.map(([t]) => t).forEach((k) => { if (typeof i.alertas?.[k] === "boolean") prefs[k] = i.alertas[k]; });
       const { error } = await admin.from("usuarios").update({ alertas: Object.keys(prefs).length ? prefs : null }).eq("id", i.usuarioId);
       if (error) return NextResponse.json({ error: /alertas/.test(error.message) ? "Rode o script alertas-email.sql no Supabase." : error.message }, { status: 400 });
     }

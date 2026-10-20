@@ -2,6 +2,7 @@
 
 import { useState, useMemo, useRef, useEffect } from "react";
 import { useTabela, registrarLog, gravarTolerante } from "../../lib/dados";
+import { avisarAlocacao } from "../../lib/notificacoes";
 import EmpresasTerceiras from "../../components/EmpresasTerceiras";
 import { useRouter } from "next/navigation";
 import { useAuth, pode } from "../../lib/AuthContext";
@@ -222,6 +223,7 @@ export default function RecursosPage({ searchParams }) {
       ? await supabase.from("alocacoes_recurso").update(payload).eq("id", editandoAlocId)
       : await supabase.from("alocacoes_recurso").insert(payload);
     if (error) { avisar(`Não foi possível salvar: ${error.message}`, "erro", 6000); return; }
+    avisarAlocacao(editandoAlocId ? "alterada" : "criada", payload);
     avisar(editandoAlocId ? "Alocação atualizada." : "Alocação criada.");
     await registrarLog(usuario, editandoAlocId ? "Editou alocação" : "Criou alocação", `${selecionado?.nome} — ${pis.find((p) => p.id === piEscolhido)?.codigo}${etapaEscolhida ? ` · ${nomeEtapa(etapaEscolhida)}` : ""}`);
     setEditandoAlocId(null);
@@ -232,6 +234,7 @@ export default function RecursosPage({ searchParams }) {
     if (!window.confirm(`Remover a alocação em ${pis.find((p) => p.id === a.pi_id)?.codigo || "PI"}?`)) return;
     const { error } = await supabase.from("alocacoes_recurso").delete().eq("id", a.id);
     if (error) { avisar(`Não foi possível remover: ${error.message}`, "erro", 6000); return; }
+    avisarAlocacao("removida", a);
     await registrarLog(usuario, "Removeu alocação", `${selecionado?.nome} — ${pis.find((p) => p.id === a.pi_id)?.codigo}`);
     recarregarAlocacoes();
   };
@@ -246,6 +249,7 @@ export default function RecursosPage({ searchParams }) {
     }));
     const { error } = await supabase.from("alocacoes_recurso").insert(linhas);
     if (error) { avisar(`Não foi possível alocar: ${error.message}`, "erro", 6000); return; }
+    avisarAlocacao("criada", linhas);
     avisar(`${ids.length} recurso(s) alocado(s)${ids.length < recursoIds.length ? ` · ${recursoIds.length - ids.length} já estavam na etapa` : ""}.`);
     await registrarLog(usuario, "Alocação em massa", `${ids.length} recurso(s) em ${pis.find((p) => p.id === piId)?.codigo}${etapaId ? ` · ${nomeEtapa(etapaId)}` : ""}`);
     setMassaOpen(false);

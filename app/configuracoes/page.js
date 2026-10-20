@@ -6,7 +6,7 @@ import { useTabela, chamarApi } from "../../lib/dados";
 import { useAuth } from "../../lib/AuthContext";
 import { useToast } from "../../lib/Toast";
 import { PADROES, TIPOS_RECURSO_FIXOS, aplicarConfiguracoes } from "../../lib/configuracoes";
-import { EQUIPE_CAMPO, TIPOS_ALERTA } from "../../lib/constantes";
+import { EQUIPE_CAMPO, TIPOS_ALERTA, montarEmailEquipe } from "../../lib/constantes";
 import PainelShell from "../../components/PainelShell";
 import { CabecalhoPagina, Aviso, Spinner, EstadoVazio } from "../../components/ui";
 import Icone from "../../components/Icone";
@@ -25,6 +25,7 @@ const SECOES = [
   ["prazos", "Prazos de alerta", "Quando as etapas e medições ficam em destaque."],
   ["jornada", "Jornada", "Intervalo de almoço descontado automaticamente dos lançamentos de horas."],
   ["alertas", "Alertas por e-mail", "Padrão dos alertas automáticos e horário de silêncio."],
+  ["modelo_email", "Modelo de e-mail (equipe)", "Assunto, saudação, textos por tipo de alerta, assinatura e rodapé."],
   ["feriados_extras", "Feriados adicionais", "Feriados municipais / da empresa no cálculo de dias úteis."],
   ["atalhos", "Outras configurações", "Permissões, empresas terceiras, usuários."],
 ];
@@ -91,6 +92,7 @@ export default function ConfiguracoesPage() {
             {secao === "prazos" && <EditorPrazos {...props("prazos")} />}
             {secao === "jornada" && <EditorJornada {...props("jornada")} />}
             {secao === "alertas" && <EditorAlertas {...props("alertas")} />}
+            {secao === "modelo_email" && <EditorModeloEmail {...props("modelo_email")} />}
             {secao === "feriados_extras" && <EditorFeriados {...props("feriados_extras")} />}
             {secao === "atalhos" && <Atalhos />}
           </section>
@@ -298,6 +300,68 @@ function EditorJornada({ chave, valor, personalizado, onSalvar, onRestaurar }) {
       </div>
       {invalido && <div className="text-sm text-red mt-2">O fim do almoço precisa ser depois do início.</div>}
       <Rodape alterado={alterado && !invalido} salvando={salvando} onSalvar={async () => { setSalvando(true); await onSalvar(chave, v, `${v.almocoInicio}–${v.almocoFim}`); setSalvando(false); }}
+        onDescartar={() => setV(valor)} personalizado={personalizado} onRestaurar={onRestaurar} />
+    </>
+  );
+}
+
+// exemplo de conteúdo de cada tipo, só para a pré-visualização
+const EXEMPLOS_EMAIL = {
+  decisoes: ["Horas aprovadas — 14/10/2026", "PI-0123: 8h normais + 1h extras. Aprovado por Maria Souza."],
+  aprovacoes: ["Aprovações pendentes — 14/10/2026", "2 RDO (PI-0123, PI-0130)\n5 lançamento(s) de horas (PI-0123)"],
+  prazos: ["Prazos e atrasos — 14/10/2026", "1 etapa(s) atrasada(s):\n  • PI-0123 — Montagem elétrica (10/10/2026)"],
+  alocacao: ["Você foi alocado — PI-0123", "PI-0123 (CLIENTE X) · Montagem elétrica\nPeríodo: 15/10/2026 a 25/10/2026\nPor Maria Souza."],
+  pendentes: ["Atividades pendentes — 14/10/2026", "Horas não lançadas em 1 dia(s) em que você estava alocado:\n  • 13/10/2026"],
+  agenda: ["Sua agenda — 14/10/2026", "Hoje (1):\n  • PI-0123 — Montagem elétrica · 10/10/2026 a 20/10/2026 · 40%"],
+};
+function EditorModeloEmail({ chave, valor, personalizado, onSalvar, onRestaurar }) {
+  const [v, setV] = useState(valor);
+  const [salvando, setSalvando] = useState(false);
+  const [tipoPrevia, setTipoPrevia] = useState("decisoes");
+  useEffect(() => { setV(valor); }, [JSON.stringify(valor)]); // eslint-disable-line react-hooks/exhaustive-deps
+  const alterado = JSON.stringify(v) !== JSON.stringify(valor);
+  const set = (k) => (e) => setV((p) => ({ ...p, [k]: e.target.value }));
+  const [tPrev, mPrev] = EXEMPLOS_EMAIL[tipoPrevia];
+  const previa = montarEmailEquipe(v, { nome: "João Silva", titulo: tPrev, mensagem: mPrev, tipo: tipoPrevia, link: "https://contric-obras-app.vercel.app", data: "14/10/2026" });
+  const campo = (k, rotulo, multi = false) => (
+    <label className="block"><span className="rotulo">{rotulo}</span>
+      {multi ? <textarea rows={2} value={v[k] || ""} onChange={set(k)} className="input" /> : <input value={v[k] || ""} onChange={set(k)} className="input" />}
+    </label>
+  );
+  return (
+    <>
+      <p className="texto-apoio mb-3">Vale para todos os e-mails da equipe interna. O conteúdo de cada alerta (o quadro cinza) é gerado pelo sistema; aqui você define o que vem em volta. Variáveis: <code>{"{nome}"}</code> (quem recebe), <code>{"{titulo}"}</code> (título do alerta), <code>{"{data}"}</code> (data de hoje). Deixe um campo vazio para não exibi-lo.</p>
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-5">
+        <div className="flex flex-col gap-3">
+          {campo("assunto", "Assunto")}
+          {campo("cabecalho", "Faixa do topo")}
+          {campo("saudacao", "Saudação")}
+          <div>
+            <span className="rotulo">Texto de abertura por tipo de alerta (opcional)</span>
+            <div className="flex flex-col gap-2">
+              {TIPOS_ALERTA.map(([k, rotulo]) => (
+                <label key={k} className="block"><span className="text-xs text-muted">{rotulo}</span>
+                  <textarea rows={2} value={v.introducoes?.[k] || ""} onFocus={() => setTipoPrevia(k)}
+                    onChange={(e) => setV((p) => ({ ...p, introducoes: { ...(p.introducoes || {}), [k]: e.target.value } }))} className="input" /></label>
+              ))}
+            </div>
+          </div>
+          {campo("botao", "Texto do botão")}
+          {campo("assinatura", "Assinatura", true)}
+          {campo("rodape", "Rodapé", true)}
+        </div>
+        <div>
+          <div className="flex items-center justify-between gap-2 mb-2">
+            <span className="rotulo !mb-0">Pré-visualização</span>
+            <select value={tipoPrevia} onChange={(e) => setTipoPrevia(e.target.value)} className="input !w-auto !py-1.5 text-sm">
+              {TIPOS_ALERTA.map(([k, r]) => <option key={k} value={k}>{r}</option>)}
+            </select>
+          </div>
+          <div className="text-sm mb-2"><span className="text-muted">Assunto:</span> <strong>{previa.assunto}</strong></div>
+          <iframe title="Pré-visualização do e-mail" srcDoc={previa.html} sandbox="" className="w-full h-[560px] rounded-xl border border-line bg-white" />
+        </div>
+      </div>
+      <Rodape alterado={alterado} salvando={salvando} onSalvar={async () => { setSalvando(true); await onSalvar(chave, v, "modelo atualizado"); setSalvando(false); }}
         onDescartar={() => setV(valor)} personalizado={personalizado} onRestaurar={onRestaurar} />
     </>
   );
