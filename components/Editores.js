@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useAuth } from "../lib/AuthContext";
+import { chamarApi } from "../lib/dados";
 import { useToast } from "../lib/Toast";
 import { LISTA_STATUS_ETAPA, CATEGORIAS_OCORRENCIA } from "../lib/constantes";
 import { horasEntreHorarios, hojeISO, isoLocal } from "../lib/datas";
@@ -308,3 +309,98 @@ export function EditorOcorrencia({ oc, pis, comoAprovador, onFechar, onSalvo }) 
     </Modal>
   );
 }
+
+// ---------------- Cliente do portal (página Clientes e abertura de PI) ----------------
+const mascaraTelefone = (v) => {
+  const d = String(v || "").replace(/\D/g, "").slice(0, 11);
+  return d.length <= 10 ? d.replace(/^(\d{2})(\d)/, "($1) $2").replace(/(\d{4})(\d)/, "$1-$2") : d.replace(/^(\d{2})(\d)/, "($1) $2").replace(/(\d{5})(\d)/, "$1-$2");
+};
+
+export function FormCliente({ inicial, onFechar, onSalvo }) {
+  const novo = !inicial.id;
+  const [v, setV] = useState({ nome: inicial.nome || "", empresa: inicial.empresa || "", funcao: inicial.funcao || "", telefone: inicial.telefone || "", email: inicial.email || "" });
+  const [salvando, setSalvando] = useState(false);
+  const [erro, setErro] = useState("");
+  const emailOk = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v.email.trim());
+  const pode = v.nome.trim() && emailOk && !salvando;
+  const set = (k) => (e) => setV((p) => ({ ...p, [k]: k === "telefone" ? mascaraTelefone(e.target.value) : e.target.value }));
+
+  const salvar = async () => {
+    setSalvando(true); setErro("");
+    const { ok, json } = await chamarApi("/api/clientes", novo ? { acao: "criar", ...v } : { acao: "editar", id: inicial.id, ...v });
+    setSalvando(false);
+    if (!ok) { setErro(json.error || "Não foi possível salvar."); return; }
+    onSalvo(json); onFechar();
+  };
+
+  return (
+    <Modal titulo={novo ? "Novo cliente" : `Editar — ${inicial.nome}`} onFechar={onFechar} largura="max-w-md"
+      rodape={<>
+        <button onClick={onFechar} className="btn btn-fantasma" disabled={salvando}>Cancelar</button>
+        <button onClick={salvar} disabled={!pode} className="btn btn-primario">{salvando ? <><Spinner /> Salvando...</> : novo ? "Cadastrar e gerar acesso" : "Salvar"}</button>
+      </>}>
+      <div className="flex flex-col gap-3.5">
+        <Campo rotulo="Nome"><input value={v.nome} onChange={set("nome")} className="input" autoFocus /></Campo>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <Campo rotulo="Empresa"><input value={v.empresa} onChange={set("empresa")} className="input" /></Campo>
+          <Campo rotulo="Função"><input value={v.funcao} onChange={set("funcao")} className="input" placeholder="Ex: Engenheiro de manutenção" /></Campo>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <Campo rotulo="Telefone"><input value={v.telefone} onChange={set("telefone")} inputMode="tel" className="input" placeholder="(11) 90000-0000" /></Campo>
+          <Campo rotulo="E-mail (usuário de acesso)">
+            <input type="email" value={v.email} onChange={set("email")} className={`input ${v.email && !emailOk ? "!border-red" : ""}`} />
+          </Campo>
+        </div>
+        {novo && <Aviso tipo="info">Uma senha aleatória será criada. Em seguida aparece uma mensagem pronta com endereço, usuário e senha para você copiar e encaminhar ao cliente.</Aviso>}
+        {erro && <Aviso tipo="erro">{erro}</Aviso>}
+      </div>
+    </Modal>
+  );
+}
+
+// credenciais recém-criadas: status do e-mail + mensagem pronta para WhatsApp / copiar
+export function Credenciais({ dados, onFechar }) {
+  const { avisar } = useToast();
+  const { cliente, senha, envio, mensagem, titulo } = dados;
+  const fone = String(cliente?.telefone || "").replace(/\D/g, "");
+  const copiar = async () => { try { await navigator.clipboard.writeText(mensagem); avisar("Mensagem copiada."); } catch { avisar("Não foi possível copiar.", "erro"); } };
+  // "Enviar por e-mail via SGO": marcado, o Concluir manda o e-mail com usuário e senha ao cliente
+  const [viaSgo, setViaSgo] = useState(false);
+  const [enviando, setEnviando] = useState(false);
+  const [erro, setErro] = useState("");
+  const concluir = async () => {
+    if (!viaSgo || envio?.enviado) { onFechar(); return; }
+    setEnviando(true); setErro("");
+    const { ok, json } = await chamarApi("/api/clientes", { acao: "enviar_credenciais", id: cliente.id });
+    setEnviando(false);
+    if (!ok) { setErro(json.error || "Não foi possível enviar."); return; }
+    avisar(`E-mail com o acesso enviado para ${cliente.email}.`);
+    onFechar();
+  };
+  return (
+    <Modal titulo={titulo} onFechar={onFechar} largura="max-w-md" confirmarAoFechar={false}
+      rodape={<button onClick={concluir} disabled={enviando} className="btn btn-primario">{enviando ? <><Spinner /> Enviando...</> : viaSgo ? "Enviar e concluir" : "Concluir"}</button>}>
+      <div className="flex flex-col gap-3">
+        {envio?.enviado
+          ? <Aviso tipo="sucesso">E-mail enviado para <strong>{cliente.email}</strong> com o usuário e a senha.</Aviso>
+          : <Aviso tipo="info">Copie a mensagem abaixo e encaminhe ao cliente (WhatsApp, e-mail etc.). A senha só aparece agora.</Aviso>}
+        <textarea readOnly value={mensagem} rows={10} onFocus={(e) => e.target.select()}
+          className="input !text-sm font-mono leading-relaxed resize-none" />
+        <div className="flex flex-wrap gap-2">
+          <button onClick={copiar} className="btn btn-primario btn-sm"><Icone nome="copiar" className="w-4 h-4" /> Copiar mensagem</button>
+          {fone && <a href={`https://wa.me/55${fone}?text=${encodeURIComponent(mensagem)}`} target="_blank" rel="noreferrer" className="btn btn-contorno btn-sm">Enviar por WhatsApp</a>}
+          <a href={`mailto:${cliente.email}?subject=${encodeURIComponent("Seu acesso à plataforma Contric")}&body=${encodeURIComponent(mensagem)}`} className="btn btn-contorno btn-sm">Abrir no e-mail</a>
+        </div>
+        {!envio?.enviado && cliente?.id && (
+          <label className={`flex items-start gap-3 rounded-xl border p-3 cursor-pointer ${viaSgo ? "border-cyan bg-cyan/5" : "border-line"}`}>
+            <input type="checkbox" checked={viaSgo} onChange={(e) => setViaSgo(e.target.checked)} className="mt-0.5 w-4 h-4 accent-cyan" />
+            <span className="text-sm"><strong>Enviar por e-mail via SGO</strong>
+              <span className="texto-apoio block">Ao concluir, o sistema envia automaticamente para <strong>{cliente.email}</strong> o endereço, o usuário e a senha.</span></span>
+          </label>
+        )}
+        {erro && <Aviso tipo="erro">{erro}</Aviso>}
+      </div>
+    </Modal>
+  );
+}
+

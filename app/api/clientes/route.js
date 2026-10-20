@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { exigirPermissao, gerarSenha, registrarSenha, enviarEmail as enviarEmailReal, emailCliente, urlApp, rotaSegura } from "../../../lib/authServidor";
+import { exigirPermissao, gerarSenha, registrarSenha, decifrar, enviarEmail as enviarEmailReal, emailCliente, urlApp, rotaSegura } from "../../../lib/authServidor";
 
 // Envio automático de e-mail aos clientes TEMPORARIAMENTE DESLIGADO: as credenciais
 // aparecem numa mensagem pronta para copiar e encaminhar manualmente.
@@ -95,6 +95,20 @@ export const POST = rotaSegura(async (req) => {
     const envio = await enviarEmail({ para: cliente.email, assunto: "Sua nova senha — plataforma Contric", html: msg.html, texto: msg.texto });
     await log(admin, interno, "Redefiniu senha de cliente", `${cliente.nome} · e-mail ${envio.enviado ? "enviado" : "NÃO enviado"}`);
     return NextResponse.json({ senha, envio, mensagem: msg.texto });
+  }
+
+  // ---------- enviar as credenciais por e-mail pelo SGO (botão na tela de credenciais) ----------
+  // a senha vem do registro cifrado no servidor (não confia no que o navegador mandar)
+  if (acao === "enviar_credenciais") {
+    if (!tem("cliente.gerenciar") && !tem("cliente.senha")) return NextResponse.json({ error: "Seu usuário não tem permissão para esta ação." }, { status: 403 });
+    const { data: reg } = await admin.from("senhas_registradas").select("senha_cifrada").eq("auth_user_id", cliente.auth_user_id).order("created_at", { ascending: false }).limit(1).maybeSingle();
+    const senha = reg ? decifrar(reg.senha_cifrada) : null;
+    if (!senha) return NextResponse.json({ error: "Não encontrei a senha atual deste cliente. Gere uma nova senha e tente de novo." }, { status: 400 });
+    const msg = mensagemBoasVindas(cliente, senha, new URL(req.url).origin);
+    const envio = await enviarEmailReal({ para: cliente.email, assunto: "Seu acesso à plataforma Contric", html: msg.html, texto: msg.texto });
+    await log(admin, interno, "Enviou acesso ao cliente por e-mail (SGO)", `${cliente.nome} (${cliente.email}) · ${envio.enviado ? "enviado" : `NÃO enviado: ${envio.motivo}`}`);
+    if (!envio.enviado) return NextResponse.json({ error: `O e-mail não foi enviado: ${envio.motivo}` }, { status: 400 });
+    return NextResponse.json({ ok: true });
   }
 
   // ---------- excluir (só master) ----------

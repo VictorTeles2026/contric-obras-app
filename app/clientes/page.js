@@ -9,13 +9,10 @@ import VerSenhas from "../../components/VerSenhas";
 import { ConfirmarExclusao } from "../../components/AcoesMaster";
 import { CabecalhoPagina, EstadoVazio, Esqueleto, Aviso, Modal, Campo, Spinner } from "../../components/ui";
 import Icone from "../../components/Icone";
+import { FormCliente, Credenciais } from "../../components/Editores";
 
 const ACESSOS = [["ver_atas", "Atas de reuniões"], ["ver_rdos_assinados", "RDOs assinados (PDF)"], ["ver_linha_tempo", "Linha do tempo"], ["ver_ocorrencias_assinadas", "Ocorrências assinadas"]];
 const flagsDe = (a, valor) => Object.fromEntries(ACESSOS.map(([k]) => [k, valor === undefined ? !!a[k] : valor]));
-const mascaraTelefone = (v) => {
-  const d = String(v || "").replace(/\D/g, "").slice(0, 11);
-  return d.length <= 10 ? d.replace(/^(\d{2})(\d)/, "($1) $2").replace(/(\d{4})(\d)/, "$1-$2") : d.replace(/^(\d{2})(\d)/, "($1) $2").replace(/(\d{5})(\d)/, "$1-$2");
-};
 
 export default function ClientesPage() {
   const { usuario } = useAuth();
@@ -136,73 +133,6 @@ export default function ClientesPage() {
           }} />
       )}
     </PainelShell>
-  );
-}
-
-function FormCliente({ inicial, onFechar, onSalvo }) {
-  const novo = !inicial.id;
-  const [v, setV] = useState({ nome: inicial.nome || "", empresa: inicial.empresa || "", funcao: inicial.funcao || "", telefone: inicial.telefone || "", email: inicial.email || "" });
-  const [salvando, setSalvando] = useState(false);
-  const [erro, setErro] = useState("");
-  const emailOk = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v.email.trim());
-  const pode = v.nome.trim() && emailOk && !salvando;
-  const set = (k) => (e) => setV((p) => ({ ...p, [k]: k === "telefone" ? mascaraTelefone(e.target.value) : e.target.value }));
-
-  const salvar = async () => {
-    setSalvando(true); setErro("");
-    const { ok, json } = await chamarApi("/api/clientes", novo ? { acao: "criar", ...v } : { acao: "editar", id: inicial.id, ...v });
-    setSalvando(false);
-    if (!ok) { setErro(json.error || "Não foi possível salvar."); return; }
-    onSalvo(json); onFechar();
-  };
-
-  return (
-    <Modal titulo={novo ? "Novo cliente" : `Editar — ${inicial.nome}`} onFechar={onFechar} largura="max-w-md"
-      rodape={<>
-        <button onClick={onFechar} className="btn btn-fantasma" disabled={salvando}>Cancelar</button>
-        <button onClick={salvar} disabled={!pode} className="btn btn-primario">{salvando ? <><Spinner /> Salvando...</> : novo ? "Cadastrar e gerar acesso" : "Salvar"}</button>
-      </>}>
-      <div className="flex flex-col gap-3.5">
-        <Campo rotulo="Nome"><input value={v.nome} onChange={set("nome")} className="input" autoFocus /></Campo>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <Campo rotulo="Empresa"><input value={v.empresa} onChange={set("empresa")} className="input" /></Campo>
-          <Campo rotulo="Função"><input value={v.funcao} onChange={set("funcao")} className="input" placeholder="Ex: Engenheiro de manutenção" /></Campo>
-        </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <Campo rotulo="Telefone"><input value={v.telefone} onChange={set("telefone")} inputMode="tel" className="input" placeholder="(11) 90000-0000" /></Campo>
-          <Campo rotulo="E-mail (usuário de acesso)">
-            <input type="email" value={v.email} onChange={set("email")} className={`input ${v.email && !emailOk ? "!border-red" : ""}`} />
-          </Campo>
-        </div>
-        {novo && <Aviso tipo="info">Uma senha aleatória será criada. Em seguida aparece uma mensagem pronta com endereço, usuário e senha para você copiar e encaminhar ao cliente.</Aviso>}
-        {erro && <Aviso tipo="erro">{erro}</Aviso>}
-      </div>
-    </Modal>
-  );
-}
-
-// credenciais recém-criadas: status do e-mail + mensagem pronta para WhatsApp / copiar
-function Credenciais({ dados, onFechar }) {
-  const { avisar } = useToast();
-  const { cliente, senha, envio, mensagem, titulo } = dados;
-  const fone = String(cliente?.telefone || "").replace(/\D/g, "");
-  const copiar = async () => { try { await navigator.clipboard.writeText(mensagem); avisar("Mensagem copiada."); } catch { avisar("Não foi possível copiar.", "erro"); } };
-  return (
-    <Modal titulo={titulo} onFechar={onFechar} largura="max-w-md"
-      rodape={<button onClick={onFechar} className="btn btn-primario">Concluir</button>}>
-      <div className="flex flex-col gap-3">
-        {envio?.enviado
-          ? <Aviso tipo="sucesso">E-mail enviado para <strong>{cliente.email}</strong> com o usuário e a senha.</Aviso>
-          : <Aviso tipo="info">Copie a mensagem abaixo e encaminhe ao cliente (WhatsApp, e-mail etc.). A senha só aparece agora.</Aviso>}
-        <textarea readOnly value={mensagem} rows={10} onFocus={(e) => e.target.select()}
-          className="input !text-sm font-mono leading-relaxed resize-none" />
-        <div className="flex flex-wrap gap-2">
-          <button onClick={copiar} className="btn btn-primario btn-sm"><Icone nome="copiar" className="w-4 h-4" /> Copiar mensagem</button>
-          {fone && <a href={`https://wa.me/55${fone}?text=${encodeURIComponent(mensagem)}`} target="_blank" rel="noreferrer" className="btn btn-contorno btn-sm">Enviar por WhatsApp</a>}
-          <a href={`mailto:${cliente.email}?subject=${encodeURIComponent("Seu acesso à plataforma Contric")}&body=${encodeURIComponent(mensagem)}`} className="btn btn-contorno btn-sm">Abrir no e-mail</a>
-        </div>
-      </div>
-    </Modal>
   );
 }
 

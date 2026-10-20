@@ -13,6 +13,7 @@ import AbasCronograma from "../../components/AbasCronograma";
 import PainelSuspenso from "../../components/PainelSuspenso";
 import { Modal, Campo, EstadoVazio, Spinner } from "../../components/ui";
 import Icone from "../../components/Icone";
+import { FormCliente, Credenciais } from "../../components/Editores";
 
 // fecha um menu suspenso ao clicar fora dele ou apertar Esc
 function useFecharAoClicarFora(aberto, fechar) {
@@ -148,7 +149,17 @@ export default function CronogramaPage() {
   const [pisModalModo, setPisModalModo] = useState("create");
   const [erro, setErro] = useState("");
 
-  const salvarPi = async (dadosPi, valoresOrcamento) => {
+  // responsável marcado para virar cliente do portal: já cadastrado → aviso; senão → abre o cadastro preenchido
+  const [clienteNovo, setClienteNovo] = useState(null);
+  const [credenciaisCliente, setCredenciaisCliente] = useState(null);
+  const tratarResponsavelCliente = async (resp) => {
+    const { data, error } = await supabase.from("clientes").select("id,nome").ilike("email", resp.email).limit(1);
+    if (error) { avisar(`Não foi possível verificar o cliente: ${error.message}`, "erro", 7000); return; }
+    if (data?.length) { avisar("Cliente já cadastrado.", "info", 6000); return; }
+    setClienteNovo(resp);
+  };
+
+  const salvarPi = async (dadosPi, valoresOrcamento, responsavelCliente) => {
     let piId = piAtual?.id;
     const duplicado = pis.some((p) => p.codigo.trim().toLowerCase() === dadosPi.codigo.toLowerCase() && (pisModalModo === "create" || p.id !== piId));
     if (duplicado) return `Já existe um PI com o número ${dadosPi.codigo}.`;
@@ -178,6 +189,7 @@ export default function CronogramaPage() {
     setPiSelecionadoId(piId);
     recarregarPis(); recarregarOrcamentos();
     avisar(pisModalModo === "create" ? `PI ${dadosPi.codigo} criado.` : "PI atualizado.");
+    if (responsavelCliente) await tratarResponsavelCliente(responsavelCliente);
     return null;
   };
 
@@ -456,9 +468,12 @@ export default function CronogramaPage() {
         <PiModal
           modo={pisModalModo} piInicial={pisModalModo === "edit" ? piAtual : null}
           categorias={categorias} valoresIniciais={pisModalModo === "edit" ? valoresOrcamentoAtuais : {}}
-          onSalvar={salvarPi} onCancelar={() => setPisModalAberto(false)}
+          onSalvar={salvarPi} onCancelar={() => setPisModalAberto(false)} podeCadastrarCliente={pode(usuario, "cliente.gerenciar")}
         />
       )}
+      {clienteNovo && <FormCliente inicial={clienteNovo} onFechar={() => setClienteNovo(null)}
+        onSalvo={(r) => { if (r?.senha) setCredenciaisCliente({ ...r, titulo: "Cliente cadastrado" }); }} />}
+      {credenciaisCliente && <Credenciais dados={credenciaisCliente} onFechar={() => setCredenciaisCliente(null)} />}
 
       <div ref={containerRef} className="flex-1 overflow-auto p-4 md:p-6 relative" onClick={() => ctxMenu && setCtxMenu(null)}>
         {!piAtual && pis.length > 0 && (
@@ -795,7 +810,7 @@ function EtapaRow({ etapa, editavel, onChange, onDelete, deps, onRemoverDep, anc
   );
 }
 
-function PiModal({ modo, piInicial, categorias, valoresIniciais, onSalvar, onCancelar }) {
+function PiModal({ modo, piInicial, categorias, valoresIniciais, onSalvar, onCancelar, podeCadastrarCliente = false }) {
   const [codigo, setCodigo] = useState(piInicial?.codigo || "");
   const [cliente, setCliente] = useState(piInicial?.cliente || "");
   const [projeto, setProjeto] = useState(piInicial?.projeto || "");
@@ -804,6 +819,7 @@ function PiModal({ modo, piInicial, categorias, valoresIniciais, onSalvar, onCan
   const [respNome, setRespNome] = useState(piInicial?.responsavel_cliente_nome || "");
   const [respEmail, setRespEmail] = useState(piInicial?.responsavel_cliente_email || "");
   const [respTelefone, setRespTelefone] = useState(piInicial?.responsavel_cliente_telefone || "");
+  const [cadastrarCliente, setCadastrarCliente] = useState(false); // cadastrar o responsável no Acesso Clientes
   const [valores, setValores] = useState(valoresIniciais || {});
 
   // categorias desativadas em Configurações somem — a não ser que este PI já tenha valor nelas
@@ -813,7 +829,8 @@ function PiModal({ modo, piInicial, categorias, valoresIniciais, onSalvar, onCan
   const setValor = (catId, v) => setValores((prev) => ({ ...prev, [catId]: v === "" ? "" : Number(v) }));
   const [salvando, setSalvando] = useState(false);
   const [erroModal, setErroModal] = useState("");
-  const podeSalvar = codigo.trim().length > 0 && !salvando;
+  const emailRespOk = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(respEmail.trim());
+  const podeSalvar = codigo.trim().length > 0 && !salvando && (!cadastrarCliente || (respNome.trim() && emailRespOk));
   const soma = (cats) => cats.reduce((s, c) => s + (Number(valores[c.id]) || 0), 0);
 
   const salvar = async () => {
@@ -821,7 +838,8 @@ function PiModal({ modo, piInicial, categorias, valoresIniciais, onSalvar, onCan
     setSalvando(true); setErroModal("");
     // cliente e projeto sempre gravados em MAIÚSCULAS
     const erro = await onSalvar({ codigo: codigo.trim(), cliente: cliente.trim().toLocaleUpperCase("pt-BR") || null, projeto: projeto.trim().toLocaleUpperCase("pt-BR") || null, prazo: prazo || null, status,
-      responsavel_cliente_nome: respNome.trim() || null, responsavel_cliente_email: respEmail.trim() || null, responsavel_cliente_telefone: respTelefone.trim() || null }, valores);
+      responsavel_cliente_nome: respNome.trim() || null, responsavel_cliente_email: respEmail.trim() || null, responsavel_cliente_telefone: respTelefone.trim() || null }, valores,
+      cadastrarCliente ? { nome: respNome.trim(), email: respEmail.trim().toLowerCase(), telefone: respTelefone.trim(), empresa: cliente.trim().toLocaleUpperCase("pt-BR") } : null);
     setSalvando(false);
     if (erro) setErroModal(erro);
   };
@@ -867,6 +885,15 @@ function PiModal({ modo, piInicial, categorias, valoresIniciais, onSalvar, onCan
         <Campo rotulo="Responsável pelo PI no cliente" className="col-span-2 md:col-span-2"><input value={respNome} onChange={(e) => setRespNome(e.target.value)} className="input" placeholder="Nome" /></Campo>
         <Campo rotulo="E-mail do responsável" className="col-span-2 md:col-span-2"><input value={respEmail} onChange={(e) => setRespEmail(e.target.value)} className="input" inputMode="email" autoCapitalize="none" /></Campo>
         <Campo rotulo="Telefone do responsável" className="col-span-2 md:col-span-2"><input value={respTelefone} onChange={(e) => setRespTelefone(e.target.value)} className="input" inputMode="tel" /></Campo>
+        {podeCadastrarCliente && (
+          <label className={`col-span-2 md:col-span-6 flex items-start gap-3 rounded-xl border p-3 cursor-pointer ${cadastrarCliente ? "border-cyan bg-cyan/5" : "border-line"}`}>
+            <input type="checkbox" checked={cadastrarCliente} onChange={(e) => setCadastrarCliente(e.target.checked)} className="mt-0.5 w-4 h-4 accent-cyan" />
+            <span className="text-sm"><strong>Cadastrar o responsável como cliente no Acesso Clientes</strong>
+              <span className="texto-apoio block">Ao salvar o PI: se o e-mail já tiver cadastro, avisa "Cliente já cadastrado."; se não, abre o cadastro de cliente com os dados preenchidos.</span>
+              {cadastrarCliente && (!respNome.trim() || !emailRespOk) && <span className="text-xs text-red block mt-1">Preencha o nome e um e-mail válido do responsável.</span>}
+            </span>
+          </label>
+        )}
       </div>
 
       <div className="flex items-baseline justify-between mb-2">
