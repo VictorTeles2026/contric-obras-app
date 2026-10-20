@@ -175,7 +175,7 @@ export default function DocumentosPage() {
     }
     setEnviando(false);
     setPendentes(null);
-    if (atas) chamarApi("/api/clientes/avisar", { piId: resultado.pi.id, tipo: "ata", detalhe: `${atas} nova(s) ata(s) de reunião.` });
+    if (atas) chamarApi("/api/alertas", { acao: "cliente", piId: resultado.pi.id, tipo: "ata", detalhe: `${atas} nova(s) ata(s) de reunião.` });
     if (ok) { avisar(`${ok} arquivo(s) enviado(s).`); buscar(resultado.pi.id); }
   };
 
@@ -409,6 +409,7 @@ function LiberarParaClientes({ item, pi, clientes, liberados, usuario, onMudou, 
         return;
       }
       onMudou([...liberados, data]);
+      chamarApi("/api/alertas", { acao: "cliente", tipo: "documento", piId: pi.id, clienteId: c.id, detalhe: `Documento: ${item.nome}` }).catch(() => {});
       await registrarLog(usuario, "Disponibilizou documento ao cliente", `${pi.codigo} — ${item.nome} · ${c.nome}`);
     }
   };

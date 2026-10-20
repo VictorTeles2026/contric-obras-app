@@ -6,7 +6,7 @@ import { useAuth, podeGerenciarUsuarios, pode } from "../../lib/AuthContext";
 import { useToast } from "../../lib/Toast";
 import PainelShell from "../../components/PainelShell";
 import { CabecalhoPagina, Modal, Campo, Aviso, Esqueleto, EstadoVazio, Spinner, SeletorEquipes } from "../../components/ui";
-import { AREAS, FUNCOES, EQUIPE_CAMPO } from "../../lib/constantes";
+import { AREAS, FUNCOES, EQUIPE_CAMPO, ALERTAS, TIPOS_ALERTA } from "../../lib/constantes";
 import { normalizarLogin, erroLogin, ehEmail, sugerirLogin } from "../../lib/login";
 import Icone from "../../components/Icone";
 import VerSenhas from "../../components/VerSenhas";
@@ -121,13 +121,15 @@ export default function UsuariosPage() {
         />
 
         <div className="flex gap-1 border-b border-line mb-4">
-          {[["geral", "Usuários", usuarios.length - qtdCampo], ["campo", "Usuários de Campo", qtdCampo]].map(([v, l, n]) => (
+          {[["geral", "Usuários", usuarios.length - qtdCampo], ["campo", "Usuários de Campo", qtdCampo], ["alertas", "Alertas", null]].map(([v, l, n]) => (
             <button key={v} onClick={() => setAba(v)} className={`relative px-4 py-2.5 text-sm font-semibold ${aba === v ? "text-cyan" : "text-muted hover:text-textmain"}`}>
-              {l} <span className="selo bg-panel text-muted ml-1">{n}</span>
+              {l} {n !== null && <span className="selo bg-panel text-muted ml-1">{n}</span>}
               {aba === v && <span className="absolute left-0 right-0 -bottom-px h-0.5 bg-cyan rounded-full" />}
             </button>
           ))}
         </div>
+        {aba === "alertas" && <AbaAlertas usuarios={usuarios} carregando={carregando} podeEditar={souMaster} recarregar={recarregar} />}
+        {aba !== "alertas" && <>
         {aba === "campo" && <p className="text-sm text-muted mb-3">Usuários da equipe <strong>Campo</strong>. Use <strong>+ Novos Usuários</strong> para cadastrar várias pessoas de uma vez (ex: equipe nova numa obra).</p>}
 
         <div className="flex flex-col sm:flex-row gap-2 mb-4">
@@ -227,6 +229,7 @@ export default function UsuariosPage() {
         </div>
         </div>
         ))}
+        </>}
 
         {excluindo && (
           <ConfirmacaoDupla titulo="Excluir usuário" onFechar={() => setExcluindo(null)}
@@ -589,5 +592,106 @@ function SeletorEmpresa({ empresas, valor, onChange, disabled, compacto }) {
       </select>
       {!compacto && !empresas.length && <span className="block text-xs text-amber mt-1">Nenhuma empresa cadastrada — cadastre em Recursos → Empresas terceiras.</span>}
     </>
+  );
+}
+// ---------- aba Alertas: o que cada usuário recebe por e-mail (tudo começa desligado) ----------
+function AbaAlertas({ usuarios, carregando, podeEditar, recarregar }) {
+  const { avisar } = useToast();
+  const { usuario } = useAuth();
+  const [mudancas, setMudancas] = useState({}); // usuarioId → { tipo: bool }
+  const [salvando, setSalvando] = useState(false);
+  const [clientes, setClientes] = useState(ALERTAS.clientes === true);
+  const [salvandoClientes, setSalvandoClientes] = useState(false);
+  const [busca, setBusca] = useState("");
+  const semEmail = (u) => !u.email || /@usuarios\.contric\.local$/i.test(u.email);
+  const valor = (u, k) => (mudancas[u.id]?.[k] ?? u.alertas?.[k] ?? ALERTAS[k]) === true;
+  const marcar = (u, k, v) => setMudancas((p) => ({ ...p, [u.id]: { ...TIPOS_ALERTA.reduce((o, [t]) => ({ ...o, [t]: valor(u, t) }), {}), ...p[u.id], [k]: v } }));
+  const termo = busca.trim().toLowerCase();
+  const lista = usuarios.filter((u) => u.ativo !== false && (!termo || [u.nome, u.email, u.perfil].some((c) => (c || "").toLowerCase().includes(termo))))
+    .sort((a, b) => Number(semEmail(a)) - Number(semEmail(b)) || (a.nome || "").localeCompare(b.nome || "", "pt-BR"));
+  const comEmail = lista.filter((u) => !semEmail(u));
+  const colunaToda = (k, v) => comEmail.forEach((u) => marcar(u, k, v));
+  const qtdMudados = Object.keys(mudancas).length;
+  const ligados = (k) => usuarios.filter((u) => u.ativo !== false && !semEmail(u) && valor(u, k)).length;
+
+  const salvar = async () => {
+    setSalvando(true);
+    const { ok, json } = await chamarApi("/api/alertas", { acao: "preferencias", itens: Object.entries(mudancas).map(([usuarioId, alertas]) => ({ usuarioId, alertas })) });
+    setSalvando(false);
+    if (!ok) { avisar(json.error || "Não foi possível salvar.", "erro", 7000); return; }
+    avisar("Alertas salvos — registrado na Auditoria.");
+    setMudancas({}); recarregar();
+  };
+  const alternarClientes = async (v) => {
+    setSalvandoClientes(true);
+    const novo = { ...ALERTAS, clientes: v };
+    const { ok, json } = await chamarApi("/api/configuracoes", { acao: "salvar", chave: "alertas", valor: novo, resumo: `E-mails a clientes ${v ? "ligados" : "desligados"}` });
+    setSalvandoClientes(false);
+    if (!ok) { avisar(json.error || "Não foi possível salvar.", "erro", 7000); return; }
+    Object.assign(ALERTAS, novo); setClientes(v);
+  };
+
+  if (carregando) return <Esqueleto linhas={5} altura={48} />;
+  return (
+    <div>
+      <p className="text-sm text-muted mb-3">Escolha o que cada pessoa recebe <strong>por e-mail</strong>. Tudo continua aparecendo no sininho do sistema. Os alertas começam <strong>desligados</strong>; quem tiver um alerta ligado pode desligá-lo no próprio sininho, mas só aqui é possível ligar.</p>
+      <div className="cartao p-4 mb-4 flex flex-wrap items-center gap-3">
+        <div className="flex-1 min-w-[240px]">
+          <div className="font-semibold text-sm">E-mails para clientes do portal</div>
+          <div className="texto-apoio">Ata nova, RDO e ocorrência assinados, documento liberado e atualização da linha do tempo — para os clientes com o acesso correspondente.</div>
+        </div>
+        <button type="button" disabled={usuario?.perfil !== "master" || salvandoClientes} onClick={() => alternarClientes(!clientes)}
+          title={usuario?.perfil !== "master" ? "Somente o Master" : ""}
+          className={`btn btn-sm ${clientes ? "bg-green text-white" : "btn-contorno"}`}>
+          {salvandoClientes ? <Spinner /> : clientes ? "Ligado" : "Desligado"}
+        </button>
+      </div>
+      <div className="flex flex-wrap gap-2 mb-3 items-center">
+        <div className="relative flex-1 min-w-[220px]">
+          <Icone nome="buscar" className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muteddim" />
+          <input value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Buscar usuário" className="input pl-9" />
+        </div>
+        {podeEditar && qtdMudados > 0 && <>
+          <button onClick={() => setMudancas({})} className="btn btn-contorno" disabled={salvando}>Descartar</button>
+          <button onClick={salvar} className="btn btn-primario" disabled={salvando}>{salvando ? <><Spinner /> Salvando...</> : `Salvar (${qtdMudados})`}</button>
+        </>}
+      </div>
+      <div className="cartao overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b border-line text-left">
+              <th className="px-3 py-2.5 titulo-secao">Usuário</th>
+              {TIPOS_ALERTA.map(([k, rotulo, dica]) => (
+                <th key={k} className="px-3 py-2.5 titulo-secao text-center w-44" title={dica}>
+                  <div>{rotulo}</div>
+                  <div className="font-normal normal-case text-muteddim text-[11px]">{ligados(k)} ligado(s)</div>
+                  {podeEditar && <div className="flex justify-center gap-2 mt-1 font-normal normal-case">
+                    <button onClick={() => colunaToda(k, true)} className="text-cyan text-[11px] hover:underline">todos</button>
+                    <button onClick={() => colunaToda(k, false)} className="text-muted text-[11px] hover:underline">nenhum</button>
+                  </div>}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {lista.map((u) => (
+              <tr key={u.id} className={`border-b border-line/60 ${mudancas[u.id] ? "bg-cyan/5" : ""}`}>
+                <td className="px-3 py-2">
+                  <div className="font-medium">{u.nome}</div>
+                  <div className="texto-apoio">{PERFIS.find(([v]) => v === u.perfil)?.[1] || u.perfil} · {semEmail(u) ? <span className="text-amber">sem e-mail — só sininho</span> : u.email}</div>
+                </td>
+                {TIPOS_ALERTA.map(([k]) => (
+                  <td key={k} className="px-3 py-2 text-center">
+                    <input type="checkbox" className="w-4 h-4 accent-cyan" aria-label={`${k} — ${u.nome}`}
+                      disabled={!podeEditar || semEmail(u)} checked={!semEmail(u) && valor(u, k)} onChange={(e) => marcar(u, k, e.target.checked)} />
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <p className="texto-apoio mt-2">Horário de silêncio ({ALERTAS.silencioInicio}–{ALERTAS.silencioFim}) e demais padrões: Configurações → Alertas por e-mail.</p>
+    </div>
   );
 }

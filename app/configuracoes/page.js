@@ -6,7 +6,7 @@ import { useTabela, chamarApi } from "../../lib/dados";
 import { useAuth } from "../../lib/AuthContext";
 import { useToast } from "../../lib/Toast";
 import { PADROES, TIPOS_RECURSO_FIXOS, aplicarConfiguracoes } from "../../lib/configuracoes";
-import { EQUIPE_CAMPO } from "../../lib/constantes";
+import { EQUIPE_CAMPO, TIPOS_ALERTA } from "../../lib/constantes";
 import PainelShell from "../../components/PainelShell";
 import { CabecalhoPagina, Aviso, Spinner, EstadoVazio } from "../../components/ui";
 import Icone from "../../components/Icone";
@@ -24,6 +24,7 @@ const SECOES = [
   ["status_pi", "Status dos PIs", "Nomes exibidos para os status do PI."],
   ["prazos", "Prazos de alerta", "Quando as etapas e medições ficam em destaque."],
   ["jornada", "Jornada", "Intervalo de almoço descontado automaticamente dos lançamentos de horas."],
+  ["alertas", "Alertas por e-mail", "Padrão dos alertas automáticos e horário de silêncio."],
   ["feriados_extras", "Feriados adicionais", "Feriados municipais / da empresa no cálculo de dias úteis."],
   ["atalhos", "Outras configurações", "Permissões, empresas terceiras, usuários."],
 ];
@@ -89,6 +90,7 @@ export default function ConfiguracoesPage() {
             {secao === "status_pi" && <EditorStatusPi {...props("status_pi")} />}
             {secao === "prazos" && <EditorPrazos {...props("prazos")} />}
             {secao === "jornada" && <EditorJornada {...props("jornada")} />}
+            {secao === "alertas" && <EditorAlertas {...props("alertas")} />}
             {secao === "feriados_extras" && <EditorFeriados {...props("feriados_extras")} />}
             {secao === "atalhos" && <Atalhos />}
           </section>
@@ -296,6 +298,35 @@ function EditorJornada({ chave, valor, personalizado, onSalvar, onRestaurar }) {
       </div>
       {invalido && <div className="text-sm text-red mt-2">O fim do almoço precisa ser depois do início.</div>}
       <Rodape alterado={alterado && !invalido} salvando={salvando} onSalvar={async () => { setSalvando(true); await onSalvar(chave, v, `${v.almocoInicio}–${v.almocoFim}`); setSalvando(false); }}
+        onDescartar={() => setV(valor)} personalizado={personalizado} onRestaurar={onRestaurar} />
+    </>
+  );
+}
+
+function EditorAlertas({ chave, valor, personalizado, onSalvar, onRestaurar }) {
+  const [v, setV] = useState(valor);
+  const [salvando, setSalvando] = useState(false);
+  useEffect(() => { setV(valor); }, [JSON.stringify(valor)]); // eslint-disable-line react-hooks/exhaustive-deps
+  const alterado = JSON.stringify(v) !== JSON.stringify(valor);
+  return (
+    <>
+      <p className="texto-apoio mb-3">Tudo continua aparecendo no sininho. Aqui você define o que <strong>também</strong> vai por e-mail para quem não mudou a própria preferência (cada usuário ajusta as suas no sininho → Preferências). Usuários com login sem e-mail (ex: equipe de campo) não recebem e-mail.</p>
+      <div className="flex flex-col gap-2.5">
+        {TIPOS_ALERTA.map(([k, rotulo, dica]) => (
+          <label key={k} className="flex items-start gap-3 cursor-pointer">
+            <input type="checkbox" checked={v[k] !== false} onChange={(e) => setV((p) => ({ ...p, [k]: e.target.checked }))} className="mt-1 w-4 h-4 accent-cyan" />
+            <span className="text-sm"><strong>{rotulo}</strong> <span className="texto-apoio block">{dica}</span></span>
+          </label>
+        ))}
+      </div>
+      <div className="flex flex-wrap items-end gap-3 mt-4">
+        <label className="block"><span className="rotulo">Silêncio — início</span>
+          <input type="time" value={v.silencioInicio || ""} onChange={(e) => setV((p) => ({ ...p, silencioInicio: e.target.value }))} className="input !w-36" /></label>
+        <label className="block"><span className="rotulo">Silêncio — fim</span>
+          <input type="time" value={v.silencioFim || ""} onChange={(e) => setV((p) => ({ ...p, silencioFim: e.target.value }))} className="input !w-36" /></label>
+      </div>
+      <p className="texto-apoio mt-2">E-mails gerados no silêncio saem junto com o resumo diário (por volta das 7h). Os resumos de aprovações e de prazos são enviados uma vez por dia, nesse horário.</p>
+      <Rodape alterado={alterado} salvando={salvando} onSalvar={async () => { setSalvando(true); await onSalvar(chave, v, TIPOS_ALERTA.filter(([k]) => v[k] !== false).map(([, r]) => r).join(", ") || "nenhum"); setSalvando(false); }}
         onDescartar={() => setV(valor)} personalizado={personalizado} onRestaurar={onRestaurar} />
     </>
   );
