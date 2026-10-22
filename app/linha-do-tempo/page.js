@@ -4,7 +4,7 @@ import { useState, useMemo, useEffect, useLayoutEffect, useRef } from "react";
 import Link from "next/link";
 import { useTabela } from "../../lib/dados";
 import { tsLocal, diasAte as diffDias, formatarData as formatarDataIso } from "../../lib/datas";
-import { AREAS, STATUS_ETAPA, PRAZOS } from "../../lib/constantes";
+import { AREAS, STATUS_ETAPA, PRAZOS, datasAlertaEtapa } from "../../lib/constantes";
 import PainelShell from "../../components/PainelShell";
 import { CabecalhoPagina, EstadoVazio, Modal } from "../../components/ui";
 import Icone from "../../components/Icone";
@@ -304,6 +304,10 @@ export default function LinhaDoTempoPage() {
               <span className="px-1.5 py-px rounded text-[10px] font-bold text-white" style={{ background: COR_MEDICAO }}>M-R$</span>
               Medição (no fim do período planejado)
             </span>
+            <span className="flex items-center gap-1.5">
+              <span className="w-3.5 h-3.5 rounded-full bg-white text-amber flex items-center justify-center" style={{ boxShadow: "0 0 0 1px currentColor" }}><Icone nome="sino" className="w-2.5 h-2.5" /></span>
+              Alerta de prazo por e-mail
+            </span>
           </div>
         </div>
 
@@ -420,6 +424,7 @@ export default function LinhaDoTempoPage() {
                     )}
 
                     {nivel !== "pi" && itensVisiveis.map((e) => {
+                      const hojeIsoLocal = new Date().toLocaleDateString("sv-SE");
                       const inicio = tsLocal(e.data_prevista_inicio) ?? escala.min;
                       const fim = (tsLocal(e.data_prevista_fim) ?? inicio) + 86400000; // a barra vai até o FIM do último dia
                       const left = ((inicio - escala.min) / span) * largura;
@@ -434,6 +439,7 @@ export default function LinhaDoTempoPage() {
                         <div key={e.id} className="flex items-center border-b border-line/60">
                           <div className={`shrink-0 sticky left-0 bg-white z-10 py-1.5 truncate border-r border-line ${e.nivel ? "pl-8 pr-2 text-xs text-muted" : "px-3 text-sm font-medium"}`} style={{ width: LABEL_W }} title={e.nome}>
                             {e.nivel ? "· " : ""}{e.nome}
+                            {datasAlertaEtapa(e).length > 0 && <Icone nome="sino" className="w-3 h-3 inline ml-1 -mt-0.5 text-amber" />}
                           </div>
                           <div className={e.nivel ? "relative h-7" : "relative h-8"} style={{ width: largura }}>
                             <div className="absolute inset-0" style={{ left: hojeX, width: 1, background: "#D64545", opacity: 0.5 }} />
@@ -454,6 +460,19 @@ export default function LinhaDoTempoPage() {
                                 ))}
                               </div>
                             )}
+                            {/* alertas de prazo programados na etapa: sino na data de cada aviso */}
+                            {datasAlertaEtapa(e).map((a) => {
+                              const x = ((tsLocal(a.data) + 43200000 - escala.min) / span) * largura;
+                              if (x < 0 || x > largura) return null;
+                              const passou = a.data < hojeIsoLocal;
+                              return (
+                                <span key={a.dias} className={`absolute flex items-center justify-center rounded-full bg-white ${passou ? "text-muteddim" : "text-amber"}`}
+                                  style={{ left: x - 7, top: e.nivel ? 6 : 8, width: 14, height: 14, boxShadow: "0 0 0 1px currentColor" }}
+                                  title={`Alerta por e-mail em ${formatarDataIso(a.data)} · ${a.dias === 0 ? `no dia do ${a.ref}` : `${a.dias} dia(s) antes do ${a.ref}`}${passou ? " (enviado/passou)" : ""}`}>
+                                  <Icone nome="sino" className="w-2.5 h-2.5" />
+                                </span>
+                              );
+                            })}
                             {/* fim do período planejado: marca de medição (qualquer status) + situação */}
                             <div className="absolute top-0 bottom-0 flex items-center gap-1.5 whitespace-nowrap" style={{ left: e.medicao ? left + width - 6 : left + width + 5 }}>
                               {e.medicao && (

@@ -6,7 +6,7 @@ import { avisarAlocacao } from "../../lib/notificacoes";
 import { useAuth, podeEditar, pode } from "../../lib/AuthContext";
 import { supabase } from "../../lib/supabase";
 import { hojeISO as todayISO, addDias, isoLocal } from "../../lib/datas";
-import { LISTA_STATUS_ETAPA as STATUS, AREAS, STATUS_PI, COR_STATUS_PI, STATUS_ETAPA, FERIADOS_EXTRAS } from "../../lib/constantes";
+import { LISTA_STATUS_ETAPA as STATUS, AREAS, STATUS_PI, COR_STATUS_PI, STATUS_ETAPA, FERIADOS_EXTRAS, datasAlertaEtapa } from "../../lib/constantes";
 import { useToast } from "../../lib/Toast";
 import PainelShell from "../../components/PainelShell";
 import AbasCronograma from "../../components/AbasCronograma";
@@ -596,6 +596,64 @@ function useCampoDebounced(valorExterno, aoSalvar, atraso = 500, aoSair) {
   return [valor, onChangeLocal, eventos];
 }
 
+// alertas de prazo da etapa: até 3 antecedências (dias) antes do início ou do término,
+// enviados por e-mail às 7h para os recursos alocados (com usuário) e o responsável da etapa
+function PainelAlertasEtapa({ etapa, editavel, alocs, recursos, onSalvar }) {
+  const atual = etapa.alertas || {};
+  const [ref, setRef] = useState(atual.ref === "inicio" ? "inicio" : "fim");
+  const [dias, setDias] = useState(() => [0, 1, 2].map((i) => (atual.dias?.[i] ?? "") === "" ? "" : String(atual.dias[i])));
+  const lista = dias.map((d) => (d === "" ? null : Number(d))).filter((d) => d !== null && Number.isInteger(d) && d >= 0 && d <= 365);
+  const invalido = dias.some((d) => d !== "" && !(Number.isInteger(Number(d)) && Number(d) >= 0 && Number(d) <= 365));
+  const previa = datasAlertaEtapa({ ...etapa, alertas: { ref, dias: lista } });
+  const destinatarios = [...new Set(alocs.map((a) => recursos.find((r) => r.id === a.recurso_id)).filter((r) => r?.usuario_id).map((r) => r.nome))];
+  const semUsuario = alocs.filter((a) => !recursos.find((r) => r.id === a.recurso_id)?.usuario_id).length;
+  const hoje = todayISO();
+  return (
+    <div className="flex flex-col gap-2.5 p-1.5 text-sm">
+      <div className="font-semibold">Alertas de prazo por e-mail</div>
+      <label className="block"><span className="text-xs text-muted">Contar a antecedência a partir do</span>
+        <select value={ref} disabled={!editavel} onChange={(e) => setRef(e.target.value)} className="input !py-1.5 !text-xs mt-0.5">
+          <option value="inicio">Início previsto ({etapa.data_prevista_inicio ? isoParaBR(etapa.data_prevista_inicio) : "sem data"})</option>
+          <option value="fim">Término previsto ({etapa.data_prevista_fim ? isoParaBR(etapa.data_prevista_fim) : "sem data"})</option>
+        </select>
+      </label>
+      <div>
+        <span className="text-xs text-muted">Avisar quantos dias antes (até 3)</span>
+        <div className="flex gap-1.5 mt-0.5">
+          {dias.map((d, i) => (
+            <div key={i} className="relative flex-1">
+              <input type="number" min="0" max="365" value={d} disabled={!editavel} placeholder="—" aria-label={`Alerta ${i + 1}: dias antes`}
+                onChange={(e) => setDias((p) => p.map((x, k) => (k === i ? e.target.value : x)))} className="input !py-1.5 !pl-2 !pr-7 !text-xs text-right" />
+              <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-muted">dias</span>
+            </div>
+          ))}
+        </div>
+        <div className="text-[11px] text-muteddim mt-1">0 = no próprio dia.</div>
+      </div>
+      {previa.length > 0 && (
+        <div className="rounded-lg bg-panel px-2.5 py-2 text-xs flex flex-col gap-0.5">
+          {previa.map((a) => (
+            <div key={a.dias} className={a.data < hoje ? "text-muteddim line-through" : ""}>
+              {isoParaBR(a.data)} · {a.dias === 0 ? `no dia do ${a.ref}` : `${a.dias} dia(s) antes do ${a.ref}`}{a.data < hoje ? " (já passou)" : ""}
+            </div>
+          ))}
+        </div>
+      )}
+      <div className="text-xs text-muted">
+        Recebem: {destinatarios.length ? destinatarios.join(", ") : "ninguém alocado com usuário"} + responsável da etapa, se houver.
+        {semUsuario > 0 && <span className="block text-amber">{semUsuario} recurso(s) alocado(s) sem usuário vinculado não recebem.</span>}
+      </div>
+      {editavel && (
+        <div className="flex justify-between gap-2">
+          <button onClick={() => onSalvar(null)} className="btn btn-fantasma btn-sm" disabled={!atual.dias?.length}>Remover alertas</button>
+          <button onClick={() => onSalvar(lista.length ? { ref, dias: [...new Set(lista)] } : null)} disabled={invalido} className="btn btn-primario btn-sm">Salvar</button>
+        </div>
+      )}
+    </div>
+  );
+}
+const isoParaBR = (iso) => iso.slice(0, 10).split("-").reverse().join("/");
+
 function EtapaRow({ etapa, editavel, onChange, onDelete, deps, onRemoverDep, anchorRef, onCreateDependency, dragOverId, setDragOverId, onReordenar, dragOverRowId, setDragOverRowId, onToggleArea, recursos, alocs, onToggleRecurso }) {
   const [confirmarExclusao, setConfirmarExclusao] = useState(false);
   const [equipeAberta, setEquipeAberta] = useState(false);
@@ -609,6 +667,10 @@ function EtapaRow({ etapa, editavel, onChange, onDelete, deps, onRemoverDep, anc
   const alocRef = useRef(null);
   const fecharEquipe = useCallback(() => setEquipeAberta(false), []);
   const fecharAloc = useCallback(() => setAlocAberta(false), []);
+  const [alertaAberto, setAlertaAberto] = useState(false);
+  const alertaRef = useRef(null);
+  const fecharAlerta = useCallback(() => setAlertaAberto(false), []);
+  const qtdAlertas = datasAlertaEtapa(etapa).length;
   // nome em branco não é salvo (a etapa ficaria "invisível"); data apagada vira null (e não "", que o banco recusa)
   // salva o texto como está (com o espaço do fim) enquanto digita; ao sair do campo, tira os espaços das pontas
   const [nomeLocal, setNomeLocal, eventosNome] = useCampoDebounced(etapa.nome, (v) => v.trim() && onChange(etapa.id, { nome: v }), 500, (v) => v.trim() || v);
@@ -712,6 +774,18 @@ function EtapaRow({ etapa, editavel, onChange, onDelete, deps, onRemoverDep, anc
                 <span className="truncate">{r.nome}{r.ativo === false ? " (desabilitado)" : ""}</span>
               </label>
             ))}
+        </PainelSuspenso>
+      </div>
+
+      <div className="relative" ref={alertaRef}>
+        <button onClick={() => { setAlertaAberto((v) => !v); setEquipeAberta(false); setAlocAberta(false); }} aria-expanded={alertaAberto}
+          title={qtdAlertas ? `Alertas: ${datasAlertaEtapa(etapa).map((a) => `${a.dias}d antes do ${a.ref}`).join(", ")}` : "Programar alertas de prazo por e-mail"}
+          className={`btn btn-sm !px-2.5 border ${qtdAlertas ? "border-amber/50 text-amber bg-amber/5" : "border-line text-muted bg-white"}`}>
+          <Icone nome="sino" className="w-3.5 h-3.5" />{qtdAlertas ? ` ${qtdAlertas}` : ""} ▾
+        </button>
+        <PainelSuspenso ancoraRef={alertaRef} aberto={alertaAberto} onFechar={fecharAlerta} largura={300}>
+          <PainelAlertasEtapa etapa={etapa} editavel={editavel} alocs={alocs} recursos={recursos}
+            onSalvar={(alertas) => { onChange(etapa.id, { alertas }); setAlertaAberto(false); }} />
         </PainelSuspenso>
       </div>
 

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { identificar, permissoesDe, supabaseAdmin, enviarEmail, emailCliente, urlApp, rotaSegura } from "../../../lib/authServidor";
 import { resolverPermissoes } from "../../../lib/permissoes";
-import { ALERTAS, PRAZOS, TIPOS_ALERTA, MODELO_EMAIL, montarEmailEquipe } from "../../../lib/constantes";
+import { ALERTAS, PRAZOS, TIPOS_ALERTA, MODELO_EMAIL, montarEmailEquipe, datasAlertaEtapa } from "../../../lib/constantes";
 
 // Alertas automáticos por e-mail.
 // - Toda notificação do sininho entra numa fila (notificacoes.email_status = null). O app chama
@@ -177,6 +177,24 @@ async function resumoDiario(admin) {
       if (semana.length) ag.push(`Sua semana (${dataBR(dia)} a ${dataBR(sexta)}):\n${lista(semana, fmtA)}`);
     }
     add("agenda", "/minhas-horas", segunda ? "Sua agenda da semana" : "Sua agenda", ag);
+  }
+  // alertas de prazo programados nas etapas (Configurar Cronograma → sino): hoje é uma das datas de aviso
+  const ativosIds = new Set(usuarios.filter((x) => x.ativo !== false).map((x) => x.id));
+  for (const e of etapas.filter((x) => x.alertas && x.status !== "concluida" && ativos.has(x.pi_id))) {
+    const aviso = datasAlertaEtapa(e).find((a) => a.data === dia);
+    if (!aviso) continue;
+    const destinos = new Set([
+      ...alocs.filter((a) => a.etapa_id === e.id).map((a) => recursos.find((r) => r.id === a.recurso_id)?.usuario_id),
+      e.responsavel_id,
+    ].filter((id) => id && ativosIds.has(id)));
+    const quando = aviso.dias === 0 ? `hoje é o ${aviso.ref} previsto` : `faltam ${aviso.dias} dia(s) para o ${aviso.ref} previsto (${dataBR(aviso.base)})`;
+    const macro = e.parent_etapa_id ? etapas.find((m) => m.id === e.parent_etapa_id)?.nome : null;
+    destinos.forEach((uid) => novas.push({
+      usuario_id: uid, tipo: "lembrete", link: `/linha-do-tempo`,
+      titulo: `Alerta de prazo: ${e.nome} — ${codigo(e.pi_id)} — ${dataBR(dia)}`,
+      mensagem: [`${codigo(e.pi_id)}${macro ? ` · ${macro}` : ""} · ${e.nome}`, `Atenção: ${quando}.`,
+        `Período: ${dataBR(e.data_prevista_inicio)} a ${dataBR(e.data_prevista_fim)} · ${Number(e.percentual) || 0}% concluído.`].join("\n"),
+    }));
   }
   // não repete o resumo se o cron rodar duas vezes no mesmo dia
   const titulos = [...new Set(novas.map((n) => n.titulo))];
