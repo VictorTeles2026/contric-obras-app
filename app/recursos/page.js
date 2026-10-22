@@ -868,7 +868,7 @@ function EtapasParaAlocar({ etapas, selecao, setSelecao, existentes, usoNoPeriod
                         <input type="date" value={p.fim} min={p.inicio} onChange={(ev) => alterar(e.id, i, { fim: ev.target.value })} className={`input !w-auto !py-1 !px-2 !text-xs ${p.fim < p.inicio ? "!border-red" : ""}`} aria-label="Fim do período" />
                         <div className="relative">
                           <input type="number" min="1" max="100" value={p.perc} onChange={(ev) => alterar(e.id, i, { perc: ev.target.value })}
-                            className={`input !w-20 !py-1 !pl-2 !pr-11 !text-xs text-right ${!(Number(p.perc) > 0) || Number(p.perc) > 100 ? "!border-red" : ""}`} aria-label="Percentual do dia" />
+                            className={`input !w-[6.5rem] !py-1 !pl-2 !pr-12 !text-xs text-right tabular-nums ${!(Number(p.perc) > 0) || Number(p.perc) > 100 ? "!border-red" : ""}`} aria-label="Percentual do dia" />
                           <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-muted">% dia</span>
                         </div>
                         {ps.length > 1 && <button type="button" onClick={() => remover(e.id, i)} className="p-1 rounded text-muteddim hover:text-red" aria-label="Remover período"><Icone nome="lixo" className="w-3.5 h-3.5" /></button>}

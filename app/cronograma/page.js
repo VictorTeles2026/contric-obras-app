@@ -189,12 +189,16 @@ export default function CronogramaPage() {
       registrarLog(usuario, "Alterou status de etapa", `"${atual.nome}" → ${patch.status}`);
     }
     const { error } = await supabase.from("etapas").update(patch).eq("id", id);
-    if (error) { setErro(error.message); return; }
+    if (error) {
+      setErro("alertas" in patch && /alertas/.test(error.message) ? "o banco ainda não tem os alertas de prazo — rode o script cronograma-alertas.sql no Supabase." : error.message);
+      return false;
+    }
     // clientes com acesso à linha do tempo deste PI recebem aviso (o servidor limita a 1 por dia)
     if (["nome", "data_prevista_inicio", "data_prevista_fim", "status"].some((k) => k in patch) && atual) {
       chamarApi("/api/alertas", { acao: "cliente", piId: atual.pi_id, tipo: "linha_tempo" }).catch(() => {});
     }
     recarregarEtapas();
+    return true;
   };
   const excluirEtapa = async (id) => {
     const etapa = etapasDoPi.find((e) => e.id === id);
@@ -618,9 +622,24 @@ function PainelAlertasEtapa({ etapa, editavel, alocs, recursos, onSalvar }) {
   const destinatarios = [...new Set(alocs.map((a) => recursos.find((r) => r.id === a.recurso_id)).filter((r) => r?.usuario_id).map((r) => r.nome))];
   const semUsuario = alocs.filter((a) => !recursos.find((r) => r.id === a.recurso_id)?.usuario_id).length;
   const hoje = todayISO();
+  // salva sozinho a cada alteração válida (antes dependia do botão Salvar, que ficava escondido no fim do painel)
+  const valor = lista.length ? { ref, dias: [...new Set(lista)] } : null;
+  const chaveAtual = JSON.stringify(atual.dias?.length ? { ref: atual.ref, dias: atual.dias } : null);
+  const [estado, setEstado] = useState("");
+  useEffect(() => {
+    if (!editavel || invalido || JSON.stringify(valor) === chaveAtual) return;
+    setEstado("salvando");
+    const t = setTimeout(async () => { const ok = await onSalvar(valor); setEstado(ok ? "salvo" : "erro"); }, 600);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [JSON.stringify(valor), invalido]);
   return (
     <div className="flex flex-col gap-2.5 p-1.5 text-sm">
-      <div className="font-semibold">Alertas de prazo por e-mail</div>
+      <div className="flex items-center justify-between gap-2">
+        <span className="font-semibold">Alertas de prazo por e-mail</span>
+        {estado && <span className={`text-[11px] ${estado === "erro" ? "text-red" : estado === "salvo" ? "text-green" : "text-muted"}`}>
+          {estado === "salvando" ? "salvando..." : estado === "salvo" ? "✓ salvo" : "não salvou"}</span>}
+      </div>
       <label className="block"><span className="text-xs text-muted">Contar a antecedência a partir do</span>
         <select value={ref} disabled={!editavel} onChange={(e) => setRef(e.target.value)} className="input !py-1.5 !text-xs mt-0.5">
           <option value="inicio">Início previsto ({etapa.data_prevista_inicio ? isoParaBR(etapa.data_prevista_inicio) : "sem data"})</option>
@@ -654,9 +673,9 @@ function PainelAlertasEtapa({ etapa, editavel, alocs, recursos, onSalvar }) {
         {semUsuario > 0 && <span className="block text-amber">{semUsuario} recurso(s) alocado(s) sem usuário vinculado não recebem.</span>}
       </div>
       {editavel && (
-        <div className="flex justify-between gap-2">
-          <button onClick={() => onSalvar(null)} className="btn btn-fantasma btn-sm" disabled={!atual.dias?.length}>Remover alertas</button>
-          <button onClick={() => onSalvar(lista.length ? { ref, dias: [...new Set(lista)] } : null)} disabled={invalido} className="btn btn-primario btn-sm">Salvar</button>
+        <div className="flex justify-between items-center gap-2">
+          <button onClick={() => { setDias(["", "", ""]); }} className="btn btn-fantasma btn-sm" disabled={!atual.dias?.length && !lista.length}>Remover alertas</button>
+          <span className="text-[11px] text-muteddim">Salva automaticamente</span>
         </div>
       )}
     </div>
@@ -793,9 +812,9 @@ function EtapaRow({ etapa, editavel, onChange, onDelete, deps, onRemoverDep, anc
           className={`btn btn-sm !px-2.5 border ${qtdAlertas ? "!bg-[#E8590C] !border-[#E8590C] !text-white font-bold shadow-sm" : "border-line text-muted bg-white"}`}>
           <Icone nome="sino" className="w-3.5 h-3.5" />{qtdAlertas ? ` ${qtdAlertas}` : ""} ▾
         </button>
-        <PainelSuspenso ancoraRef={alertaRef} aberto={alertaAberto} onFechar={fecharAlerta} largura={300}>
+        <PainelSuspenso ancoraRef={alertaRef} aberto={alertaAberto} onFechar={fecharAlerta} largura={320} alturaMax={560}>
           <PainelAlertasEtapa etapa={etapa} editavel={editavel} alocs={alocs} recursos={recursos}
-            onSalvar={(alertas) => { onChange(etapa.id, { alertas }); setAlertaAberto(false); }} />
+            onSalvar={(alertas) => onChange(etapa.id, { alertas })} />
         </PainelSuspenso>
       </div>
 
