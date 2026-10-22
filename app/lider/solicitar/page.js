@@ -6,7 +6,7 @@ import CapturaMidia from "../../../components/CapturaMidia";
 import { nomeBaseAnexo } from "../../../lib/pdfRdo";
 import { useAuth } from "../../../lib/AuthContext";
 import { supabase } from "../../../lib/supabase";
-import { useMinhasPis } from "../../../lib/minhasPis";
+import { useMinhasPis } from "../../../lib/dados";
 import { NAV_LIDER } from "../../../lib/nav";
 import { formatarData, formatarDataHora } from "../../../lib/datas";
 import { STATUS_SOLICITACAO, etapasEmArvore } from "../../../lib/constantes";

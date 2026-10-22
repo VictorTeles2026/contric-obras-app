@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useTabela, registrarLog, gravarTolerante } from "../../../lib/dados";
 import { useAuth } from "../../../lib/AuthContext";
 import { supabase } from "../../../lib/supabase";
-import { useMinhasPis, agruparPorCliente } from "../../../lib/minhasPis";
+import { useMinhasPis, agruparPorCliente } from "../../../lib/dados";
 import { NAV_LIDER } from "../../../lib/nav";
 import { hojeISO } from "../../../lib/datas";
 import { STATUS_ETAPA, LISTA_STATUS_ETAPA, CATEGORIAS_OCORRENCIA, etapasEmArvore } from "../../../lib/constantes";
@@ -16,6 +16,7 @@ import ColetaAssinatura, { assinaturaValida, faltaNaAssinatura } from "../../../
 import CapturaMidia from "../../../components/CapturaMidia";
 import { Esqueleto, EstadoVazio, TelaSucesso, Aviso, Spinner } from "../../../components/ui";
 import Icone from "../../../components/Icone";
+import { SeletorModeloRdo, CamposRdoTecnico, tecnicoVazio, faltaNoTecnico, limparTecnico } from "../../../components/RdoTecnico";
 
 const PASSOS = ["Atividades", "Ocorrências", "Enviar"];
 const limitar = (n) => Math.max(0, Math.min(100, Number(n) || 0));
@@ -41,6 +42,33 @@ export default function LiderRdoPage() {
   const [enviando, setEnviando] = useState(false);
   const [etapaEnvio, setEtapaEnvio] = useState("");
   const [assinatura, setAssinatura] = useState({ ativo: false, nome: "", imagem: null });
+  // modelo do RDO: de Obra (atividades do cronograma) ou Técnico (jornada, intervenções, status da máquina)
+  const [modelo, setModelo] = useState("obra");
+  const [tecnico, setTecnico] = useState(tecnicoVazio);
+  const faltaTecnico = faltaNoTecnico(tecnico);
+
+  const enviarTecnico = async () => {
+    if (!piAtivo || enviando || faltaTecnico || !assinaturaValida(assinatura)) return;
+    setEnviando(true);
+    const { data: rdo, error } = await supabase.from("rdos").insert({
+      pi_id: piAtivo.id, lider_id: usuario.id, data: hoje, atividades: [], status: "pendente",
+      modelo: "tecnico", tecnico: limparTecnico(tecnico),
+      assinatura_cliente: assinatura.ativo, assinatura_cliente_imagem: assinatura.ativo ? assinatura.imagem : null,
+      assinatura_cliente_nome: assinatura.ativo ? assinatura.nome.trim() : null,
+    }).select().single();
+    if (error) {
+      setEnviando(false);
+      avisar(/modelo|tecnico/.test(error.message) ? "O banco ainda não tem o RDO Técnico — rode o script rdo-tecnico.sql no Supabase." : `Não foi possível enviar o RDO: ${error.message}`, "erro", 8000);
+      return;
+    }
+    await registrarLog(usuario, "Registrou RDO Técnico", `${usuario.nome} — ${piAtivo.codigo}`);
+    setEtapaEnvio("Gerando PDF...");
+    await gerarPdfRdoSeguro(rdo.id, avisar);
+    setEtapaEnvio("");
+    setEnviando(false);
+    setTecnico(tecnicoVazio());
+    setEnviado(true);
+  };
 
   useEffect(() => { window.scrollTo({ top: 0, behavior: "smooth" }); }, [passo]);
   // ao escolher o tipo de ocorrência, traz o formulário para o meio da tela (não fica escondido atrás dos botões)
@@ -157,6 +185,22 @@ export default function LiderRdoPage() {
 
         {jaEnviouHoje && <Aviso tipo="info" className="mb-4">Você já enviou um RDO hoje para esta obra. Um novo envio fica como complemento.</Aviso>}
 
+        <div className="mb-4"><SeletorModeloRdo valor={modelo} onChange={setModelo} grande /></div>
+
+        {modelo === "tecnico" && (
+          <div className="flex flex-col gap-4 animar-surgir">
+            <CamposRdoTecnico valor={tecnico} onChange={setTecnico} pi={piAtivo} data={hoje} grande />
+            <ColetaAssinatura value={assinatura} onChange={setAssinatura} />
+            <BarraAcoes>
+              <button onClick={enviarTecnico} disabled={enviando || !!faltaTecnico || !assinaturaValida(assinatura)} className="btn btn-sucesso btn-lg flex-1">
+                {enviando ? <><Spinner /> {etapaEnvio || "Enviando..."}</> : <><Icone nome="aprovar" className="w-5 h-5" strokeWidth={2.4} /> Enviar RDO Técnico</>}
+              </button>
+            </BarraAcoes>
+            {(faltaTecnico || faltaNaAssinatura(assinatura)) && <div className="text-xs text-center text-amber font-semibold">{faltaTecnico || faltaNaAssinatura(assinatura)}</div>}
+          </div>
+        )}
+
+        {modelo === "obra" && <>
         {/* passos */}
         <div className="flex gap-2 mb-5">
           {PASSOS.map((nome, i) => {
@@ -293,6 +337,7 @@ export default function LiderRdoPage() {
             {faltaNaAssinatura(assinatura) && <div className="text-xs text-center text-amber font-semibold">{faltaNaAssinatura(assinatura)}</div>}
           </div>
         )}
+        </>}
       </div>
     </MobileShell>
   );

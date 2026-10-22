@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useTabela } from "../../lib/dados";
 import { useAuth } from "../../lib/AuthContext";
-import { useMinhasPis, agruparPorCliente } from "../../lib/minhasPis";
+import { useMinhasPis, agruparPorCliente } from "../../lib/dados";
 import { NAV_LIDER } from "../../lib/nav";
 import { hojeISO, saudacao } from "../../lib/datas";
 import MobileShell from "../../components/MobileShell";

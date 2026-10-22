@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import dynamic from "next/dynamic";
 import { registrarLog, useTabela } from "../lib/dados";
 import { supabase } from "../lib/supabase";
-import { useMinhasPis, encontrarPiPorCodigo } from "../lib/minhasPis";
+import { useMinhasPis, encontrarPiPorCodigo } from "../lib/dados";
 import { hojeISO, horaCurta, formatarData, formatarHoras } from "../lib/datas";
 import { useToast } from "../lib/Toast";
 import { horasPontoComAlmoco } from "../lib/horas";

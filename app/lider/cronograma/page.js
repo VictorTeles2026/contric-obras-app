@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useTabela } from "../../../lib/dados";
 import { useAuth } from "../../../lib/AuthContext";
-import { useMinhasPis, agruparPorCliente } from "../../../lib/minhasPis";
+import { useMinhasPis, agruparPorCliente } from "../../../lib/dados";
 import { NAV_LIDER } from "../../../lib/nav";
 import { formatarDataCurta, diasAte } from "../../../lib/datas";
 import MobileShell from "../../../components/MobileShell";

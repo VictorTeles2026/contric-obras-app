@@ -11,6 +11,7 @@ import PainelShell from "../../components/PainelShell";
 import { AbasAprovacoes } from "../../components/AbasCronograma";
 import AcoesMaster from "../../components/AcoesMaster";
 import { EditorRdo, EditorHoras, EditorOcorrencia } from "../../components/Editores";
+import { ResumoRdoTecnico } from "../../components/RdoTecnico";
 import { CabecalhoPagina, EstadoVazio, Esqueleto } from "../../components/ui";
 import Icone from "../../components/Icone";
 
@@ -98,6 +99,9 @@ export default function HistoricoPage() {
                 </div>
                 <span className={`selo shrink-0 ${aprovado(r.status) ? "text-green bg-green/10" : "text-red bg-red/10"}`}>{aprovado(r.status) ? "Aprovado" : "Reprovado"}</span>
               </div>
+              {r.tipo === "rdo" && r.modelo === "tecnico" && (
+                <div className="mt-2 pl-12"><span className="selo bg-navy text-white mb-1.5 inline-block">RDO Técnico</span><ResumoRdoTecnico tecnico={r.tecnico} /></div>
+              )}
               {r.tipo === "rdo" && (r.atividades || []).length > 0 && (
                 <div className="mt-2 pl-12 flex flex-col gap-0.5">
                   {(r.atividades || []).map((a, i) => (

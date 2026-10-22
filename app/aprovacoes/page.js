@@ -12,6 +12,7 @@ import { gerarPdfRdoSeguro } from "../../lib/pdfRdo";
 import { useToast } from "../../lib/Toast";
 import PainelShell from "../../components/PainelShell";
 import { EditorRdo, EditorHoras, EditorSolicitacao } from "../../components/Editores";
+import { ResumoRdoTecnico } from "../../components/RdoTecnico";
 import { CabecalhoPagina, EstadoVazio, Esqueleto, Aviso, Spinner } from "../../components/ui";
 import Icone from "../../components/Icone";
 import CartaoOcorrencia from "../../components/CartaoOcorrencia";
@@ -358,10 +359,12 @@ function RdoCard({ rdo, pi, lider, editadoPor, ocorrencias, editavel, onAprovar,
           <div className="text-xs text-muted mt-0.5">{formatarData(rdo.data)} · por <strong>{lider}</strong> · enviado {formatarDataHora(rdo.created_at)}</div>
         </div>
         <div className="flex flex-wrap justify-end gap-1 shrink-0">
+          {rdo.modelo === "tecnico" && <span className="selo bg-navy text-white">RDO Técnico</span>}
           <SeloEditado nome={editadoPor} />
           <span className="selo bg-amber/10 text-amber">Pendente</span>
         </div>
       </div>
+      {rdo.modelo === "tecnico" ? <ResumoRdoTecnico tecnico={rdo.tecnico} /> : (
       <div className="flex flex-col divide-y divide-line/70 rounded-lg border border-line/70">
         {(rdo.atividades || []).map((a, i) => {
           const st = STATUS_ETAPA[a.status] || STATUS_ETAPA.nao_iniciada;
@@ -374,6 +377,7 @@ function RdoCard({ rdo, pi, lider, editadoPor, ocorrencias, editavel, onAprovar,
         })}
         {(rdo.atividades || []).length === 0 && <div className="text-sm text-muteddim px-3 py-2">Sem atividades registradas.</div>}
       </div>
+      )}
       {ocorrencias.length > 0 && (
         <div className="mt-3 flex flex-col gap-1.5">
           <div className="titulo-secao">Ocorrências ({ocorrencias.length})</div>

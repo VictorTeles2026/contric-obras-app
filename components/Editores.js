@@ -12,6 +12,7 @@ import { salvarEdicaoRdo, salvarEdicaoHoras, salvarEdicaoSolicitacao, salvarEdic
 import { Modal, Campo, Aviso, Spinner } from "./ui";
 import CapturaMidia from "./CapturaMidia";
 import Icone from "./Icone";
+import { CamposRdoTecnico, tecnicoVazio, limparTecnico } from "./RdoTecnico";
 
 const limitar = (n) => Math.max(0, Math.min(100, Number(n) || 0));
 
@@ -32,6 +33,8 @@ export function EditorRdo({ rdo, pi, pis, ocorrenciasOriginais, comoAprovador, o
   const { avisar } = useToast();
   const [data, setData] = useState(rdo.data || hojeISO());
   const [atividades, setAtividades] = useState((rdo.atividades || []).map((a) => ({ ...a })));
+  const ehTecnico = rdo.modelo === "tecnico";
+  const [tecnico, setTecnico] = useState(() => ({ ...tecnicoVazio(), ...(rdo.tecnico || {}) }));
   const [ocorrencias, setOcorrencias] = useState(ocorrenciasOriginais.map((o) => ({ ...o, midias: o.midias || [] })));
   const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState("");
@@ -44,6 +47,7 @@ export function EditorRdo({ rdo, pi, pis, ocorrenciasOriginais, comoAprovador, o
     const novo = {
       data,
       atividades: atividades.map((a) => ({ ...a, percentual: a.status === "concluida" ? 100 : limitar(a.percentual) })),
+      ...(ehTecnico ? { tecnico: limparTecnico(tecnico) } : {}),
     };
     const r = await salvarEdicaoRdo({
       rdo, novo, pis, usuario, comoAprovador, avisar,
@@ -64,7 +68,9 @@ export function EditorRdo({ rdo, pi, pis, ocorrenciasOriginais, comoAprovador, o
           <input type="date" value={data} max={hojeISO()} onChange={(e) => setData(e.target.value)} className="input" />
         </Campo>
 
-        <div>
+        {ehTecnico && <CamposRdoTecnico valor={tecnico} onChange={setTecnico} pi={pi} data={data} />}
+
+        {!ehTecnico && <div>
           <div className="titulo-secao mb-2">Atividades</div>
           <div className="flex flex-col gap-2">
             {atividades.map((a, i) => (
@@ -85,7 +91,7 @@ export function EditorRdo({ rdo, pi, pis, ocorrenciasOriginais, comoAprovador, o
             ))}
             {atividades.length === 0 && <div className="text-sm text-muteddim">Sem atividades neste RDO.</div>}
           </div>
-        </div>
+        </div>}
 
         <div>
           <div className="flex items-center justify-between mb-2">

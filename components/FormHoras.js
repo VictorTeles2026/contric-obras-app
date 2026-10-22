@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import { supabase } from "../lib/supabase";
 import { registrarLog, gravarTolerante } from "../lib/dados";
-import { agruparPorCliente } from "../lib/minhasPis";
+import { agruparPorCliente } from "../lib/dados";
 import { hojeISO, addDias, formatarHoras } from "../lib/datas";
 import { horasComAlmoco, dividirHoras } from "../lib/horas";
 import { JORNADA } from "../lib/constantes";

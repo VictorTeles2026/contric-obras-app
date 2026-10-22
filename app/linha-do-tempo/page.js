@@ -12,7 +12,10 @@ import { ModalQrPi } from "../../components/LeitorQR";
 import PainelSuspenso from "../../components/PainelSuspenso";
 
 const STATUS_COR = Object.fromEntries(Object.entries(STATUS_ETAPA).map(([k, v]) => [k, v.barra]));
-const LABEL_W = 240;
+const LABEL_W = 420; // planilha à esquerda: Etapa · Resp. · % · Período
+const COLUNAS_PLANILHA = "minmax(0,1fr) 58px 42px 92px";
+const iniciais = (nome) => String(nome || "?").trim().split(/\s+/).filter(Boolean).map((p) => p[0]).slice(0, 2).join("").toUpperCase();
+const ddmm = (iso) => (iso ? `${iso.slice(8, 10)}/${iso.slice(5, 7)}` : "—");
 const COR_MEDICAO = "#8E5CD9"; // mesma cor do indicador de medições do Dashboard
 const COR_SINO = "#E8590C";    // alertas de prazo programados (mesma cor do botão no Configurar Cronograma)
 // listas de filtro (clientes, equipes, recursos) com o mesmo visual de um campo de seleção
@@ -164,7 +167,11 @@ export default function LinhaDoTempoPage() {
 
   const span = escala.max - escala.min || 1;
   const spanDias = span / 86400000;
-  const larguraVisivel = Math.max(300, (larguraContainer || 900) - LABEL_W);
+  // celular/tela estreita: planilha compacta (só Etapa e %), para sobrar espaço às barras
+  const compacto = larguraContainer > 0 && larguraContainer < 760;
+  const LW = compacto ? 200 : LABEL_W;
+  const COLUNAS = compacto ? "minmax(0,1fr) 36px" : COLUNAS_PLANILHA;
+  const larguraVisivel = Math.max(300, (larguraContainer || 900) - LW);
   // "Tudo" (janelaDias = null) encaixa o cronograma inteiro na tela, sem rolagem
   const pxPorDia = janelaDias ? larguraVisivel / janelaDias : larguraVisivel / spanDias;
   const largura = Math.max(larguraVisivel, spanDias * pxPorDia);
@@ -213,6 +220,36 @@ export default function LinhaDoTempoPage() {
   const aproximar = () => idxJanela > 0 && setJanelaDias(OPCOES_JANELA[idxJanela - 1][0]);
   const afastar = () => idxJanela < OPCOES_JANELA.length - 1 && setJanelaDias(OPCOES_JANELA[idxJanela + 1][0]);
 
+  // ---- indicadores e ritmo (sobre os PIs e filtros aplicados) ----
+  const hojeIso = new Date().toLocaleDateString("sv-SE");
+  const maisDias = (n) => { const d = new Date(`${hojeIso}T12:00:00`); d.setDate(d.getDate() + n); return d.toLocaleDateString("sv-SE"); };
+  const abertas = etapasDosPis.filter((e) => e.status !== "concluida" && e.data_prevista_fim);
+  const vencidas = abertas.filter((e) => e.data_prevista_fim < hojeIso);
+  const vencem7 = abertas.filter((e) => e.data_prevista_fim >= hojeIso && e.data_prevista_fim <= maisDias(7));
+  const alertasSemana = etapasDosPis.filter((e) => e.status !== "concluida").flatMap((e) => datasAlertaEtapa(e).filter((a) => a.data >= hojeIso && a.data <= maisDias(6)));
+  const mesAtual = hojeIso.slice(0, 7);
+  const medicoesMes = etapasDosPis.filter((e) => e.medicao && (e.data_prevista_fim || "").startsWith(mesAtual));
+  const valorMedicoes = medicoesMes.reduce((s, e) => s + (Number(e.medicao_valor) || 0), 0);
+  const nomePi = (id) => pis.find((p) => p.id === id)?.codigo || "";
+  const indicadores = [
+    { valor: vencidas.length, titulo: vencidas.length === 1 ? "Etapa vencida" : "Etapas vencidas", sub: vencidas.length ? vencidas.slice(0, 2).map((e) => `${e.nome} · ${nomePi(e.pi_id)}`).join(" · ") : "nenhuma", cor: "#D64545", fundo: "#FDECEC" },
+    { valor: vencem7.length, titulo: "Vencem em 7 dias", sub: `${new Set(vencem7.map((e) => e.pi_id)).size} PI(s)`, cor: "#B86E00", fundo: "#FDF4E3" },
+    { valor: alertasSemana.length, titulo: "Alertas nesta semana", sub: `${alertasSemana.filter((a) => a.data === hojeIso).length} hoje`, cor: COR_SINO, fundo: "#FDF0E7" },
+    { valor: medicoesMes.length, titulo: "Medições no mês", sub: valorMedicoes ? `R$ ${valorMedicoes.toLocaleString("pt-BR", { maximumFractionDigits: 0 })} previstos` : "no período do mês", cor: COR_MEDICAO, fundo: "#F3EDFC" },
+  ];
+  // ritmo: % do prazo já decorrido × % concluído das etapas em andamento
+  const [ritmoTodas, setRitmoTodas] = useState(false);
+  const ritmo = etapasDosPis.filter((e) => e.status !== "concluida" && e.data_prevista_inicio && e.data_prevista_fim && e.data_prevista_inicio <= hojeIso)
+    .map((e) => {
+      const ini = tsLocal(e.data_prevista_inicio), fim = tsLocal(e.data_prevista_fim) + 86400000;
+      const tempo = Math.max(0, Math.min(100, Math.round(((Date.now() - ini) / (fim - ini)) * 100)));
+      const feito = Math.round(Number(e.percentual) || 0), dif = feito - tempo;
+      const sit = dif >= 5 ? ["Adiantada", "#2E9E44", "#E7F5EA"] : dif >= -10 ? ["No ritmo", "#0B84A5", "#E6F3F7"] : ["Atrasando", "#D64545", "#FDECEC"];
+      return { e, tempo, feito, dif, sit };
+    }).sort((a, b) => a.dif - b.dif);
+  // quem está alocado na etapa (iniciais na coluna Resp.)
+  const pessoasDaEtapa = (etapa) => recursos.filter((r) => recursoBateNaEtapa(r.id, etapa));
+
   const marcas = useMemo(() => {
     // espaçamento das datas da régua conforme o zoom: pelo menos ~56px entre rótulos
     const passo = [1, 2, 3, 7, 14, 30, 60].find((p) => p * pxPorDia >= 56) || 90;
@@ -233,6 +270,21 @@ export default function LinhaDoTempoPage() {
             </button>
           </>}
         />
+
+        {/* ---- indicadores ---- */}
+        {pisSelecionados.length > 0 && (
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
+            {indicadores.map((k) => (
+              <div key={k.titulo} className="cartao p-3.5 flex items-center gap-3 min-w-0">
+                <span className="min-w-[44px] h-11 px-2 rounded-xl flex items-center justify-center font-head font-extrabold text-xl tabular-nums" style={{ background: k.fundo, color: k.cor }}>{k.valor}</span>
+                <span className="min-w-0">
+                  <span className="block text-sm font-semibold">{k.titulo}</span>
+                  <span className="block text-xs text-muted truncate" title={k.sub}>{k.sub}</span>
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
 
         {/* ---- filtro por equipe / recurso ---- */}
         <div className="cartao flex flex-wrap items-center gap-2 mb-4 p-3">
@@ -301,9 +353,8 @@ export default function LinhaDoTempoPage() {
             ))}
             <span className="flex items-center gap-1.5"><span className="w-px h-3 bg-red" />Hoje</span>
             <span className="flex items-center gap-1.5">
-              <span className="w-3 h-3 rounded-full border-2 border-white" style={{ background: COR_MEDICAO, boxShadow: `0 0 0 1.5px ${COR_MEDICAO}` }} />
-              <span className="px-1.5 py-px rounded text-[10px] font-bold text-white" style={{ background: COR_MEDICAO }}>M-R$</span>
-              Medição (no fim do período planejado)
+              <span className="w-3 h-3 flex items-center justify-center text-white text-[7px] font-bold" style={{ background: COR_MEDICAO, borderRadius: 2, transform: "rotate(45deg)" }}><span style={{ transform: "rotate(-45deg)" }}>M</span></span>
+              Medição (fim do período)
             </span>
             <span className="flex items-center gap-1.5">
               <span className="w-4 h-4 rounded-full text-white flex items-center justify-center" style={{ background: COR_SINO }}><Icone nome="sino" className="w-2.5 h-2.5" /></span>
@@ -356,10 +407,13 @@ export default function LinhaDoTempoPage() {
           <div ref={rolagemRef} onScroll={(e) => setRolagem(e.currentTarget.scrollLeft)}
             className="cartao overflow-auto rolagem-linha-tempo overscroll-contain"
             style={{ maxHeight: "max(360px, calc(100dvh - 230px))" }}>
-            <div style={{ minWidth: LABEL_W + largura }}>
+            <div style={{ minWidth: LW + largura }}>
               {/* cabeçalho: rótulo vazio (fixo) + régua de datas */}
               <div className="flex sticky top-0 bg-white z-20 border-b border-line">
-                <div className="shrink-0 sticky left-0 bg-white z-30" style={{ width: LABEL_W }} />
+                <div className="shrink-0 sticky left-0 bg-white z-30 grid gap-2 items-center px-3 text-[10px] font-semibold uppercase tracking-wider text-muted border-r border-line"
+                  style={{ width: LW, gridTemplateColumns: COLUNAS }}>
+                  <span>Etapa</span>{!compacto && <span>Resp.</span>}<span className="text-right">%</span>{!compacto && <span>Período</span>}
+                </div>
                 <div className="relative h-7" style={{ width: largura }}>
                   {marcas.map((t) => (
                     <div key={t} className="absolute top-0 h-full text-[11px] font-mono text-muteddim border-l border-line pl-1 pt-1.5" style={{ left: ((t - escala.min) / span) * largura }}>
@@ -380,8 +434,8 @@ export default function LinhaDoTempoPage() {
                   <div key={pi.id}>
                     {/* faixa cinza do PI: fica parada (não rola na horizontal) e usa a largura visível
                         inteira, para o nome do cliente e do projeto aparecerem por completo */}
-                    <div className="bg-panel border-y border-line" style={{ width: LABEL_W + largura }}>
-                      <div className="sticky left-0 z-10 flex items-center" style={{ width: larguraContainer || LABEL_W + larguraVisivel }}>
+                    <div className="bg-panel border-y border-line" style={{ width: LW + largura }}>
+                      <div className="sticky left-0 z-10 flex items-center" style={{ width: larguraContainer || LW + larguraVisivel }}>
                       <button onClick={() => ciclarNivel(pi.id)} title={`Clique para ${dicaProximo}`}
                         className="flex-1 min-w-0 px-3 py-2 text-sm flex items-center gap-2 text-left hover:bg-line/40 transition-colors">
                         <span className="text-[10px] w-4 shrink-0 text-cyan">{icone}</span>
@@ -409,7 +463,7 @@ export default function LinhaDoTempoPage() {
                     </div>
                     {nivel === "pi" && (
                     <div className="flex border-b border-line/60">
-                      <div className="shrink-0 sticky left-0 bg-white z-10 px-3 py-2 text-xs text-muted border-r border-line" style={{ width: LABEL_W }}>Período total do PI</div>
+                      <div className="shrink-0 sticky left-0 bg-white z-10 px-3 py-2 text-xs text-muted border-r border-line" style={{ width: LW }}>Período total do PI</div>
                       <div className="relative h-8" style={{ width: largura }}>
                         <div className="absolute top-0 bottom-0" style={{ left: hojeX, width: 1, background: "#D64545", opacity: 0.5 }} />
                         {periodo && (() => {
@@ -425,7 +479,6 @@ export default function LinhaDoTempoPage() {
                     )}
 
                     {nivel !== "pi" && itensVisiveis.map((e) => {
-                      const hojeIsoLocal = new Date().toLocaleDateString("sv-SE");
                       const inicio = tsLocal(e.data_prevista_inicio) ?? escala.min;
                       const fim = (tsLocal(e.data_prevista_fim) ?? inicio) + 86400000; // a barra vai até o FIM do último dia
                       const left = ((inicio - escala.min) / span) * largura;
@@ -436,69 +489,85 @@ export default function LinhaDoTempoPage() {
                       const urgente = e.status !== "concluida" && dias !== null && dias >= 0 && dias <= PRAZOS.urgente;
                       const atencao = e.status !== "concluida" && dias !== null && dias > PRAZOS.urgente && dias <= PRAZOS.atencao;
                       const marcas2 = itensQueBatemNaEtapa(e);
+                      const cor = vencido ? "#D64545" : STATUS_COR[e.status];
+                      const pct = e.status === "concluida" ? 100 : Math.max(0, Math.min(100, Number(e.percentual) || 0));
+                      // marcos (medição e alertas) numa faixa própria ACIMA da barra, com pino e etiqueta
+                      const xDia = (iso) => ((tsLocal(iso) + 43200000 - escala.min) / span) * largura;
+                      const marcos = [
+                        ...datasAlertaEtapa(e).map((a) => ({ chave: `a${a.dias}`, x: xDia(a.data), tipo: "alerta", cor: a.data < hojeIso ? "#9AA3B2" : COR_SINO, texto: a.dias === 0 ? "no dia" : `${a.dias}d`,
+                          dica: `Alerta por e-mail em ${formatarDataIso(a.data)} · ${a.dias === 0 ? `no dia do ${a.ref}` : `${a.dias} dia(s) antes do ${a.ref}`}${a.data < hojeIso ? " (já passou)" : ""}` })),
+                        ...(e.medicao && e.data_prevista_fim ? [{ chave: "m", x: xDia(e.data_prevista_fim), tipo: "medicao", cor: COR_MEDICAO,
+                          texto: [e.medicao_percentual != null ? `${e.medicao_percentual}%` : "M", e.medicao_valor != null ? `R$ ${Number(e.medicao_valor).toLocaleString("pt-BR", { maximumFractionDigits: 0 })}` : ""].filter(Boolean).join(" · "),
+                          dica: `Medição${e.medicao_percentual != null ? ` · ${e.medicao_percentual}%` : ""}${e.medicao_valor != null ? ` · R$ ${Number(e.medicao_valor).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}` : ""} · término previsto ${formatarDataIso(e.data_prevista_fim)}` }] : []),
+                      ].filter((m) => m.x >= 0 && m.x <= largura);
+                      const temFaixa = marcos.length > 0;
+                      const topoBarra = temFaixa ? 26 : (e.nivel ? 9 : 10);
+                      const alturaBarra = e.nivel ? 8 : 12;
+                      const altura = topoBarra + alturaBarra + (e.nivel ? 9 : 10);
+                      const pessoas = pessoasDaEtapa(e);
                       return (
-                        <div key={e.id} className="flex items-center border-b border-line/60">
-                          <div className={`shrink-0 sticky left-0 bg-white z-10 py-1.5 truncate border-r border-line ${e.nivel ? "pl-8 pr-2 text-xs text-muted" : "px-3 text-sm font-medium"}`} style={{ width: LABEL_W }} title={e.nome}>
-                            {e.nivel ? "· " : ""}{e.nome}
-                            {datasAlertaEtapa(e).length > 0 && (
-                              <span className="inline-flex items-center justify-center w-4 h-4 ml-1 -mt-0.5 align-middle rounded-full text-white" style={{ background: COR_SINO }} title="Etapa com alertas de prazo">
-                                <Icone nome="sino" className="w-2.5 h-2.5" />
-                              </span>
-                            )}
+                        <div key={e.id} className="flex items-stretch border-b border-line/60">
+                          <div className={`shrink-0 sticky left-0 bg-white z-10 grid gap-2 items-center border-r border-line ${e.nivel ? "pl-7 pr-3" : "px-3"}`}
+                            style={{ width: LW, gridTemplateColumns: COLUNAS }}>
+                            <span className={`min-w-0 truncate ${e.nivel ? "text-xs text-muted" : "text-sm font-medium"}`} title={e.nome}>
+                              {e.nivel ? "· " : ""}{e.nome}
+                              {datasAlertaEtapa(e).length > 0 && (
+                                <span className="inline-flex items-center justify-center w-4 h-4 ml-1 -mt-0.5 align-middle rounded-full text-white" style={{ background: COR_SINO }} title="Etapa com alertas de prazo">
+                                  <Icone nome="sino" className="w-2.5 h-2.5" />
+                                </span>
+                              )}
+                            </span>
+                            {!compacto && <span className="flex items-center min-w-0" title={pessoas.map((r) => r.nome).join(", ") || "Ninguém alocado"}>
+                              {pessoas.slice(0, 2).map((r) => (
+                                <span key={r.id} className="w-5 h-5 -ml-1 first:ml-0 rounded-full bg-navy text-white text-[9px] font-semibold flex items-center justify-center ring-2 ring-white">{iniciais(r.nome)}</span>
+                              ))}
+                              {pessoas.length > 2 && <span className="text-[10px] text-muted ml-0.5">+{pessoas.length - 2}</span>}
+                              {pessoas.length === 0 && <span className="text-[11px] text-muteddim">—</span>}
+                            </span>}
+                            <span className={`text-right font-mono text-xs tabular-nums ${vencido ? "text-red font-semibold" : ""}`}>{pct}%</span>
+                            {!compacto && <span className="font-mono text-[11px] text-muted tabular-nums whitespace-nowrap">{ddmm(e.data_prevista_inicio)}–{ddmm(e.data_prevista_fim)}</span>}
                           </div>
-                          <div className={e.nivel ? "relative h-7" : "relative h-8"} style={{ width: largura }}>
-                            <div className="absolute inset-0" style={{ left: hojeX, width: 1, background: "#D64545", opacity: 0.5 }} />
-                            <div
-                              className={e.nivel ? "absolute top-2.5 h-2 rounded-full" : "absolute top-2.5 h-3 rounded"}
-                              style={{
-                                left, width,
-                                background: vencido ? "#D64545" : STATUS_COR[e.status],
-                                outline: urgente ? "2px solid #D64545" : atencao ? "2px solid #C97A21" : "none",
-                                opacity: e.nivel ? 0.6 : (vencido ? 1 : 0.85),
-                              }}
-                              title={`${e.nome} · ${STATUS_ETAPA[e.status]?.rotulo || e.status} · ${formatarDataIso(e.data_prevista_inicio)} → ${formatarDataIso(e.data_prevista_fim)}${e.status === "em_andamento" ? ` · ${e.percentual || 0}%` : ""}`}
-                            />
+                          <div className="relative" style={{ width: largura, height: altura }}>
+                            <div className="absolute top-0 bottom-0" style={{ left: hojeX, width: 2, background: "#D64545", opacity: 0.45 }} />
+                            {temFaixa && <div className="absolute left-0 right-0 border-b border-dashed border-line/80" style={{ top: 20 }} />}
+                            {/* barra: fundo claro + % concluído preenchido */}
+                            <div className="absolute overflow-hidden" title={`${e.nome} · ${STATUS_ETAPA[e.status]?.rotulo || e.status} · ${formatarDataIso(e.data_prevista_inicio)} → ${formatarDataIso(e.data_prevista_fim)} · ${pct}%`}
+                              style={{ left, width, top: topoBarra, height: alturaBarra, borderRadius: alturaBarra / 2, background: `${cor}33`,
+                                outline: urgente ? "2px solid #D64545" : atencao ? "2px solid #C97A21" : "none", outlineOffset: 1, opacity: e.nivel ? 0.85 : 1 }}>
+                              <div className="h-full" style={{ width: `${pct}%`, background: cor, borderRadius: alturaBarra / 2 }} />
+                            </div>
                             {marcas2.length > 0 && (
-                              <div className="absolute flex gap-0.5" style={{ left, top: e.nivel ? -1 : -2 }}>
+                              <div className="absolute flex gap-0.5" style={{ left, top: topoBarra - 8 }}>
                                 {marcas2.map((m) => (
                                   <span key={m.tipo + m.valor} className="block rounded-full" style={{ width: 6, height: 6, background: m.cor }} title={m.rotulo} />
                                 ))}
                               </div>
                             )}
-                            {/* alertas de prazo programados na etapa: sino na data de cada aviso */}
-                            {datasAlertaEtapa(e).map((a) => {
-                              const x = ((tsLocal(a.data) + 43200000 - escala.min) / span) * largura;
-                              if (x < 0 || x > largura) return null;
-                              const passou = a.data < hojeIsoLocal;
-                              return (
-                                <span key={a.dias} className="absolute z-[1] flex items-center justify-center rounded-full text-white"
-                                  style={{ left: x - 8, top: e.nivel ? 5 : 7, width: 16, height: 16, background: passou ? "#9AA3B2" : COR_SINO, boxShadow: "0 0 0 2px #fff" }}
-                                  title={`Alerta por e-mail em ${formatarDataIso(a.data)} · ${a.dias === 0 ? `no dia do ${a.ref}` : `${a.dias} dia(s) antes do ${a.ref}`}${passou ? " (enviado/passou)" : ""}`}>
-                                  <Icone nome="sino" className="w-2.5 h-2.5" />
+                            {/* situação depois da barra */}
+                            {(vencido || e.status === "em_andamento") && (
+                              <span className={`absolute whitespace-nowrap text-[11px] font-mono ${vencido ? "text-red font-semibold" : "text-muted"}`}
+                                style={{ left: left + width + 6, top: topoBarra + alturaBarra / 2 - 8 }}>
+                                {vencido ? `VENCIDO · ${pct}%` : `${pct}%`}
+                              </span>
+                            )}
+                            {/* faixa de marcos: pino + haste até a barra + etiqueta */}
+                            {marcos.map((m) => (
+                              <span key={m.chave} title={m.dica}>
+                                <span className="absolute" style={{ left: m.x, top: 15, width: 1, height: topoBarra - 15, background: m.cor }} />
+                                <span className="absolute flex items-center justify-center text-white" style={{ left: m.x - 7, top: 3, width: 14, height: 14, background: m.cor, boxShadow: "0 0 0 2px #fff",
+                                  borderRadius: m.tipo === "medicao" ? 3 : 999, transform: m.tipo === "medicao" ? "rotate(45deg)" : undefined }}>
+                                  {m.tipo === "alerta" ? <Icone nome="sino" className="w-2.5 h-2.5" /> : <span className="text-[8px] font-bold" style={{ transform: "rotate(-45deg)" }}>M</span>}
                                 </span>
-                              );
-                            })}
-                            {/* fim do período planejado: marca de medição (qualquer status) + situação */}
-                            <div className="absolute top-0 bottom-0 flex items-center gap-1.5 whitespace-nowrap" style={{ left: e.medicao ? left + width - 6 : left + width + 5 }}>
-                              {e.medicao && (
-                                <span className="flex items-center gap-1" title={`Medição${e.medicao_percentual != null ? ` · ${e.medicao_percentual}%` : ""}${e.medicao_valor != null ? ` · R$ ${Number(e.medicao_valor).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}` : ""} · término previsto ${formatarDataIso(e.data_prevista_fim)}`}>
-                                  <span className="w-3 h-3 rounded-full border-2 border-white shrink-0" style={{ background: COR_MEDICAO, boxShadow: `0 0 0 1.5px ${COR_MEDICAO}` }} />
-                                  <span className="px-1.5 py-px rounded text-[10px] font-bold text-white leading-tight" style={{ background: COR_MEDICAO }}>M-R$</span>
-                                </span>
-                              )}
-                              {(vencido || e.status === "em_andamento") && (
-                                <span className={`text-[11px] font-mono ${vencido ? "text-red font-semibold" : "text-muted"}`}>
-                                  {vencido ? `VENCIDO · ${e.percentual || 0}%` : `${e.percentual || 0}%`}
-                                </span>
-                              )}
-                            </div>
+                                <span className="absolute whitespace-nowrap text-[10px] font-semibold" style={{ left: m.x + 10, top: 3, color: m.cor }}>{m.texto}</span>
+                              </span>
+                            ))}
                           </div>
                         </div>
                       );
                     })}
                     {nivel !== "pi" && itensVisiveis.length === 0 && (
                       <div className="flex">
-                        <div className="shrink-0 sticky left-0 bg-white z-10 px-3 py-2 text-xs text-muteddim border-r border-line" style={{ width: LABEL_W }}>Sem macro-etapas</div>
+                        <div className="shrink-0 sticky left-0 bg-white z-10 px-3 py-2 text-xs text-muteddim border-r border-line" style={{ width: LW }}>Sem macro-etapas</div>
                         <div style={{ width: largura }} />
                       </div>
                     )}
@@ -506,6 +575,42 @@ export default function LinhaDoTempoPage() {
                 );
               })}
             </div>
+          </div>
+        )}
+
+        {/* ---- ritmo das etapas: % do prazo decorrido × % concluído ---- */}
+        {pisSelecionados.length > 0 && ritmo.length > 0 && (
+          <div className="cartao p-4 mt-4">
+            <div className="flex flex-wrap items-baseline justify-between gap-2 mb-3">
+              <div>
+                <div className="font-head font-bold">Ritmo das etapas em andamento</div>
+                <div className="text-xs text-muted">Barra fina: quanto do prazo já passou · barra grossa: quanto foi concluído. As que mais atrasam aparecem primeiro.</div>
+              </div>
+              <div className="flex gap-1.5 text-xs">
+                {[["Atrasando", "#D64545", "#FDECEC"], ["No ritmo", "#0B84A5", "#E6F3F7"], ["Adiantada", "#2E9E44", "#E7F5EA"]].map(([l, c, f]) => (
+                  <span key={l} className="px-2 py-0.5 rounded-full font-semibold" style={{ color: c, background: f }}>{ritmo.filter((r) => r.sit[0] === l).length} {l.toLowerCase()}</span>
+                ))}
+              </div>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-x-6 gap-y-4">
+              {(ritmoTodas ? ritmo : ritmo.slice(0, 9)).map(({ e, tempo, feito, sit }) => (
+                <div key={e.id} className="flex flex-col gap-1 min-w-0">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className="font-mono text-[11px] font-semibold text-cyan shrink-0">{nomePi(e.pi_id)}</span>
+                    <span className="text-sm font-medium truncate flex-1 min-w-0" title={e.nome}>{e.nome}</span>
+                    <span className="text-[11px] font-bold px-2 py-0.5 rounded-full shrink-0" style={{ color: sit[1], background: sit[2] }}>{sit[0]}</span>
+                  </div>
+                  <div className="relative h-2.5 rounded-full bg-panel mt-1">
+                    <div className="absolute inset-y-0 left-0 rounded-full" style={{ width: `${feito}%`, background: sit[1] }} />
+                    <div className="absolute -top-1 left-0 h-[3px] rounded-full bg-navy" style={{ width: `${tempo}%` }} />
+                  </div>
+                  <div className="flex justify-between text-[11px] font-mono text-muted"><span>{feito}% concluído</span><span>{tempo}% do prazo · até {ddmm(e.data_prevista_fim)}</span></div>
+                </div>
+              ))}
+            </div>
+            {ritmo.length > 9 && (
+              <button onClick={() => setRitmoTodas((v) => !v)} className="btn btn-fantasma btn-sm mt-3">{ritmoTodas ? "Mostrar menos" : `Ver todas (${ritmo.length})`}</button>
+            )}
           </div>
         )}
 

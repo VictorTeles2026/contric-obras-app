@@ -4,7 +4,7 @@ import { useState, useMemo } from "react";
 import { useTabela, registrarLog } from "../../lib/dados";
 import { useAuth, pode } from "../../lib/AuthContext";
 import { supabase } from "../../lib/supabase";
-import { useMinhasPis } from "../../lib/minhasPis";
+import { useMinhasPis } from "../../lib/dados";
 import { hojeISO } from "../../lib/datas";
 import { STATUS_ETAPA, LISTA_STATUS_ETAPA, CATEGORIAS_OCORRENCIA, etapasEmArvore } from "../../lib/constantes";
 import { useToast } from "../../lib/Toast";
@@ -14,6 +14,8 @@ import CapturaMidia from "../../components/CapturaMidia";
 import FormHoras from "../../components/FormHoras";
 import { CabecalhoPagina, Aviso, EstadoVazio, Spinner } from "../../components/ui";
 import Icone from "../../components/Icone";
+import ColetaAssinatura, { assinaturaValida, faltaNaAssinatura } from "../../components/AssinaturaCanvas";
+import { SeletorModeloRdo, CamposRdoTecnico, tecnicoVazio, faltaNoTecnico, limparTecnico } from "../../components/RdoTecnico";
 
 const limitar = (n) => Math.max(0, Math.min(100, Number(n) || 0));
 
@@ -49,6 +51,31 @@ export default function RdoPage() {
   const [novaDesc, setNovaDesc] = useState("");
   const [novasMidias, setNovasMidias] = useState([]);
   const [enviando, setEnviando] = useState(false);
+  // modelo do RDO: de Obra (atual) ou Técnico
+  const [modelo, setModelo] = useState("obra");
+  const [tecnico, setTecnico] = useState(tecnicoVazio);
+  const [assinatura, setAssinatura] = useState({ ativo: false, nome: "", imagem: null });
+  const faltaTecnico = faltaNoTecnico(tecnico);
+  const enviarTecnico = async () => {
+    if (!piAtual || enviando || faltaTecnico || !assinaturaValida(assinatura)) return;
+    setEnviando(true);
+    const { data: rdo, error } = await supabase.from("rdos").insert({
+      pi_id: piAtual.id, lider_id: usuario.id, data: hojeISO(), atividades: [], status: "pendente",
+      modelo: "tecnico", tecnico: limparTecnico(tecnico),
+      assinatura_cliente: assinatura.ativo, assinatura_cliente_imagem: assinatura.ativo ? assinatura.imagem : null,
+      assinatura_cliente_nome: assinatura.ativo ? assinatura.nome.trim() : null,
+    }).select().single();
+    if (error) {
+      setEnviando(false);
+      avisar(/modelo|tecnico/.test(error.message) ? "O banco ainda não tem o RDO Técnico — rode o script rdo-tecnico.sql no Supabase." : `Não foi possível enviar: ${error.message}`, "erro", 8000);
+      return;
+    }
+    await registrarLog(usuario, "Registrou RDO Técnico (desktop)", `${usuario.nome} — ${piAtual.codigo}`);
+    const pdf = await gerarPdfRdoSeguro(rdo.id, avisar);
+    setEnviando(false);
+    setTecnico(tecnicoVazio()); setAssinatura({ ativo: false, nome: "", imagem: null });
+    if (pdf) avisar("RDO Técnico enviado e PDF salvo em Documentos — pendente de validação em Aprovações.");
+  };
 
   const valorDe = (e) => ({
     status: statusPorEtapa[e.id]?.status ?? e.status,
@@ -113,6 +140,26 @@ export default function RdoPage() {
               <Aviso tipo="alerta" className="mb-4">Você não é o líder responsável por este PI. <strong>{liderResponsavel.nome}</strong> receberá um aviso deste preenchimento.</Aviso>
             )}
 
+            <div className="mb-4"><SeletorModeloRdo valor={modelo} onChange={setModelo} /></div>
+
+            {modelo === "tecnico" && (
+              <div className="flex flex-col gap-4 max-w-4xl">
+                <section className="cartao p-4 md:p-5">
+                  <CamposRdoTecnico valor={tecnico} onChange={setTecnico} pi={piAtual} data={hojeISO()} />
+                </section>
+                <ColetaAssinatura value={assinatura} onChange={setAssinatura} />
+                {editavel ? (
+                  <div className="flex flex-wrap items-center justify-end gap-3">
+                    {(faltaTecnico || faltaNaAssinatura(assinatura)) && <span className="text-sm text-amber font-semibold">{faltaTecnico || faltaNaAssinatura(assinatura)}</span>}
+                    <button onClick={enviarTecnico} disabled={enviando || !!faltaTecnico || !assinaturaValida(assinatura)} className="btn btn-sucesso btn-lg">
+                      {enviando ? <><Spinner /> Enviando...</> : <><Icone nome="aprovar" className="w-5 h-5" strokeWidth={2.4} /> Enviar RDO Técnico</>}
+                    </button>
+                  </div>
+                ) : <Aviso tipo="info">Modo visualização — seu perfil não pode preencher RDO.</Aviso>}
+              </div>
+            )}
+
+            {modelo === "obra" && <>
             <section className="cartao p-4 md:p-5 mb-4">
               <h2 className="titulo-quadro mb-3">Atividades</h2>
               <div className="flex flex-col gap-1.5">
@@ -181,6 +228,7 @@ export default function RdoPage() {
             ) : (
               <Aviso tipo="info">Modo visualização — seu perfil não pode preencher RDO.</Aviso>
             )}
+            </>}
           </>
         )}
 

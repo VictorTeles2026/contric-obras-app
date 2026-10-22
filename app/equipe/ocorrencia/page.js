@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { registrarLog, useTabela, gravarTolerante } from "../../../lib/dados";
 import { useAuth } from "../../../lib/AuthContext";
 import { supabase } from "../../../lib/supabase";
-import { useMinhasPis, agruparPorCliente } from "../../../lib/minhasPis";
+import { useMinhasPis, agruparPorCliente } from "../../../lib/dados";
 import { NAV_EQUIPE, NAV_LIDER } from "../../../lib/nav";
 import { CATEGORIAS_OCORRENCIA } from "../../../lib/constantes";
 import { formatarDataHora } from "../../../lib/datas";
