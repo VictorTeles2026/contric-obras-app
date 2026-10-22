@@ -313,7 +313,9 @@ const EXEMPLOS_EMAIL = {
   alocacao: ["Você foi alocado — PI-0123", "PI-0123 (CLIENTE X) · Montagem elétrica\nPeríodo: 15/10/2026 a 25/10/2026\nPor Maria Souza."],
   pendentes: ["Atividades pendentes — 14/10/2026", "Horas não lançadas em 1 dia(s) em que você estava alocado:\n  • 13/10/2026"],
   agenda: ["Sua agenda — 14/10/2026", "Hoje (1):\n  • PI-0123 — Montagem elétrica · 10/10/2026 a 20/10/2026 · 40%"],
+  lembrete: ["Alerta de prazo: Montagem elétrica — PI-0123 — 14/10/2026", "PI-0123 · Montagem elétrica\nAtenção: faltam 7 dia(s) para o término previsto (21/10/2026).\nPeríodo: 10/10/2026 a 21/10/2026 · 40% concluído."],
 };
+const EXEMPLO_PADRAO = ["Aviso do SGO Contric — 14/10/2026", "Exemplo de conteúdo do alerta."];
 function EditorModeloEmail({ chave, valor, personalizado, onSalvar, onRestaurar }) {
   const [v, setV] = useState(valor);
   const [salvando, setSalvando] = useState(false);
@@ -321,7 +323,8 @@ function EditorModeloEmail({ chave, valor, personalizado, onSalvar, onRestaurar 
   useEffect(() => { setV(valor); }, [JSON.stringify(valor)]); // eslint-disable-line react-hooks/exhaustive-deps
   const alterado = JSON.stringify(v) !== JSON.stringify(valor);
   const set = (k) => (e) => setV((p) => ({ ...p, [k]: e.target.value }));
-  const [tPrev, mPrev] = EXEMPLOS_EMAIL[tipoPrevia];
+  // tipo novo sem exemplo cadastrado não pode derrubar a tela
+  const [tPrev, mPrev] = EXEMPLOS_EMAIL[tipoPrevia] || EXEMPLO_PADRAO;
   const previa = montarEmailEquipe(v, { nome: "João Silva", titulo: tPrev, mensagem: mPrev, tipo: tipoPrevia, link: "https://contric-obras-app.vercel.app", data: "14/10/2026" });
   const campo = (k, rotulo, multi = false) => (
     <label className="block"><span className="rotulo">{rotulo}</span>

@@ -622,24 +622,31 @@ function PainelAlertasEtapa({ etapa, editavel, alocs, recursos, onSalvar }) {
   const destinatarios = [...new Set(alocs.map((a) => recursos.find((r) => r.id === a.recurso_id)).filter((r) => r?.usuario_id).map((r) => r.nome))];
   const semUsuario = alocs.filter((a) => !recursos.find((r) => r.id === a.recurso_id)?.usuario_id).length;
   const hoje = todayISO();
-  // salva sozinho a cada alteração válida (antes dependia do botão Salvar, que ficava escondido no fim do painel)
+  // salvamento só pelo botão Salvar, no topo do painel (sempre visível, sem rolar)
   const valor = lista.length ? { ref, dias: [...new Set(lista)] } : null;
   const chaveAtual = JSON.stringify(atual.dias?.length ? { ref: atual.ref, dias: atual.dias } : null);
-  const [estado, setEstado] = useState("");
-  useEffect(() => {
-    if (!editavel || invalido || JSON.stringify(valor) === chaveAtual) return;
+  const alterado = JSON.stringify(valor) !== chaveAtual;
+  const [estado, setEstado] = useState(""); // "" | salvando | salvo | erro
+  const salvar = async () => {
+    if (!editavel || invalido || !alterado) return;
     setEstado("salvando");
-    const t = setTimeout(async () => { const ok = await onSalvar(valor); setEstado(ok ? "salvo" : "erro"); }, 600);
-    return () => clearTimeout(t);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [JSON.stringify(valor), invalido]);
+    const ok = await onSalvar(valor);
+    setEstado(ok ? "salvo" : "erro");
+  };
   return (
     <div className="flex flex-col gap-2.5 p-1.5 text-sm">
       <div className="flex items-center justify-between gap-2">
-        <span className="font-semibold">Alertas de prazo por e-mail</span>
-        {estado && <span className={`text-[11px] ${estado === "erro" ? "text-red" : estado === "salvo" ? "text-green" : "text-muted"}`}>
-          {estado === "salvando" ? "salvando..." : estado === "salvo" ? "✓ salvo" : "não salvou"}</span>}
+        <span className="font-semibold">Alertas de prazo</span>
+        {editavel && (
+          <button onClick={salvar} disabled={invalido || !alterado || estado === "salvando"} className="btn btn-primario btn-sm">
+            {estado === "salvando" ? <><Spinner /> Salvando...</> : "Salvar"}
+          </button>
+        )}
       </div>
+      {estado === "salvo" && !alterado && <div className="text-xs text-green -mt-1">✓ Alertas salvos.</div>}
+      {estado === "erro" && <div className="text-xs text-red -mt-1">Não foi possível salvar — veja o aviso no topo da página.</div>}
+      {alterado && !invalido && <div className="text-xs text-amber -mt-1">Alterações ainda não salvas.</div>}
+      {invalido && <div className="text-xs text-red -mt-1">Use números de 0 a 365.</div>}
       <label className="block"><span className="text-xs text-muted">Contar a antecedência a partir do</span>
         <select value={ref} disabled={!editavel} onChange={(e) => setRef(e.target.value)} className="input !py-1.5 !text-xs mt-0.5">
           <option value="inicio">Início previsto ({etapa.data_prevista_inicio ? isoParaBR(etapa.data_prevista_inicio) : "sem data"})</option>
@@ -673,10 +680,9 @@ function PainelAlertasEtapa({ etapa, editavel, alocs, recursos, onSalvar }) {
         {semUsuario > 0 && <span className="block text-amber">{semUsuario} recurso(s) alocado(s) sem usuário vinculado não recebem.</span>}
       </div>
       {editavel && (
-        <div className="flex justify-between items-center gap-2">
-          <button onClick={() => { setDias(["", "", ""]); }} className="btn btn-fantasma btn-sm" disabled={!atual.dias?.length && !lista.length}>Remover alertas</button>
-          <span className="text-[11px] text-muteddim">Salva automaticamente</span>
-        </div>
+        <button onClick={() => { setDias(["", "", ""]); setEstado(""); }} className="btn btn-fantasma btn-sm self-start" disabled={!atual.dias?.length && !lista.length}>
+          Limpar alertas <span className="text-muteddim font-normal">(depois clique em Salvar)</span>
+        </button>
       )}
     </div>
   );
