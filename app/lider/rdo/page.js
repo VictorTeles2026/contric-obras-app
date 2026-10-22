@@ -12,7 +12,7 @@ import { STATUS_ETAPA, LISTA_STATUS_ETAPA, CATEGORIAS_OCORRENCIA, etapasEmArvore
 import { useToast } from "../../../lib/Toast";
 import { gerarPdfRdoSeguro, nomeBaseAnexo } from "../../../lib/pdfRdo";
 import MobileShell from "../../../components/MobileShell";
-import ColetaAssinatura, { assinaturaValida, faltaNaAssinatura } from "../../../components/ColetaAssinatura";
+import ColetaAssinatura, { assinaturaValida, faltaNaAssinatura } from "../../../components/AssinaturaCanvas";
 import CapturaMidia from "../../../components/CapturaMidia";
 import { Esqueleto, EstadoVazio, TelaSucesso, Aviso, Spinner } from "../../../components/ui";
 import Icone from "../../../components/Icone";

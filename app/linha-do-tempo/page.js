@@ -224,7 +224,7 @@ export default function LinhaDoTempoPage() {
     <PainelShell>
       <div className="p-4 md:p-8">
         <CabecalhoPagina
-          titulo="Linha do Tempo"
+          titulo="Cronograma"
           subtitulo="Visão multi-PI, para acompanhamento e apresentação."
           acoes={<>
             <button onClick={() => setSelecionarAberto(true)} className="btn btn-contorno !border-cyan !text-cyan hover:!bg-cyan/5">

@@ -8,7 +8,7 @@ export default function AbasCronograma({ piId, qtdPendentes = 0 }) {
   const pathname = usePathname();
   const q = piId ? `?pi=${piId}` : "";
   const abas = [
-    ["/cronograma", "Cronograma"],
+    ["/cronograma", "Configurar Cronograma"],
     ["/cronograma/solicitacoes", "Solicitações de alteração"],
   ];
   return (

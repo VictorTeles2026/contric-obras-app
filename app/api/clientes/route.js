@@ -130,6 +130,7 @@ export const POST = rotaSegura(async (req) => {
       if (anterior) await admin.from("cliente_acessos").delete().eq("id", anterior.id);
       // sem vínculo com o PI, os documentos liberados individualmente também saem
       await admin.from("cliente_documentos").delete().eq("cliente_id", cliente.id).eq("pi_id", pi.id);
+      await admin.from("cliente_pastas").delete().eq("cliente_id", cliente.id).eq("pi_id", pi.id).then(() => {}, () => {});
       await log(admin, interno, "Removeu acesso de cliente", `${cliente.nome} · ${nomePi}`);
       return NextResponse.json({ ok: true, removido: true });
     }

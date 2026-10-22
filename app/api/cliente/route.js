@@ -33,6 +33,18 @@ export const GET = rotaSegura(async (req) => {
       const { data } = await admin.storage.from("documentos").createSignedUrl(d.caminho, 3600);
       if (data?.signedUrl) obra.documentos.push({ nome: d.caminho.split("/").pop(), data: d.created_at, url: data.signedUrl }); // arquivo apagado: some da lista
     }
+    // pastas inteiras liberadas a este cliente: todos os arquivos cujo nome começa com o prefixo da pasta
+    const { data: pastas } = await admin.from("cliente_pastas").select("prefixo,nome").eq("cliente_id", cliente.id).eq("pi_id", pi.id);
+    if (pastas?.length) {
+      const { data: arquivos } = await admin.storage.from("documentos").list(pi.id, { limit: 1000 });
+      const ja = new Set(obra.documentos.map((d) => d.nome));
+      for (const f of (arquivos || []).filter((x) => x.id && !ja.has(x.name))) {
+        const pasta = pastas.find((p) => f.name.startsWith(`${p.prefixo}_`));
+        if (!pasta) continue;
+        const { data } = await admin.storage.from("documentos").createSignedUrl(`${pi.id}/${f.name}`, 3600);
+        if (data?.signedUrl) obra.documentos.push({ nome: f.name, pasta: pasta.nome, data: f.created_at, url: data.signedUrl });
+      }
+    }
     obra.documentos.sort((x, y) => String(y.data).localeCompare(String(x.data)));
 
     if (a.ver_atas) {

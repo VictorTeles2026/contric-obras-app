@@ -23,8 +23,11 @@ const COR_TIPO = { rdo: "bg-red/10 text-red", ocorrencia: "bg-amber/10 text-ambe
 // Classificação dos arquivos enviados: o prefixo do nome identifica a classificação
 // (ex: ATA_REUNIAO_20260925_PI-2041_AMBEV.pdf). O nome sugerido pode ser editado, mas o prefixo é mantido.
 // A lista é editável em Configurações (lib/constantes → CLASSIFICACOES_DOC).
+// Cada PI pode ter pastas próprias (tabela pi_pastas), somadas às classificações gerais.
 const CLASSIFICACOES = CLASSIFICACOES_DOC;
-const rotuloClassificacao = (nome) => CLASSIFICACOES.find(([p]) => nome.startsWith(`${p}_`))?.[1];
+// prefixo mais longo primeiro: "PASTA_X-Y" não pode ser confundido com uma pasta "PASTA_X"
+const pastaDoArquivo = (nome, lista) => [...lista].sort((a, b) => b[0].length - a[0].length).find(([p]) => nome.startsWith(`${p}_`));
+const prefixoDaPasta = (nome) => `PASTA_${String(nome).normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^A-Za-z0-9]+/g, "-").replace(/^-+|-+$/g, "").toUpperCase().slice(0, 40)}`;
 const limparParte = (t) => String(t || "").normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^A-Za-z0-9]+/g, "-").replace(/^-+|-+$/g, "").toUpperCase();
 function sugerirNome(prefixo, pi) {
   const h = new Date();
@@ -64,6 +67,12 @@ export default function DocumentosPage() {
   const [docsCliente, setDocsCliente] = useState([]); // [{ id, cliente_id, caminho }]
   const [liberando, setLiberando] = useState(null);   // item (documento) sendo liberado a clientes
   const liberadosDe = (caminho) => docsCliente.filter((d) => d.caminho === caminho);
+  const [pastasPi, setPastasPi] = useState([]);        // pastas próprias deste PI
+  const [pastasCliente, setPastasCliente] = useState([]); // [{ id, cliente_id, prefixo }] pastas inteiras liberadas
+  const [filtroPasta, setFiltroPasta] = useState("");
+  const [novaPasta, setNovaPasta] = useState(null);       // nome digitado (modal aberto)
+  const [liberandoPasta, setLiberandoPasta] = useState(null); // [prefixo, nome]
+  const classificacoes = [...CLASSIFICACOES, ...pastasPi.map((p) => [p.prefixo, p.nome])];
 
   // aberto pela Página do PI (?pi=...): já busca os arquivos daquele PI (assim que a lista de PIs carregar)
   const abriuDoLinkRef = useRef(false);
@@ -79,16 +88,21 @@ export default function DocumentosPage() {
     if (!id) return;
     setBuscando(true);
     const pi = pis.find((p) => p.id === id);
-    const [lista, { data: ocorrencias }, { data: rdos }] = await Promise.all([
+    const [lista, { data: ocorrencias }, { data: rdos }, { data: pastas }, { data: pastasLib }] = await Promise.all([
       supabase.storage.from(BUCKET_DOCUMENTOS).list(id, { limit: 1000, sortBy: { column: "created_at", order: "desc" } }),
       supabase.from("ocorrencias").select("*").eq("pi_id", id),
       supabase.from("rdos").select("*").eq("pi_id", id),
+      supabase.from("pi_pastas").select("*").eq("pi_id", id).order("nome"),  // sem a tabela: só as classificações gerais
+      supabase.from("cliente_pastas").select("id, cliente_id, prefixo").eq("pi_id", id),
     ]);
+    setPastasPi(pastas || []);
+    setPastasCliente(pastasLib || []);
+    const todas = [...CLASSIFICACOES, ...(pastas || []).map((p) => [p.prefixo, p.nome])];
     const itens = [];
     (lista.data || []).filter((f) => f.id && !f.name.startsWith(".")).forEach((f) => {
       itens.push({
         chave: `s-${f.name}`, tipo: f.name.startsWith("RDO_") ? "rdo" : f.name.startsWith("OCORRENCIA_") ? "ocorrencia" : f.name.startsWith("ATA_") ? "ata" : "arquivo", nome: f.name,
-        classificacao: rotuloClassificacao(f.name),
+        classificacao: pastaDoArquivo(f.name, todas)?.[1], prefixo: pastaDoArquivo(f.name, todas)?.[0],
         data: f.created_at || f.updated_at, tamanho: f.metadata?.size, caminho: `${id}/${f.name}`,
         // registro de origem do PDF (para o Master poder editá-lo; o PDF é refeito ao salvar)
         rdo: (rdos || []).find((r) => r.pdf_path === `${id}/${f.name}`),
@@ -150,7 +164,8 @@ export default function DocumentosPage() {
       return true;
     });
     if (!validos.length) return;
-    setPendentes(validos.map((arquivo) => ({ arquivo, prefixo: "DOC", base: sugerirNome("DOC", resultado.pi), editado: false })));
+    const prefixo = filtroPasta || "DOC"; // com uma pasta aberta, os arquivos já vão para ela
+    setPendentes(validos.map((arquivo) => ({ arquivo, prefixo, base: sugerirNome(prefixo, resultado.pi), editado: false })));
   };
   const alterarPendente = (i, patch) => setPendentes((p) => p.map((x, k) => (k === i ? { ...x, ...patch } : x)));
 
@@ -171,7 +186,7 @@ export default function DocumentosPage() {
       if (error) { avisar(`Falha ao enviar "${arq.name}": ${error.message}`, "erro", 6000); continue; }
       existentes.add(nome); ok++;
       if (prefixo === "ATA_REUNIAO") atas++;
-      await registrarLog(usuario, "Enviou documento", `${resultado.pi.codigo} — ${nome} (${CLASSIFICACOES.find(([p]) => p === prefixo)?.[1]})`);
+      await registrarLog(usuario, "Enviou documento", `${resultado.pi.codigo} — ${nome} (${classificacoes.find(([p]) => p === prefixo)?.[1]})`);
     }
     setEnviando(false);
     setPendentes(null);
@@ -195,7 +210,22 @@ export default function DocumentosPage() {
 
   const termo = busca.trim().toLowerCase();
   const itensFiltrados = (resultado?.itens || []).filter((i) =>
-    (!filtroTipo || i.tipo === filtroTipo) && (!termo || `${i.nome} ${i.detalhe || ""}`.toLowerCase().includes(termo)));
+    (!filtroTipo || i.tipo === filtroTipo) && (!filtroPasta || i.prefixo === filtroPasta) && (!termo || `${i.nome} ${i.detalhe || ""}`.toLowerCase().includes(termo)));
+  const qtdNaPasta = (prefixo) => (resultado?.itens || []).filter((i) => i.prefixo === prefixo).length;
+  const clientesDaPasta = (prefixo) => pastasCliente.filter((d) => d.prefixo === prefixo);
+
+  const criarPasta = async () => {
+    const nome = (novaPasta || "").trim();
+    if (!nome || !resultado?.pi) return;
+    const prefixo = prefixoDaPasta(nome);
+    if (classificacoes.some(([p, l]) => p === prefixo || l.toLowerCase() === nome.toLowerCase())) { avisar("Já existe uma pasta com esse nome neste PI.", "erro"); return; }
+    const { data, error } = await supabase.from("pi_pastas").insert({ pi_id: resultado.pi.id, prefixo, nome, criado_por_nome: usuario?.nome }).select().single();
+    if (error) { avisar(/pi_pastas/.test(error.message) ? "Rode o script documentos-pastas.sql no Supabase." : `Não foi possível criar: ${error.message}`, "erro", 7000); return; }
+    setPastasPi((p) => [...p, data].sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR")));
+    await registrarLog(usuario, "Criou pasta de documentos", `${resultado.pi.codigo} — ${nome}`);
+    avisar(`Pasta "${nome}" criada. Escolha-a como classificação ao enviar arquivos.`);
+    setNovaPasta(null);
+  };
   const contagem = (t) => (resultado?.itens || []).filter((i) => !t || i.tipo === t).length;
 
   return (
@@ -264,6 +294,34 @@ export default function DocumentosPage() {
               <div className="relative md:ml-auto md:w-72">
                 <Icone nome="buscar" className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muteddim" />
                 <input value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Filtrar por nome..." className="input pl-9" />
+              </div>
+            </div>
+
+            {/* pastas (classificações) do PI: filtrar, criar nova e liberar a pasta inteira a clientes */}
+            <div className="cartao p-3 mb-3 flex flex-col gap-2">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span className="titulo-secao">Pastas</span>
+                {editavel && <button onClick={() => setNovaPasta("")} className="btn btn-contorno btn-sm"><Icone nome="mais2" className="w-4 h-4" /> Nova pasta</button>}
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                <button onClick={() => setFiltroPasta("")} className={`chip ${!filtroPasta ? "chip-ativo" : ""}`}>Todas</button>
+                {classificacoes.map(([p, l]) => {
+                  const lib = clientesDaPasta(p).length, propria = pastasPi.some((x) => x.prefixo === p);
+                  return (
+                    <span key={p} className={`inline-flex items-center rounded-full border ${filtroPasta === p ? "border-cyan bg-cyan/10" : "border-line"}`}>
+                      <button onClick={() => setFiltroPasta(filtroPasta === p ? "" : p)} className={`pl-3 pr-2 py-1 text-xs font-semibold ${filtroPasta === p ? "text-cyan" : "text-textmain"}`}
+                        title={propria ? `Pasta própria do ${resultado.pi?.codigo}` : "Classificação geral (Configurações)"}>
+                        <Icone nome="pasta" className="w-3.5 h-3.5 inline -mt-0.5 mr-1" />{l} <span className="text-muted font-normal">({qtdNaPasta(p)})</span>
+                      </button>
+                      {podeLiberarCliente && (
+                        <button onClick={() => setLiberandoPasta([p, l])} title="Liberar a pasta inteira para clientes deste PI"
+                          className={`pr-2.5 pl-1.5 py-1 border-l border-line text-xs ${lib ? "text-cyan font-semibold" : "text-muted hover:text-cyan"}`}>
+                          <Icone nome="usuarios" className="w-3.5 h-3.5 inline -mt-0.5" />{lib ? ` ${lib}` : ""}
+                        </button>
+                      )}
+                    </span>
+                  );
+                })}
               </div>
             </div>
 
@@ -339,6 +397,9 @@ export default function DocumentosPage() {
                     <select value={p.prefixo} className="input"
                       onChange={(e) => alterarPendente(i, { prefixo: e.target.value, ...(p.editado ? {} : { base: sugerirNome(e.target.value, resultado.pi) }) })}>
                       {CLASSIFICACOES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                      {pastasPi.length > 0 && <optgroup label={`Pastas do ${resultado?.pi?.codigo}`}>
+                        {pastasPi.map((p) => <option key={p.prefixo} value={p.prefixo}>{p.nome}</option>)}
+                      </optgroup>}
                     </select>
                   </label>
                   <label className="block min-w-0">
@@ -373,6 +434,24 @@ export default function DocumentosPage() {
         <LiberarParaClientes item={liberando} pi={resultado?.pi} clientes={clientesPi} liberados={liberadosDe(liberando.caminho)} usuario={usuario}
           onMudou={(lista) => setDocsCliente((p) => [...p.filter((d) => d.caminho !== liberando.caminho), ...lista])}
           onFechar={() => setLiberando(null)} />
+      )}
+      {novaPasta !== null && (
+        <Modal titulo={`Nova pasta — ${resultado?.pi?.codigo}`} onFechar={() => setNovaPasta(null)} largura="max-w-sm"
+          rodape={<>
+            <button onClick={() => setNovaPasta(null)} className="btn btn-fantasma">Cancelar</button>
+            <button onClick={criarPasta} disabled={!novaPasta.trim()} className="btn btn-primario">Criar pasta</button>
+          </>}>
+          <div className="flex flex-col gap-3">
+            <label className="block"><span className="rotulo">Nome da pasta</span>
+              <input value={novaPasta} onChange={(e) => setNovaPasta(e.target.value)} onKeyDown={(e) => e.key === "Enter" && criarPasta()} className="input" autoFocus placeholder="Ex: Projeto elétrico" /></label>
+            <div className="text-xs text-muteddim">A pasta vale só para este PI. Ela aparece como classificação ao enviar arquivos e na janela de acessos dos clientes (Clientes → Acessos).</div>
+          </div>
+        </Modal>
+      )}
+      {liberandoPasta && (
+        <LiberarPastaParaClientes pasta={liberandoPasta} pi={resultado?.pi} clientes={clientesPi} liberados={clientesDaPasta(liberandoPasta[0])} usuario={usuario}
+          onMudou={(lista) => setPastasCliente((p) => [...p.filter((d) => d.prefixo !== liberandoPasta[0]), ...lista])}
+          onFechar={() => setLiberandoPasta(null)} />
       )}
       {editandoRegistro?.tipo === "rdo" && (
         <EditorRdo rdo={editandoRegistro.item} pi={resultado?.pi} pis={pis} comoAprovador ocorrenciasOriginais={editandoRegistro.ocorrencias}
@@ -433,6 +512,54 @@ function LiberarParaClientes({ item, pi, clientes, liberados, usuario, onMudou, 
           </div>
         )}
         <div className="text-xs text-muteddim">O cliente marcado vê este documento em "Documentos", na obra, ao entrar no Acesso Clientes.</div>
+      </div>
+    </Modal>
+  );
+}
+// Libera a PASTA inteira (todos os arquivos dela, inclusive os que entrarem depois) para clientes do PI
+function LiberarPastaParaClientes({ pasta, pi, clientes, liberados, usuario, onMudou, onFechar }) {
+  const { avisar } = useToast();
+  const [prefixo, nome] = pasta;
+  const [ocupado, setOcupado] = useState(null);
+  const liberado = (id) => liberados.find((d) => d.cliente_id === id);
+  const alternar = async (c) => {
+    setOcupado(c.id);
+    const atual = liberado(c.id);
+    if (atual) {
+      const { error } = await supabase.from("cliente_pastas").delete().eq("id", atual.id);
+      setOcupado(null);
+      if (error) { avisar(`Não foi possível retirar: ${error.message}`, "erro", 6000); return; }
+      onMudou(liberados.filter((d) => d.id !== atual.id));
+      await registrarLog(usuario, "Retirou pasta do cliente", `${pi.codigo} — ${nome} · ${c.nome}`);
+    } else {
+      const { data, error } = await supabase.from("cliente_pastas")
+        .insert({ cliente_id: c.id, pi_id: pi.id, prefixo, nome, liberado_por_nome: usuario?.nome }).select("id, cliente_id, prefixo").single();
+      setOcupado(null);
+      if (error) { avisar(/cliente_pastas/.test(error.message) ? "Rode o script documentos-pastas.sql no Supabase." : `Não foi possível liberar: ${error.message}`, "erro", 7000); return; }
+      onMudou([...liberados, data]);
+      chamarApi("/api/alertas", { acao: "cliente", tipo: "documento", piId: pi.id, clienteId: c.id, detalhe: `Pasta liberada: ${nome}` }).catch(() => {});
+      await registrarLog(usuario, "Liberou pasta ao cliente", `${pi.codigo} — ${nome} · ${c.nome}`);
+    }
+  };
+  return (
+    <Modal titulo="Liberar pasta para clientes" onFechar={onFechar} largura="max-w-md" confirmarAoFechar={false}
+      rodape={<button onClick={onFechar} className="btn btn-primario">Concluir</button>}>
+      <div className="flex flex-col gap-3">
+        <div className="text-sm text-muted">Pasta: <strong className="text-textmain">{nome}</strong> · {pi?.codigo}</div>
+        {clientes.length === 0 ? (
+          <Aviso tipo="info">Nenhum cliente está associado ao {pi?.codigo}. Associe primeiro em <strong>Clientes → Acessos</strong>.</Aviso>
+        ) : (
+          <div className="flex flex-col gap-1">
+            {clientes.map((c) => (
+              <label key={c.id} className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm cursor-pointer border transition-colors ${liberado(c.id) ? "border-cyan/40 bg-cyan/5" : "border-transparent bg-panel hover:bg-line/40"} ${c.ativo === false ? "opacity-60" : ""}`}>
+                <input type="checkbox" className="accent-cyan w-4 h-4" checked={!!liberado(c.id)} disabled={ocupado === c.id} onChange={() => alternar(c)} />
+                <span className="flex-1 min-w-0 truncate">{c.nome}{c.empresa ? <span className="text-muted"> · {c.empresa}</span> : ""}</span>
+                {ocupado === c.id && <Spinner className="w-4 h-4 text-cyan" />}
+              </label>
+            ))}
+          </div>
+        )}
+        <div className="text-xs text-muteddim">O cliente marcado vê todos os arquivos desta pasta, inclusive os que forem enviados depois, em "Documentos" no Acesso Clientes.</div>
       </div>
     </Modal>
   );

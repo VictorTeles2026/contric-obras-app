@@ -12,7 +12,7 @@ import { gerarPdfOcorrenciaSeguro, nomeBaseAnexo } from "../../../lib/pdfRdo";
 import { useToast } from "../../../lib/Toast";
 import MobileShell from "../../../components/MobileShell";
 import CapturaMidia from "../../../components/CapturaMidia";
-import ColetaAssinatura, { assinaturaValida, faltaNaAssinatura } from "../../../components/ColetaAssinatura";
+import ColetaAssinatura, { assinaturaValida, faltaNaAssinatura } from "../../../components/AssinaturaCanvas";
 import { EditorOcorrencia } from "../../../components/Editores";
 import { Esqueleto, EstadoVazio, Spinner } from "../../../components/ui";
 import Icone from "../../../components/Icone";

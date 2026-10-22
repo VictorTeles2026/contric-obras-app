@@ -1,11 +1,12 @@
 "use client";
 
-import { useState } from "react";
-import { useAuth } from "../lib/AuthContext";
-import { chamarApi } from "../lib/dados";
+import { useState, useRef } from "react";
+import { useAuth, pode } from "../lib/AuthContext";
+import { chamarApi, useTabela, gravarTolerante, registrarLog } from "../lib/dados";
+import { supabase } from "../lib/supabase";
 import { useToast } from "../lib/Toast";
-import { LISTA_STATUS_ETAPA, CATEGORIAS_OCORRENCIA } from "../lib/constantes";
-import { horasEntreHorarios, hojeISO, isoLocal } from "../lib/datas";
+import { LISTA_STATUS_ETAPA, CATEGORIAS_OCORRENCIA, STATUS_PI } from "../lib/constantes";
+import { horasEntreHorarios, hojeISO, isoLocal, addDias } from "../lib/datas";
 import { nomeBaseAnexo } from "../lib/pdfRdo";
 import { salvarEdicaoRdo, salvarEdicaoHoras, salvarEdicaoSolicitacao, salvarEdicaoOcorrencia } from "../lib/edicoes";
 import { Modal, Campo, Aviso, Spinner } from "./ui";
@@ -400,6 +401,172 @@ export function Credenciais({ dados, onFechar }) {
         )}
         {erro && <Aviso tipo="erro">{erro}</Aviso>}
       </div>
+    </Modal>
+  );
+}
+
+// ---------------- PI: abertura e edição (páginas Cadastro de PIs e Configurar Cronograma) ----------------
+const todayISO = hojeISO;
+// janela completa: dados do PI + orçamento; ao salvar, trata o responsável marcado como cliente do portal
+export function JanelaPi({ modo, pi, onFechar, onSalvo }) {
+  const { usuario } = useAuth();
+  const { avisar } = useToast();
+  const { dados: pis } = useTabela("pis", { select: "id,codigo" });
+  const { dados: categorias } = useTabela("categorias_orcamento", { order: { coluna: "ordem" } });
+  const { dados: orcamentos, carregando } = useTabela("orcamento_pi_item", { filtro: [["pi_id", pi?.id]] });
+  const valoresAtuais = modo === "edit" ? Object.fromEntries(orcamentos.map((o) => [o.categoria_id, o.valor_orcado])) : {};
+  const [aberta, setAberta] = useState(true);
+  const [clienteNovo, setClienteNovo] = useState(null);
+  const [credenciais, setCredenciais] = useState(null);
+  const vaiMostrarCredenciais = useRef(false); // o FormCliente fecha logo depois de salvar
+
+  const salvar = async (dadosPi, valoresOrcamento, responsavelCliente) => {
+    let piId = pi?.id;
+    const duplicado = pis.some((p) => p.codigo.trim().toLowerCase() === dadosPi.codigo.toLowerCase() && (modo === "create" || p.id !== piId));
+    if (duplicado) return `Já existe um PI com o número ${dadosPi.codigo}.`;
+    if (modo === "create") {
+      // tolerante: se as colunas do responsável no cliente ainda não existirem, grava o resto
+      const { data, error, colunasIgnoradas } = await gravarTolerante(dadosPi, (d) => supabase.from("pis").insert(d).select().single());
+      if (error) return error.message;
+      if (colunasIgnoradas?.length) avisar("PI criado, mas o responsável no cliente não foi gravado: rode o pi-responsavel-cliente.sql no Supabase.", "erro", 9000);
+      piId = data.id;
+      registrarLog(usuario, "Criou PI", data.codigo);
+    } else {
+      const { error, colunasIgnoradas } = await gravarTolerante(dadosPi, (d) => supabase.from("pis").update(d).eq("id", piId));
+      if (error) return error.message;
+      if (colunasIgnoradas?.length) avisar("PI salvo, mas o responsável no cliente não foi gravado: rode o pi-responsavel-cliente.sql no Supabase.", "erro", 9000);
+      registrarLog(usuario, "Editou PI", dadosPi.codigo);
+    }
+    // campo apagado que já tinha valor salvo vira 0
+    const linhas = Object.entries(valoresOrcamento)
+      .filter(([categoriaId, valor]) => (valor !== "" && valor !== undefined) || categoriaId in valoresAtuais)
+      .map(([categoriaId, valor]) => ({ pi_id: piId, categoria_id: categoriaId, valor_orcado: Number(valor) || 0 }));
+    if (linhas.length > 0) {
+      const { error } = await supabase.from("orcamento_pi_item").upsert(linhas, { onConflict: "pi_id,categoria_id" });
+      if (error) return `PI salvo, mas o orçamento falhou: ${error.message}`;
+    }
+    avisar(modo === "create" ? `PI ${dadosPi.codigo} criado.` : "PI atualizado.");
+    onSalvo?.(piId);
+    setAberta(false);
+    // responsável marcado para virar cliente do portal: já cadastrado → aviso; senão → abre o cadastro preenchido
+    if (responsavelCliente) {
+      const { data, error } = await supabase.from("clientes").select("id").ilike("email", responsavelCliente.email).limit(1);
+      if (error) avisar(`Não foi possível verificar o cliente: ${error.message}`, "erro", 7000);
+      else if (data?.length) avisar("Cliente já cadastrado.", "info", 6000);
+      else { setClienteNovo(responsavelCliente); return null; }
+    }
+    onFechar();
+    return null;
+  };
+
+  if (modo === "edit" && carregando) return null;
+  return (
+    <>
+      {aberta && <PiModal modo={modo} piInicial={pi} categorias={categorias} valoresIniciais={valoresAtuais}
+        onSalvar={salvar} onCancelar={onFechar} podeCadastrarCliente={pode(usuario, "cliente.gerenciar")} />}
+      {clienteNovo && <FormCliente inicial={clienteNovo} onFechar={() => { setClienteNovo(null); if (!vaiMostrarCredenciais.current) onFechar(); }}
+        onSalvo={(r) => { if (r?.senha) { vaiMostrarCredenciais.current = true; setCredenciais({ ...r, titulo: "Cliente cadastrado" }); } }} />}
+      {credenciais && <Credenciais dados={credenciais} onFechar={() => { setCredenciais(null); onFechar(); }} />}
+    </>
+  );
+}
+function PiModal({ modo, piInicial, categorias, valoresIniciais, onSalvar, onCancelar, podeCadastrarCliente = false }) {
+  const [codigo, setCodigo] = useState(piInicial?.codigo || "");
+  const [cliente, setCliente] = useState(piInicial?.cliente || "");
+  const [projeto, setProjeto] = useState(piInicial?.projeto || "");
+  const [prazo, setPrazo] = useState(piInicial?.prazo || addDias(todayISO(), 45));
+  const [status, setStatus] = useState(piInicial?.status || "ativo");
+  const [respNome, setRespNome] = useState(piInicial?.responsavel_cliente_nome || "");
+  const [respEmail, setRespEmail] = useState(piInicial?.responsavel_cliente_email || "");
+  const [respTelefone, setRespTelefone] = useState(piInicial?.responsavel_cliente_telefone || "");
+  const [cadastrarCliente, setCadastrarCliente] = useState(false); // cadastrar o responsável no Acesso Clientes
+  const [valores, setValores] = useState(valoresIniciais || {});
+
+  // categorias desativadas em Configurações somem — a não ser que este PI já tenha valor nelas
+  const visivel = (c) => c.ativo !== false || Number(valoresIniciais?.[c.id]) > 0;
+  const compraCats = categorias.filter((c) => c.grupo === "compra_reais" && visivel(c));
+  const moiCats = categorias.filter((c) => c.grupo === "moi_horas" && visivel(c));
+  const setValor = (catId, v) => setValores((prev) => ({ ...prev, [catId]: v === "" ? "" : Number(v) }));
+  const [salvando, setSalvando] = useState(false);
+  const [erroModal, setErroModal] = useState("");
+  const emailRespOk = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(respEmail.trim());
+  const podeSalvar = codigo.trim().length > 0 && !salvando && (!cadastrarCliente || (respNome.trim() && emailRespOk));
+  const soma = (cats) => cats.reduce((s, c) => s + (Number(valores[c.id]) || 0), 0);
+
+  const salvar = async () => {
+    if (!podeSalvar) return;
+    setSalvando(true); setErroModal("");
+    // cliente e projeto sempre gravados em MAIÚSCULAS
+    const erro = await onSalvar({ codigo: codigo.trim(), cliente: cliente.trim().toLocaleUpperCase("pt-BR") || null, projeto: projeto.trim().toLocaleUpperCase("pt-BR") || null, prazo: prazo || null, status,
+      responsavel_cliente_nome: respNome.trim() || null, responsavel_cliente_email: respEmail.trim() || null, responsavel_cliente_telefone: respTelefone.trim() || null }, valores,
+      cadastrarCliente ? { nome: respNome.trim(), email: respEmail.trim().toLowerCase(), telefone: respTelefone.trim(), empresa: cliente.trim().toLocaleUpperCase("pt-BR") } : null);
+    setSalvando(false);
+    if (erro) setErroModal(erro);
+  };
+
+  const tabela = (cats, unidade, passo) => (
+    <div className="rounded-xl border border-line overflow-hidden">
+      <div className="grid grid-cols-[64px_1fr_130px] gap-2 px-3 py-2 bg-panel titulo-secao">
+        <span>Cód.</span><span>Descrição</span><span className="text-right">{unidade}</span>
+      </div>
+      <div className="divide-y divide-line/70">
+        {cats.map((c) => (
+          <div key={c.id} className="grid grid-cols-[64px_1fr_130px] gap-2 items-center px-3 py-1.5">
+            <span className="font-mono text-xs text-muted">{c.codigo}</span>
+            <span className="text-sm leading-tight">{c.nome}</span>
+            <input type="number" step={passo} min="0" value={valores[c.id] ?? ""} placeholder="0" onChange={(e) => setValor(c.id, e.target.value)}
+              className="input !py-1.5 text-right" aria-label={`${c.nome} (${unidade})`} />
+          </div>
+        ))}
+        {cats.length === 0 && <div className="px-3 py-3 text-sm text-muteddim">Nenhuma categoria cadastrada.</div>}
+      </div>
+    </div>
+  );
+
+  return (
+    <Modal titulo={modo === "create" ? "Abertura de PI" : `Editar PI — ${piInicial?.codigo}`} onFechar={onCancelar} largura="max-w-3xl"
+      rodape={<>
+        {erroModal && <div className="text-sm text-red mr-auto self-center">⚠ {erroModal}</div>}
+        <button onClick={onCancelar} className="btn btn-fantasma">Cancelar</button>
+        <button onClick={salvar} disabled={!podeSalvar} className="btn btn-primario">
+          {salvando ? <><Spinner /> Salvando...</> : modo === "create" ? "Criar PI" : "Salvar alterações"}
+        </button>
+      </>}>
+      <div className="grid grid-cols-2 md:grid-cols-6 gap-3 mb-6">
+        <Campo rotulo="Nº do PI *" className="col-span-1 md:col-span-1"><input value={codigo} onChange={(e) => setCodigo(e.target.value)} className="input" autoFocus placeholder="PI-001" /></Campo>
+        <Campo rotulo="Status" className="col-span-1 md:col-span-1">
+          <select value={status} onChange={(e) => setStatus(e.target.value)} className="input">
+            {Object.entries(STATUS_PI).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+          </select>
+        </Campo>
+        <Campo rotulo="Cliente" className="col-span-2 md:col-span-2"><input value={cliente} onChange={(e) => setCliente(e.target.value.toLocaleUpperCase("pt-BR"))} className="input uppercase" /></Campo>
+        <Campo rotulo="Prazo" className="col-span-2 md:col-span-2"><input type="date" value={prazo || ""} onChange={(e) => setPrazo(e.target.value)} className="input" /></Campo>
+        <Campo rotulo="Projeto" className="col-span-2 md:col-span-6"><input value={projeto} onChange={(e) => setProjeto(e.target.value.toLocaleUpperCase("pt-BR"))} className="input uppercase" /></Campo>
+        <Campo rotulo="Responsável pelo PI no cliente" className="col-span-2 md:col-span-2"><input value={respNome} onChange={(e) => setRespNome(e.target.value)} className="input" placeholder="Nome" /></Campo>
+        <Campo rotulo="E-mail do responsável" className="col-span-2 md:col-span-2"><input value={respEmail} onChange={(e) => setRespEmail(e.target.value)} className="input" inputMode="email" autoCapitalize="none" /></Campo>
+        <Campo rotulo="Telefone do responsável" className="col-span-2 md:col-span-2"><input value={respTelefone} onChange={(e) => setRespTelefone(e.target.value)} className="input" inputMode="tel" /></Campo>
+        {podeCadastrarCliente && (
+          <label className={`col-span-2 md:col-span-6 flex items-start gap-3 rounded-xl border p-3 cursor-pointer ${cadastrarCliente ? "border-cyan bg-cyan/5" : "border-line"}`}>
+            <input type="checkbox" checked={cadastrarCliente} onChange={(e) => setCadastrarCliente(e.target.checked)} className="mt-0.5 w-4 h-4 accent-cyan" />
+            <span className="text-sm"><strong>Cadastrar o responsável como cliente no Acesso Clientes</strong>
+              <span className="texto-apoio block">Ao salvar o PI: se o e-mail já tiver cadastro, avisa "Cliente já cadastrado."; se não, abre o cadastro de cliente com os dados preenchidos.</span>
+              {cadastrarCliente && (!respNome.trim() || !emailRespOk) && <span className="text-xs text-red block mt-1">Preencha o nome e um e-mail válido do responsável.</span>}
+            </span>
+          </label>
+        )}
+      </div>
+
+      <div className="flex items-baseline justify-between mb-2">
+        <div className="titulo-quadro text-cyan">Compra — Produto ou Serviço</div>
+        <div className="text-xs text-muted">Total: <strong className="text-textmain">R$ {soma(compraCats).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</strong></div>
+      </div>
+      <div className="mb-6">{tabela(compraCats, "Valor (R$)", "0.01")}</div>
+
+      <div className="flex items-baseline justify-between mb-2">
+        <div className="titulo-quadro text-cyan">MOI + Contric (horas)</div>
+        <div className="text-xs text-muted">Total: <strong className="text-textmain">{soma(moiCats).toLocaleString("pt-BR")} h</strong></div>
+      </div>
+      {tabela(moiCats, "Horas", "0.5")}
     </Modal>
   );
 }

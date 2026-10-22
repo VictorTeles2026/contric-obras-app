@@ -1,7 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import { useTabela, chamarApi } from "../../lib/dados";
+import { useTabela, chamarApi, registrarLog } from "../../lib/dados";
+import { supabase } from "../../lib/supabase";
+import { CLASSIFICACOES_DOC } from "../../lib/constantes";
 import { useAuth, podeGerenciarClientes, pode } from "../../lib/AuthContext";
 import { useToast } from "../../lib/Toast";
 import PainelShell from "../../components/PainelShell";
@@ -119,7 +121,7 @@ export default function ClientesPage() {
       {form && <FormCliente inicial={form} onFechar={() => setForm(null)} onSalvo={(r) => { recarregar(); if (r?.senha) setCredenciais({ ...r, titulo: "Cliente cadastrado" }); }} />}
       {credenciais && <Credenciais dados={credenciais} onFechar={() => setCredenciais(null)} />}
       {gerenciando && (
-        <GerenciarAcessos cliente={gerenciando} pis={pis} acessos={acessosDe(gerenciando.id)} onFechar={() => setGerenciando(null)} onMudou={recarregarAcessos} />
+        <GerenciarAcessos cliente={gerenciando} pis={pis} acessos={acessosDe(gerenciando.id)} onFechar={() => setGerenciando(null)} onMudou={recarregarAcessos} usuario={usuario} />
       )}
       {vendoSenha && <VerSenhas authUserId={vendoSenha.auth_user_id} nome={vendoSenha.nome} onFechar={() => setVendoSenha(null)} />}
       {excluindo && (
@@ -136,8 +138,27 @@ export default function ClientesPage() {
   );
 }
 
-function GerenciarAcessos({ cliente, pis, acessos, onFechar, onMudou }) {
+function GerenciarAcessos({ cliente, pis, acessos, onFechar, onMudou, usuario }) {
   const { avisar } = useToast();
+  // pastas de documentos: classificações gerais + pastas próprias de cada PI; liberar a pasta inteira ao cliente
+  const { dados: pastasPis } = useTabela("pi_pastas", { order: { coluna: "nome" } });
+  const { dados: pastasLib, recarregar: recarregarPastas } = useTabela("cliente_pastas", { filtro: [["cliente_id", cliente.id]] });
+  const [pastaOcupada, setPastaOcupada] = useState(null);
+  const pastasDoPi = (piId) => [...CLASSIFICACOES_DOC, ...pastasPis.filter((p) => p.pi_id === piId).map((p) => [p.prefixo, p.nome])];
+  const pastaLiberada = (piId, prefixo) => pastasLib.find((p) => p.pi_id === piId && p.prefixo === prefixo);
+  const alternarPasta = async (pi, prefixo, nome) => {
+    const chave = `${pi.id}|${prefixo}`;
+    setPastaOcupada(chave);
+    const atual = pastaLiberada(pi.id, prefixo);
+    const { error } = atual
+      ? await supabase.from("cliente_pastas").delete().eq("id", atual.id)
+      : await supabase.from("cliente_pastas").insert({ cliente_id: cliente.id, pi_id: pi.id, prefixo, nome, liberado_por_nome: usuario?.nome });
+    setPastaOcupada(null);
+    if (error) { avisar(/cliente_pastas/.test(error.message) ? "Rode o script documentos-pastas.sql no Supabase." : `Não foi possível salvar: ${error.message}`, "erro", 7000); return; }
+    registrarLog(usuario, atual ? "Retirou pasta do cliente" : "Liberou pasta ao cliente", `${pi.codigo} — ${nome} · ${cliente.nome}`);
+    if (!atual) chamarApi("/api/alertas", { acao: "cliente", tipo: "documento", piId: pi.id, clienteId: cliente.id, detalhe: `Pasta liberada: ${nome}` }).catch(() => {});
+    recarregarPastas();
+  };
   const [piId, setPiId] = useState("");
   const [flags, setFlags] = useState(flagsDe({}, true));
   const [salvando, setSalvando] = useState(null);
@@ -154,7 +175,8 @@ function GerenciarAcessos({ cliente, pis, acessos, onFechar, onMudou }) {
   };
 
   return (
-    <Modal titulo={`Acessos — ${cliente.nome}`} onFechar={onFechar} largura="max-w-2xl">
+    <Modal titulo={`Acessos — ${cliente.nome}`} onFechar={onFechar} largura="max-w-2xl"
+      rodape={<button onClick={onFechar} disabled={!!salvando || !!pastaOcupada} className="btn btn-primario">Concluir</button>}>
       <div className="flex flex-col gap-4">
         <div className="rounded-xl border border-cyan/30 bg-cyan/5 p-3.5 flex flex-col gap-3">
           <div className="font-semibold text-sm">Dar acesso a um PI</div>
@@ -190,6 +212,22 @@ function GerenciarAcessos({ cliente, pis, acessos, onFechar, onMudou }) {
                   className="p-2 rounded-lg text-muteddim hover:text-red hover:bg-red/5" title="Remover acesso a este PI"><Icone nome="lixo" className="w-4 h-4" /></button>
                 {salvando === a.id && <Spinner className="w-4 h-4 text-cyan" />}
               </div>
+              {pi && (
+                <div className="pt-2 border-t border-line/70">
+                  <div className="text-xs text-muted mb-1.5">Pastas de documentos liberadas inteiras (inclui arquivos futuros):</div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {pastasDoPi(pi.id).map(([p, l]) => {
+                      const on = !!pastaLiberada(pi.id, p), ocup = pastaOcupada === `${pi.id}|${p}`;
+                      return (
+                        <button key={p} disabled={!!pastaOcupada} onClick={() => alternarPasta(pi, p, l)} className={`chip !text-xs ${on ? "chip-ativo" : ""}`}
+                          title={on ? "Clique para retirar a pasta" : "Clique para liberar a pasta inteira"}>
+                          {ocup ? <Spinner className="w-3 h-3" /> : on ? "✓ " : ""}{l}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
             </div>
           );
         })}
