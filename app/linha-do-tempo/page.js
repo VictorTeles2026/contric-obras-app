@@ -14,6 +14,7 @@ import PainelSuspenso from "../../components/PainelSuspenso";
 const STATUS_COR = Object.fromEntries(Object.entries(STATUS_ETAPA).map(([k, v]) => [k, v.barra]));
 const LABEL_W = 240;
 const COR_MEDICAO = "#8E5CD9"; // mesma cor do indicador de medições do Dashboard
+const COR_SINO = "#E8590C";    // alertas de prazo programados (mesma cor do botão no Configurar Cronograma)
 // listas de filtro (clientes, equipes, recursos) com o mesmo visual de um campo de seleção
 const ESTILO_LISTA = "input !w-auto !py-2 !text-sm max-w-[220px] truncate text-left cursor-pointer";
 const ESTILO_LISTA_ATIVA = "!border-cyan/40 !text-cyan";
@@ -305,7 +306,7 @@ export default function LinhaDoTempoPage() {
               Medição (no fim do período planejado)
             </span>
             <span className="flex items-center gap-1.5">
-              <span className="w-3.5 h-3.5 rounded-full bg-white text-amber flex items-center justify-center" style={{ boxShadow: "0 0 0 1px currentColor" }}><Icone nome="sino" className="w-2.5 h-2.5" /></span>
+              <span className="w-4 h-4 rounded-full text-white flex items-center justify-center" style={{ background: COR_SINO }}><Icone nome="sino" className="w-2.5 h-2.5" /></span>
               Alerta de prazo por e-mail
             </span>
           </div>
@@ -439,7 +440,11 @@ export default function LinhaDoTempoPage() {
                         <div key={e.id} className="flex items-center border-b border-line/60">
                           <div className={`shrink-0 sticky left-0 bg-white z-10 py-1.5 truncate border-r border-line ${e.nivel ? "pl-8 pr-2 text-xs text-muted" : "px-3 text-sm font-medium"}`} style={{ width: LABEL_W }} title={e.nome}>
                             {e.nivel ? "· " : ""}{e.nome}
-                            {datasAlertaEtapa(e).length > 0 && <Icone nome="sino" className="w-3 h-3 inline ml-1 -mt-0.5 text-amber" />}
+                            {datasAlertaEtapa(e).length > 0 && (
+                              <span className="inline-flex items-center justify-center w-4 h-4 ml-1 -mt-0.5 align-middle rounded-full text-white" style={{ background: COR_SINO }} title="Etapa com alertas de prazo">
+                                <Icone nome="sino" className="w-2.5 h-2.5" />
+                              </span>
+                            )}
                           </div>
                           <div className={e.nivel ? "relative h-7" : "relative h-8"} style={{ width: largura }}>
                             <div className="absolute inset-0" style={{ left: hojeX, width: 1, background: "#D64545", opacity: 0.5 }} />
@@ -466,8 +471,8 @@ export default function LinhaDoTempoPage() {
                               if (x < 0 || x > largura) return null;
                               const passou = a.data < hojeIsoLocal;
                               return (
-                                <span key={a.dias} className={`absolute flex items-center justify-center rounded-full bg-white ${passou ? "text-muteddim" : "text-amber"}`}
-                                  style={{ left: x - 7, top: e.nivel ? 6 : 8, width: 14, height: 14, boxShadow: "0 0 0 1px currentColor" }}
+                                <span key={a.dias} className="absolute z-[1] flex items-center justify-center rounded-full text-white"
+                                  style={{ left: x - 8, top: e.nivel ? 5 : 7, width: 16, height: 16, background: passou ? "#9AA3B2" : COR_SINO, boxShadow: "0 0 0 2px #fff" }}
                                   title={`Alerta por e-mail em ${formatarDataIso(a.data)} · ${a.dias === 0 ? `no dia do ${a.ref}` : `${a.dias} dia(s) antes do ${a.ref}`}${passou ? " (enviado/passou)" : ""}`}>
                                   <Icone nome="sino" className="w-2.5 h-2.5" />
                                 </span>

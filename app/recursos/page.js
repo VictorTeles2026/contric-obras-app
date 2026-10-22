@@ -198,7 +198,34 @@ export default function RecursosPage({ searchParams }) {
     // igual à alocação pelo Cronograma: % / Período com 100% (pode ajustar depois)
     if (e) { setModo("periodo_percentual"); setPercentual(100); }
   };
-  const etapaDuplicada = !!etapaEscolhida && alocsDoSelecionado.some((a) => a.etapa_id === etapaEscolhida && a.id !== editandoAlocId);
+  // o mesmo recurso pode ter vários períodos na mesma etapa (ex: 11–15/10 e 20–22/10)
+  const etapaDuplicada = false;
+
+  // "Especificar etapa(s)": várias etapas de uma vez, cada uma com um ou mais períodos e % diário
+  const [especificar, setEspecificar] = useState(false);
+  const [selecaoEtapas, setSelecaoEtapas] = useState({}); // etapaId → [{ inicio, fim, perc }]
+  const periodosNovos = Object.entries(selecaoEtapas).flatMap(([etapaId, ps]) => ps.map((p, i) => ({ etapaId, i, ...p })));
+  const periodoRuim = (p) => !p.inicio || !p.fim || p.fim < p.inicio || !(Number(p.perc) > 0) || Number(p.perc) > 100;
+  const multiInvalido = !periodosNovos.length || periodosNovos.some(periodoRuim);
+  // uso do recurso em cada período novo: soma com as alocações existentes e com os outros períodos novos que se cruzam
+  const usoNoPeriodo = (p) => Number(p.perc || 0)
+    + alocsDoSelecionado.filter((a) => a.modo === "periodo_percentual" && sobrepoe(a.periodo_inicio, a.periodo_fim, p.inicio, p.fim)).reduce((s, a) => s + Number(a.percentual || 0), 0)
+    + periodosNovos.filter((o) => (o.etapaId !== p.etapaId || o.i !== p.i) && o.inicio && o.fim && sobrepoe(o.inicio, o.fim, p.inicio, p.fim)).reduce((s, o) => s + Number(o.perc || 0), 0);
+  const salvarMultiplas = async () => {
+    if (!selecionadoId || !piEscolhido || multiInvalido) return;
+    const linhas = periodosNovos.map((p) => ({
+      recurso_id: selecionadoId, pi_id: piEscolhido, etapa_id: p.etapaId, modo: "periodo_percentual",
+      periodo_inicio: p.inicio, periodo_fim: p.fim, percentual: Number(p.perc),
+    }));
+    const { error } = await supabase.from("alocacoes_recurso").insert(linhas);
+    if (error) { avisar(`Não foi possível salvar: ${error.message}`, "erro", 6000); return; }
+    avisarAlocacao("criada", linhas);
+    const qtdEtapas = Object.keys(selecaoEtapas).length;
+    avisar(`${linhas.length} período(s) alocado(s) em ${qtdEtapas} etapa(s).`);
+    await registrarLog(usuario, "Criou alocação por etapas", `${selecionado?.nome} — ${pis.find((p) => p.id === piEscolhido)?.codigo} · ${Object.keys(selecaoEtapas).map((id) => nomeEtapa(id)).join("; ")}`);
+    setSelecaoEtapas({});
+    recarregarAlocacoes();
+  };
 
   // calculado enquanto preenche (antes o aviso só aparecia DEPOIS de já ter salvo)
   const somaSobreposta = useMemo(() => {
@@ -435,7 +462,7 @@ export default function RecursosPage({ searchParams }) {
                     <Icone nome="editar" className="w-4 h-4" /> Editar
                   </button>}
                   {podeAlocar && <button onClick={() => {
-                    setEditandoAlocId(null); setPiEscolhido(""); setEtapaEscolhida(""); setModo("periodo_percentual");
+                    setEditandoAlocId(null); setPiEscolhido(""); setEtapaEscolhida(""); setModo("periodo_percentual"); setEspecificar(false); setSelecaoEtapas({});
                     setPeriodoInicio(hojeISO()); setPeriodoFim(hojeISO()); setPercentual(100);
                     fecharTudoMenos(alocarOpen && !editandoAlocId ? null : "alocar");
                   }} disabled={selecionado.ativo === false} title={selecionado.ativo === false ? "Recurso desabilitado — habilite para alocar" : undefined} className="btn btn-primario btn-sm">
@@ -462,26 +489,47 @@ export default function RecursosPage({ searchParams }) {
                 <div className="titulo-quadro">{editandoAlocId ? "Editar alocação" : "Nova alocação"}</div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <Campo rotulo="PI">
-                    <select value={piEscolhido} onChange={(e) => { setPiEscolhido(e.target.value); setEtapaEscolhida(""); }} className="input">
+                    <select value={piEscolhido} onChange={(e) => { setPiEscolhido(e.target.value); setEtapaEscolhida(""); setSelecaoEtapas({}); }} className="input">
                       <option value="">Selecione o PI...</option>
                       {pis.map((p) => <option key={p.id} value={p.id}>{p.codigo} — {p.cliente}{p.projeto ? ` — ${p.projeto}` : ""}</option>)}
                     </select>
                   </Campo>
-                  <Campo rotulo="Etapa (igual à alocação pelo Cronograma)" className="sm:col-span-2">
-                    <select value={etapaEscolhida} onChange={(e) => escolherEtapa(e.target.value)} disabled={!piEscolhido} className="input">
-                      <option value="">Sem etapa — só período no PI</option>
-                      {opcoesEtapa(piEscolhido).map((e) => <option key={e.id} value={e.id}>{e.nivel ? "   " : ""}{e.rotulo}</option>)}
-                    </select>
-                    {etapaEscolhida && <span className="block text-xs text-muteddim mt-1">Usa as datas planejadas da etapa (pode ajustar) e aparece na etapa, no Cronograma.</span>}
-                  </Campo>
-                  <div>
+                  {editandoAlocId ? (
+                    <Campo rotulo="Etapa (igual à alocação pelo Cronograma)" className="sm:col-span-2">
+                      <select value={etapaEscolhida} onChange={(e) => escolherEtapa(e.target.value)} disabled={!piEscolhido} className="input">
+                        <option value="">Sem etapa — só período no PI</option>
+                        {opcoesEtapa(piEscolhido).map((e) => <option key={e.id} value={e.id}>{e.nivel ? "   " : ""}{e.rotulo}</option>)}
+                      </select>
+                      {etapaEscolhida && <span className="block text-xs text-muteddim mt-1">Usa as datas planejadas da etapa (pode ajustar) e aparece na etapa, no Cronograma.</span>}
+                    </Campo>
+                  ) : (
+                    <Campo rotulo="Etapa">
+                      <select value={especificar ? "especificar" : ""} onChange={(e) => { setEspecificar(e.target.value === "especificar"); setSelecaoEtapas({}); setEtapaEscolhida(""); }} disabled={!piEscolhido} className="input">
+                        <option value="">Sem etapa — só período no PI</option>
+                        <option value="especificar">Especificar etapa(s)</option>
+                      </select>
+                    </Campo>
+                  )}
+                  {!(especificar && !editandoAlocId) && <div>
                     <span className="rotulo">Modo</span>
                     <div className="flex gap-2">
                       <button type="button" onClick={() => setModo("periodo_percentual")} className={`chip !py-2 flex-1 justify-center ${modo === "periodo_percentual" ? "chip-ativo" : ""}`}>% / Período</button>
                       <button type="button" onClick={() => setModo("cadencia")} className={`chip !py-2 flex-1 justify-center ${modo === "cadencia" ? "!bg-amber !text-white !border-amber" : ""}`}>Cadência</button>
                     </div>
-                  </div>
+                  </div>}
                 </div>
+                {especificar && !editandoAlocId ? (
+                  <>
+                    <EtapasParaAlocar etapas={opcoesEtapa(piEscolhido)} selecao={selecaoEtapas} setSelecao={setSelecaoEtapas}
+                      existentes={alocsDoSelecionado} usoNoPeriodo={usoNoPeriodo} periodoRuim={periodoRuim} />
+                    <div className="flex gap-2 justify-end">
+                      <button onClick={() => { setAlocarOpen(false); setSelecaoEtapas({}); }} className="btn btn-fantasma">Cancelar</button>
+                      <button onClick={salvarMultiplas} disabled={multiInvalido} className="btn btn-primario">
+                        Adicionar alocação{periodosNovos.length ? ` (${periodosNovos.length} período${periodosNovos.length > 1 ? "s" : ""})` : ""}
+                      </button>
+                    </div>
+                  </>
+                ) : (<>
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                   <Campo rotulo="Início"><input type="date" value={periodoInicio} onChange={(e) => setPeriodoInicio(e.target.value)} className="input" /></Campo>
                   <Campo rotulo="Fim"><input type="date" value={periodoFim} min={periodoInicio} onChange={(e) => setPeriodoFim(e.target.value)} className={`input ${periodoInvalido ? "!border-red" : ""}`} /></Campo>
@@ -501,6 +549,7 @@ export default function RecursosPage({ searchParams }) {
                     {editandoAlocId ? "Salvar alterações" : "Adicionar alocação"}
                   </button>
                 </div>
+                </>)}
               </div>
             )}
 
@@ -521,7 +570,7 @@ export default function RecursosPage({ searchParams }) {
                     {podeAlocar && (
                       <div className="flex items-center gap-1">
                         <button onClick={() => {
-                          setEditandoAlocId(a.id); setPiEscolhido(a.pi_id); setEtapaEscolhida(a.etapa_id || ""); setModo(a.modo);
+                          setEditandoAlocId(a.id); setPiEscolhido(a.pi_id); setEtapaEscolhida(a.etapa_id || ""); setModo(a.modo); setEspecificar(false);
                           setPeriodoInicio(a.periodo_inicio); setPeriodoFim(a.periodo_fim); setPercentual(a.percentual || 100);
                           fecharTudoMenos("alocar");
                         }} className="btn btn-fantasma btn-sm">Editar</button>
@@ -762,5 +811,79 @@ function AlocacaoEmMassaModal({ pis, recursos, opcoesEtapa, etapas, onAplicar, o
         </div>
       </div>
     </Modal>
+  );
+}
+
+// "Especificar etapa(s)": todas as etapas e sub-etapas do PI com as datas do cronograma.
+// Marcar a etapa já cria um período com as datas dela e 100% do dia; dá para ajustar as datas
+// (alocação parcial), mudar o % diário e somar mais períodos na mesma etapa.
+function EtapasParaAlocar({ etapas, selecao, setSelecao, existentes, usoNoPeriodo, periodoRuim }) {
+  const marcar = (e, on) => setSelecao((s) => {
+    const n = { ...s };
+    if (on) n[e.id] = [{ inicio: e.data_prevista_inicio || hojeISO(), fim: e.data_prevista_fim || e.data_prevista_inicio || hojeISO(), perc: 100 }];
+    else delete n[e.id];
+    return n;
+  });
+  const alterar = (id, i, patch) => setSelecao((s) => ({ ...s, [id]: s[id].map((p, k) => (k === i ? { ...p, ...patch } : p)) }));
+  const adicionar = (e) => setSelecao((s) => {
+    const ult = s[e.id][s[e.id].length - 1];
+    return { ...s, [e.id]: [...s[e.id], { inicio: ult.fim, fim: e.data_prevista_fim || ult.fim, perc: ult.perc }] };
+  });
+  const remover = (id, i) => setSelecao((s) => {
+    const resto = s[id].filter((_, k) => k !== i);
+    const n = { ...s };
+    if (resto.length) n[id] = resto; else delete n[id];
+    return n;
+  });
+  if (!etapas.length) return <div className="text-sm text-muteddim">Este PI ainda não tem etapas no cronograma.</div>;
+  return (
+    <div className="flex flex-col gap-1.5">
+      <div className="text-xs text-muted">Marque as etapas. Cada uma já vem com o período do cronograma e 100% do dia; ajuste as datas para alocação parcial e use <strong>+ período</strong> para separar dias (ex: 11–15/10 e 20–22/10).</div>
+      <div className="rounded-xl border border-line divide-y divide-line/70 max-h-[460px] overflow-y-auto rolagem-fina">
+        {etapas.map((e) => {
+          const ps = selecao[e.id];
+          const jaTem = existentes.filter((a) => a.etapa_id === e.id);
+          return (
+            <div key={e.id} className={`px-3 py-2 ${ps ? "bg-cyan/5" : ""}`}>
+              <label className={`flex items-start gap-2.5 cursor-pointer ${e.nivel ? "pl-5" : ""}`}>
+                <input type="checkbox" className="accent-cyan w-4 h-4 mt-0.5" checked={!!ps} onChange={(ev) => marcar(e, ev.target.checked)} />
+                <span className="flex-1 min-w-0">
+                  <span className={`text-sm ${e.nivel ? "" : "font-semibold"}`}>{e.nivel ? e.nome : e.rotulo}</span>
+                  <span className="block texto-apoio">
+                    Cronograma: {e.data_prevista_inicio ? formatarData(e.data_prevista_inicio) : "—"} a {e.data_prevista_fim ? formatarData(e.data_prevista_fim) : "—"}
+                    {jaTem.length > 0 && <span className="text-cyan"> · já alocado: {jaTem.map((a) => `${formatarData(a.periodo_inicio)}–${formatarData(a.periodo_fim)} (${a.percentual ?? "cad."}%)`).join(", ")}</span>}
+                  </span>
+                </span>
+              </label>
+              {ps && (
+                <div className={`mt-2 flex flex-col gap-1.5 ${e.nivel ? "pl-12" : "pl-7"}`}>
+                  {ps.map((p, i) => {
+                    const ruim = periodoRuim(p);
+                    const fora = (e.data_prevista_inicio && p.inicio < e.data_prevista_inicio) || (e.data_prevista_fim && p.fim > e.data_prevista_fim);
+                    const uso = ruim ? 0 : usoNoPeriodo({ ...p, etapaId: e.id, i });
+                    return (
+                      <div key={i} className="flex flex-wrap items-center gap-1.5">
+                        <input type="date" value={p.inicio} onChange={(ev) => alterar(e.id, i, { inicio: ev.target.value })} className="input !w-auto !py-1 !px-2 !text-xs" aria-label="Início do período" />
+                        <span className="text-xs text-muted">a</span>
+                        <input type="date" value={p.fim} min={p.inicio} onChange={(ev) => alterar(e.id, i, { fim: ev.target.value })} className={`input !w-auto !py-1 !px-2 !text-xs ${p.fim < p.inicio ? "!border-red" : ""}`} aria-label="Fim do período" />
+                        <div className="relative">
+                          <input type="number" min="1" max="100" value={p.perc} onChange={(ev) => alterar(e.id, i, { perc: ev.target.value })}
+                            className={`input !w-20 !py-1 !pl-2 !pr-11 !text-xs text-right ${!(Number(p.perc) > 0) || Number(p.perc) > 100 ? "!border-red" : ""}`} aria-label="Percentual do dia" />
+                          <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-muted">% dia</span>
+                        </div>
+                        {ps.length > 1 && <button type="button" onClick={() => remover(e.id, i)} className="p-1 rounded text-muteddim hover:text-red" aria-label="Remover período"><Icone nome="lixo" className="w-3.5 h-3.5" /></button>}
+                        {i === ps.length - 1 && <button type="button" onClick={() => adicionar(e)} className="text-xs text-cyan font-semibold hover:underline">+ período</button>}
+                        {fora && !ruim && <span className="text-[11px] text-amber">fora das datas da etapa</span>}
+                        {uso > 100 && <span className="text-[11px] text-red font-semibold">uso chega a {uso}% no período</span>}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
   );
 }

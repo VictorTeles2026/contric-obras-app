@@ -290,7 +290,17 @@ export default function CronogramaPage() {
 
   // ---- Alocação de recursos na etapa ----
   const toggleRecursoNaEtapa = async (etapa, recursoId) => {
-    const existente = alocacoesRecurso.find((a) => a.etapa_id === etapa.id && a.recurso_id === recursoId);
+    // o recurso pode ter vários períodos na etapa (Alocação de recursos → Especificar etapas): desmarcar tira todos
+    const daEtapa = alocacoesRecurso.filter((a) => a.etapa_id === etapa.id && a.recurso_id === recursoId);
+    if (daEtapa.length > 1) {
+      if (!window.confirm(`Este recurso tem ${daEtapa.length} períodos nesta etapa. Remover todos?`)) return;
+      const { error } = await supabase.from("alocacoes_recurso").delete().in("id", daEtapa.map((a) => a.id));
+      if (error) { setErro(error.message); return; }
+      avisarAlocacao("removida", daEtapa[0]);
+      recarregarAlocacoesRecurso();
+      return;
+    }
+    const existente = daEtapa[0];
     const nova = {
       recurso_id: recursoId, pi_id: etapa.pi_id, etapa_id: etapa.id,
       modo: "periodo_percentual", periodo_inicio: etapa.data_prevista_inicio || todayISO(),
@@ -764,7 +774,7 @@ function EtapaRow({ etapa, editavel, onChange, onDelete, deps, onRemoverDep, anc
       <div className="relative" ref={alocRef}>
         <button onClick={() => { setAlocAberta((v) => !v); setEquipeAberta(false); }} aria-expanded={alocAberta}
           className={`btn btn-sm !px-2.5 border ${alocs.length ? "border-cyan/40 text-cyan bg-cyan/5" : "border-line text-muted bg-white"}`}>
-          Alocação{alocs.length > 0 ? ` (${alocs.length})` : ""} ▾
+          Alocação{alocs.length > 0 ? ` (${new Set(alocs.map((a) => a.recurso_id)).size})` : ""} ▾
         </button>
         <PainelSuspenso ancoraRef={alocRef} aberto={alocAberta} onFechar={fecharAloc} largura={272}>
             {recursos.length === 0 && <div className="text-sm text-muteddim px-2 py-1.5">Nenhum recurso cadastrado.</div>}
@@ -780,7 +790,7 @@ function EtapaRow({ etapa, editavel, onChange, onDelete, deps, onRemoverDep, anc
       <div className="relative" ref={alertaRef}>
         <button onClick={() => { setAlertaAberto((v) => !v); setEquipeAberta(false); setAlocAberta(false); }} aria-expanded={alertaAberto}
           title={qtdAlertas ? `Alertas: ${datasAlertaEtapa(etapa).map((a) => `${a.dias}d antes do ${a.ref}`).join(", ")}` : "Programar alertas de prazo por e-mail"}
-          className={`btn btn-sm !px-2.5 border ${qtdAlertas ? "border-amber/50 text-amber bg-amber/5" : "border-line text-muted bg-white"}`}>
+          className={`btn btn-sm !px-2.5 border ${qtdAlertas ? "!bg-[#E8590C] !border-[#E8590C] !text-white font-bold shadow-sm" : "border-line text-muted bg-white"}`}>
           <Icone nome="sino" className="w-3.5 h-3.5" />{qtdAlertas ? ` ${qtdAlertas}` : ""} ▾
         </button>
         <PainelSuspenso ancoraRef={alertaRef} aberto={alertaAberto} onFechar={fecharAlerta} largura={300}>
