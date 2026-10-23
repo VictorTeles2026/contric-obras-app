@@ -73,7 +73,7 @@ export const POST = rotaSegura(async (req) => {
     return NextResponse.json({ error: "A IA ainda não foi configurada: falta a variável ANTHROPIC_API_KEY na Vercel." }, { status: 400 });
   }
   const { piId, texto } = await req.json().catch(() => ({}));
-  const pedido = String(texto || "").trim().slice(0, 4000);
+  const pedido = String(texto || "").trim().slice(0, 20000); // ~25 min de fala
   if (!piId || !pedido) return NextResponse.json({ error: "Diga ou escreva o que deseja fazer no cronograma." }, { status: 400 });
 
   const [{ data: pi }, { data: etapas }, { data: deps }, { data: recursos }, { data: alocs }, { data: cfgEquipes }] = await Promise.all([
@@ -100,18 +100,19 @@ export const POST = rotaSegura(async (req) => {
   const client = new Anthropic();
   let msg;
   try {
-    msg = await client.beta.messages.create({
+    // streaming: respostas longas (cronograma inteiro) sem estourar o tempo da requisição HTTP
+    msg = await client.beta.messages.stream({
       model: MODELO,
-      max_tokens: 16000,
+      max_tokens: 32000,
       betas: ["server-side-fallback-2026-07-01"],
       fallbacks: "default",
-      output_config: { effort: "medium", format: { type: "json_schema", schema: ESQUEMA } },
+      output_config: { effort: "low", format: { type: "json_schema", schema: ESQUEMA } }, // tarefa de conversão: "low" responde mais rápido
       system: [{ type: "text", text: SISTEMA, cache_control: { type: "ephemeral" } }],
       messages: [{
         role: "user",
         content: `Hoje: ${hoje}\nPI: ${pi.codigo} - ${pi.cliente || ""}${pi.projeto ? ` - ${pi.projeto}` : ""}\n\nEquipes cadastradas: ${JSON.stringify(equipes)}\n\nRecursos cadastrados (JSON): ${JSON.stringify(listaRecursos)}\n\nCronograma atual (JSON):\n${JSON.stringify(cronograma)}\n\nPedido do usuário:\n${pedido}`,
       }],
-    });
+    }).finalMessage();
   } catch (e) {
     if (e instanceof Anthropic.AuthenticationError) return NextResponse.json({ error: "Chave da IA inválida (ANTHROPIC_API_KEY)." }, { status: 400 });
     if (e instanceof Anthropic.RateLimitError) return NextResponse.json({ error: "A IA está ocupada no momento. Tente de novo em alguns segundos." }, { status: 429 });
@@ -119,7 +120,7 @@ export const POST = rotaSegura(async (req) => {
     throw e;
   }
   if (msg.stop_reason === "refusal") return NextResponse.json({ error: "A IA não conseguiu atender a este pedido. Reformule e tente de novo." }, { status: 400 });
-  if (msg.stop_reason === "max_tokens") return NextResponse.json({ error: "O pedido gerou mudanças demais de uma vez. Divida em partes menores." }, { status: 400 });
+  if (msg.stop_reason === "max_tokens") return NextResponse.json({ error: "O pedido gerou mudanças demais de uma vez. Divida em partes menores (ex.: uma macro-etapa por vez)." }, { status: 400 });
   const texto2 = msg.content.filter((b) => b.type === "text").map((b) => b.text).join("");
   let resultado;
   try { resultado = JSON.parse(texto2); } catch { return NextResponse.json({ error: "A resposta da IA veio incompleta. Tente de novo." }, { status: 502 }); }

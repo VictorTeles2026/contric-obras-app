@@ -1009,12 +1009,13 @@ function AssistenteIA({ pi, etapas, usuario, recursos = [], alocacoes = [], onFe
   const [marcadas, setMarcadas] = useState([]);
   const [erro, setErro] = useState("");
   const recRef = useRef(null);
+  const querOuvirRef = useRef(false); // o navegador encerra a escuta após pausas: religa até a pessoa clicar para parar
   const SR = typeof window !== "undefined" ? (window.SpeechRecognition || window.webkitSpeechRecognition) : null;
-  useEffect(() => () => recRef.current?.stop(), []);
+  useEffect(() => () => { querOuvirRef.current = false; recRef.current?.stop(); }, []);
 
   const ouvir = () => {
     if (!SR) { setErro("Este navegador não tem reconhecimento de voz. Use o Chrome ou o Edge, ou digite o pedido."); return; }
-    if (ouvindo) { recRef.current?.stop(); return; }
+    if (ouvindo) { querOuvirRef.current = false; recRef.current?.stop(); setOuvindo(false); return; }
     const rec = new SR();
     rec.lang = "pt-BR"; rec.continuous = true; rec.interimResults = false;
     rec.onresult = (ev) => {
@@ -1022,18 +1023,26 @@ function AssistenteIA({ pi, etapas, usuario, recursos = [], alocacoes = [], onFe
       for (let i = ev.resultIndex; i < ev.results.length; i++) if (ev.results[i].isFinal) novo += ev.results[i][0].transcript;
       if (novo) setTexto((t) => `${t}${t && !t.endsWith(" ") ? " " : ""}${novo.trim()}`);
     };
-    rec.onerror = (ev) => { setErro(ev.error === "not-allowed" ? "Permita o uso do microfone no navegador." : `Microfone: ${ev.error}`); setOuvindo(false); };
-    rec.onend = () => setOuvindo(false);
-    recRef.current = rec; setErro(""); setOuvindo(true); rec.start();
+    rec.onerror = (ev) => {
+      if (ev.error === "no-speech" || ev.error === "aborted") return; // pausa longa: o onend religa
+      querOuvirRef.current = false; setOuvindo(false);
+      setErro(ev.error === "not-allowed" ? "Permita o uso do microfone no navegador." : `Microfone: ${ev.error}`);
+    };
+    rec.onend = () => {
+      if (querOuvirRef.current) { try { rec.start(); } catch { setOuvindo(false); querOuvirRef.current = false; } } // continua ouvindo
+      else setOuvindo(false);
+    };
+    recRef.current = rec; querOuvirRef.current = true; setErro(""); setOuvindo(true); rec.start();
   };
 
   const interpretar = async () => {
-    recRef.current?.stop();
+    querOuvirRef.current = false; recRef.current?.stop(); setOuvindo(false);
     if (!texto.trim()) return;
     setCarregando(true); setErro(""); setResultado(null);
     const { ok, json } = await chamarApi("/api/ia", { piId: pi.id, texto });
     setCarregando(false);
-    if (!ok) { setErro(json.error || "Não foi possível interpretar."); return; }
+    // sem mensagem do servidor = tempo esgotado (a hospedagem corta em 60 s): pedido grande demais
+    if (!ok) { setErro(json.error || "A IA demorou demais para responder — o pedido ficou grande. Divida em partes (ex.: uma macro-etapa por vez) e tente de novo."); return; }
     setResultado(json); setMarcadas((json.acoes || []).map((_, i) => i));
   };
 
@@ -1176,13 +1185,14 @@ function AssistenteIA({ pi, etapas, usuario, recursos = [], alocacoes = [], onFe
         {!resultado && <>
           <div className="text-sm text-muted">Fale ou escreva o que quer fazer. Exemplos: <em>"Cria a macro Elétrica com levantamento de 3 dias a partir de 3/11 e projeto executivo de 9 dias depois dele, responsável Contric"</em> · <em>"Atrasa o comissionamento em 4 dias e empurra o startup"</em> · <em>"Marca o levantamento inicial como concluído"</em>.</div>
           <div className="relative">
-            <textarea value={texto} onChange={(e) => setTexto(e.target.value)} rows={5} className="input pr-14" placeholder="Seu pedido..." autoFocus />
+            <textarea value={texto} onChange={(e) => setTexto(e.target.value.slice(0, 20000))} rows={8} className="input pr-14" placeholder="Seu pedido..." autoFocus />
             <button type="button" onClick={ouvir} aria-label={ouvindo ? "Parar de ouvir" : "Ditar por voz"} title={ouvindo ? "Parar" : "Ditar por voz"}
               className={`absolute right-2 top-2 w-10 h-10 rounded-full flex items-center justify-center ${ouvindo ? "bg-red text-white animate-pulse" : "bg-cyan/10 text-cyan hover:bg-cyan/20"}`}>
               <svg viewBox="0 0 24 24" className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3" /><path d="M5 11a7 7 0 0 0 14 0M12 18v3" /></svg>
             </button>
           </div>
-          {ouvindo && <div className="text-xs text-red font-semibold">Ouvindo... fale normalmente e clique no microfone para parar.</div>}
+          {ouvindo && <div className="text-xs text-red font-semibold">Ouvindo... pode fazer pausas; o microfone continua ligado até você clicar nele de novo.</div>}
+          <div className="text-[11px] text-muteddim">Confira o texto acima antes de interpretar: é exatamente isso que a IA vai receber ({texto.length.toLocaleString("pt-BR")} de 20.000 caracteres). Para cronogramas muito grandes, faça em partes (ex.: uma macro-etapa por vez).</div>
         </>}
         {resultado && (
           <>
