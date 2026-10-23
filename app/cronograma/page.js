@@ -184,11 +184,19 @@ export default function CronogramaPage() {
     const base = macro?.data_prevista_inicio || todayISO();
     const irmas = subDe(macroId);
     const proximaOrdem = irmas.length ? Math.max(...irmas.map((e) => e.ordem ?? 0)) + 1 : 0;
-    const { error } = await supabase.from("etapas").insert({
+    // a sub-etapa nova herda as equipes e os recursos definidos na macro
+    const fim = addDias(base, 3);
+    const { data: nova, error } = await supabase.from("etapas").insert({
       pi_id: piAtual.id, parent_etapa_id: macroId, nome: "Nova sub-etapa", tipo: "campo", ordem: proximaOrdem,
-      data_prevista_inicio: base, data_prevista_fim: addDias(base, 3), status: "nao_iniciada", percentual: 0,
-    });
+      data_prevista_inicio: base, data_prevista_fim: fim, status: "nao_iniciada", percentual: 0, areas: macro?.areas || [],
+    }).select("id").single();
     if (error) { setErro(error.message); return; }
+    const herdados = irmas.length ? recursosDaMacro(macroId) : [...new Set(alocsDaEtapa(macroId).map((a) => a.recurso_id))];
+    if (herdados.length) {
+      const linhas = herdados.map((rid) => ({ recurso_id: rid, pi_id: piAtual.id, etapa_id: nova.id, modo: "periodo_percentual", periodo_inicio: base, periodo_fim: fim, percentual: 100 }));
+      const { error: e2 } = await supabase.from("alocacoes_recurso").insert(linhas);
+      if (!e2) { avisarAlocacao("criada", linhas); recarregarAlocacoesRecurso(); }
+    }
     recarregarEtapas();
   };
   const atualizarEtapa = async (id, patch) => {
@@ -292,16 +300,54 @@ export default function CronogramaPage() {
   };
 
   // ---- Equipe (áreas) ----
+  // equipe na MACRO com sub-etapas: marcar/desmarcar distribui para todas as subs dela
+  // (cada sub pode ter equipes extras próprias)
   const toggleArea = async (etapa, area) => {
     const atuais = etapa.areas || [];
-    const novas = atuais.includes(area) ? atuais.filter((a) => a !== area) : [...atuais, area];
+    const tirar = atuais.includes(area);
+    const novas = tirar ? atuais.filter((a) => a !== area) : [...atuais, area];
     const { error } = await supabase.from("etapas").update({ areas: novas }).eq("id", etapa.id);
     if (error) { setErro(error.message); return; }
+    if (!etapa.parent_etapa_id) {
+      for (const s of subDe(etapa.id)) {
+        const as = s.areas || [];
+        if (tirar === as.includes(area)) {
+          await supabase.from("etapas").update({ areas: tirar ? as.filter((a) => a !== area) : [...as, area] }).eq("id", s.id);
+        }
+      }
+    }
     recarregarEtapas();
+  };
+  // recursos marcados na macro = os que estão alocados em TODAS as sub-etapas dela
+  const recursosDaMacro = (macroId) => {
+    const subs = subDe(macroId);
+    return recursos.filter((r) => subs.length && subs.every((s) => alocacoesRecurso.some((a) => a.etapa_id === s.id && a.recurso_id === r.id))).map((r) => r.id);
   };
 
   // ---- Alocação de recursos na etapa ----
   const toggleRecursoNaEtapa = async (etapa, recursoId) => {
+    // MACRO com sub-etapas: aloca o recurso em cada sub (com o período dela) ou tira de todas.
+    // A macro em si não recebe alocação, para o recurso não contar em dobro na utilização.
+    const subs = etapa.parent_etapa_id ? [] : subDe(etapa.id);
+    if (subs.length) {
+      const emTodas = recursosDaMacro(etapa.id).includes(recursoId);
+      if (emTodas) {
+        const linhas = alocacoesRecurso.filter((a) => a.recurso_id === recursoId && (a.etapa_id === etapa.id || subs.some((s) => s.id === a.etapa_id)));
+        const { error } = await supabase.from("alocacoes_recurso").delete().in("id", linhas.map((a) => a.id));
+        if (error) { setErro(error.message); return; }
+        if (linhas.length) avisarAlocacao("removida", linhas);
+      } else {
+        const novas = subs.filter((s) => !alocacoesRecurso.some((a) => a.etapa_id === s.id && a.recurso_id === recursoId)).map((s) => ({
+          recurso_id: recursoId, pi_id: etapa.pi_id, etapa_id: s.id, modo: "periodo_percentual",
+          periodo_inicio: s.data_prevista_inicio || todayISO(), periodo_fim: s.data_prevista_fim || s.data_prevista_inicio || todayISO(), percentual: 100,
+        }));
+        const { error } = await supabase.from("alocacoes_recurso").insert(novas);
+        if (error) { setErro(error.message); return; }
+        avisarAlocacao("criada", novas);
+      }
+      recarregarAlocacoesRecurso();
+      return;
+    }
     // o recurso pode ter vários períodos na etapa (Alocação de recursos → Especificar etapas): desmarcar tira todos
     const daEtapa = alocacoesRecurso.filter((a) => a.etapa_id === etapa.id && a.recurso_id === recursoId);
     if (daEtapa.length > 1) {
@@ -452,8 +498,8 @@ export default function CronogramaPage() {
         {[...new Set(["Contric", piAtual?.cliente, piAtual?.cliente && `${piAtual.cliente} / Contric`, ...etapasDoPi.map((e) => e.responsavel_texto)].filter(Boolean))].map((s) => <option key={s} value={s} />)}
       </datalist>
       {iaAberta && piAtual && (
-        <AssistenteIA pi={piAtual} etapas={etapasDoPi} usuario={usuario} onFechar={() => setIaAberta(false)}
-          onAplicado={() => { recarregarEtapas(); recarregarDependencias(); }} />
+        <AssistenteIA pi={piAtual} etapas={etapasDoPi} usuario={usuario} recursos={recursos} alocacoes={alocacoesRecurso.filter((x) => x.pi_id === piAtual.id)} onFechar={() => setIaAberta(false)}
+          onAplicado={() => { recarregarEtapas(); recarregarDependencias(); recarregarAlocacoesRecurso(); }} />
       )}
       {pisModalAberto && (
         <JanelaPi modo={pisModalModo} pi={pisModalModo === "edit" ? piAtual : null} onFechar={() => setPisModalAberto(false)}
@@ -532,7 +578,8 @@ export default function CronogramaPage() {
                     anchorRef={(el) => { anchorRefs.current[macro.id] = el; }}
                     onCreateDependency={criarDependencia} dragOverId={dragOverId} setDragOverId={setDragOverId}
                     onReordenar={reordenarEtapa} dragOverRowId={dragOverRowId} setDragOverRowId={setDragOverRowId}
-                    onToggleArea={toggleArea} recursos={recursos} alocs={alocsDaEtapa(macro.id)} onToggleRecurso={toggleRecursoNaEtapa}
+                    onToggleArea={toggleArea} recursos={recursos} onToggleRecurso={toggleRecursoNaEtapa}
+                    alocs={subDe(macro.id).length ? recursosDaMacro(macro.id).map((rid) => ({ recurso_id: rid, etapa_id: macro.id })) : alocsDaEtapa(macro.id)}
                     subs={subDe(macro.id)}
                   />
                   <SubEtapasDropzone macroId={macro.id} editavel={editavel} onDropTornarSub={tornarSubDe}>
@@ -817,6 +864,7 @@ function EtapaRow({ subs = [], etapa, editavel, onChange, onDelete, deps, onRemo
           Equipe{areas.length > 0 ? ` (${areas.length})` : ""} ▾
         </button>
         <PainelSuspenso ancoraRef={equipeRef} aberto={equipeAberta} onFechar={fecharEquipe} largura={240}>
+            {subs.length > 0 && <div className="text-[11px] text-muted px-2 pb-1.5 mb-1 border-b border-line">Vale para as {subs.length} sub-etapas desta macro (cada sub pode ter equipes a mais).</div>}
             {AREAS.map((a) => (
               <label key={a} className="flex items-center gap-2 px-2 py-1.5 text-sm cursor-pointer rounded-lg hover:bg-panel">
                 <input type="checkbox" className="accent-cyan" checked={areas.includes(a)} disabled={!editavel} onChange={() => onToggleArea(etapa, a)} />
@@ -832,6 +880,7 @@ function EtapaRow({ subs = [], etapa, editavel, onChange, onDelete, deps, onRemo
           Alocação{alocs.length > 0 ? ` (${new Set(alocs.map((a) => a.recurso_id)).size})` : ""} ▾
         </button>
         <PainelSuspenso ancoraRef={alocRef} aberto={alocAberta} onFechar={fecharAloc} largura={272}>
+            {subs.length > 0 && <div className="text-[11px] text-muted px-2 pb-1.5 mb-1 border-b border-line">Aloca em todas as {subs.length} sub-etapas (com o período de cada uma). Marcado = alocado em todas.</div>}
             {recursos.length === 0 && <div className="text-sm text-muteddim px-2 py-1.5">Nenhum recurso cadastrado.</div>}
             {recursos.filter((r) => r.ativo !== false || alocs.some((a) => a.recurso_id === r.id)).map((r) => (
               <label key={r.id} className={`flex items-center gap-2 px-2 py-1.5 text-sm cursor-pointer rounded-lg hover:bg-panel ${r.ativo === false ? "opacity-60" : ""}`}>
@@ -950,7 +999,7 @@ function ExcluirPiModal({ pi, onFechar, onExcluido }) {
 // 1) a pessoa fala ou escreve; 2) a IA devolve as ações; 3) prévia com caixas para marcar;
 // 4) "Aplicar" grava pelo próprio usuário (mesmas permissões e regras de sempre).
 const ROTULO_ACAO = { criar_etapa: ["Criar", "bg-green/10 text-green"], alterar_etapa: ["Alterar", "bg-cyan/10 text-cyan"], excluir_etapa: ["Excluir", "bg-red/10 text-red"], criar_dependencia: ["Dependência", "bg-[#8E5CD9]/10 text-[#8E5CD9]"] };
-function AssistenteIA({ pi, etapas, usuario, onFechar, onAplicado }) {
+function AssistenteIA({ pi, etapas, usuario, recursos = [], alocacoes = [], onFechar, onAplicado }) {
   const { avisar } = useToast();
   const [texto, setTexto] = useState("");
   const [ouvindo, setOuvindo] = useState(false);
@@ -994,7 +1043,13 @@ function AssistenteIA({ pi, etapas, usuario, onFechar, onAplicado }) {
     a.inicio || a.fim ? `${a.inicio ? isoParaBR(a.inicio) : "…"} a ${a.fim ? isoParaBR(a.fim) : "…"}` : "",
     a.status ? STATUS_ETAPA[a.status]?.rotulo : "", a.percentual >= 0 ? `${a.percentual}%` : "",
     a.responsavel ? `resp.: ${a.responsavel}` : "", a.depende_de_ref ? `depende de "${nomeDe(a.depende_de_ref)}"` : "",
+    a.equipes_modo && a.equipes?.length ? `equipes ${({ definir: "=", adicionar: "+", remover: "−" })[a.equipes_modo]} ${a.equipes.join(", ")}` : "",
+    a.alocar_recursos?.length ? `alocar: ${a.alocar_recursos.map(nomeRecurso).join(", ")}` : "",
+    a.desalocar_recursos?.length ? `desalocar: ${a.desalocar_recursos.map(nomeRecurso).join(", ")}` : "",
+    a.alertas_ref === "remover" ? "remover alertas" : a.alertas_ref && a.alertas_dias?.length ? `alertas ${a.alertas_dias.join(", ")} dia(s) antes do ${a.alertas_ref === "inicio" ? "início" : "término"}` : "",
+    a.medicao === "nao" ? "sem medição" : a.medicao === "sim" || a.medicao_percentual >= 0 || a.medicao_valor >= 0 ? `medição${a.medicao_percentual >= 0 ? ` ${a.medicao_percentual}%` : ""}${a.medicao_valor >= 0 ? ` · R$ ${Number(a.medicao_valor).toLocaleString("pt-BR")}` : ""}` : "",
   ].filter(Boolean).join(" · ");
+  const nomeRecurso = (id) => recursos.find((r) => r.id === id)?.nome || "recurso?";
 
   const aplicar = async () => {
     const acoes = (resultado?.acoes || []).filter((_, i) => marcadas.includes(i));
@@ -1012,7 +1067,39 @@ function AssistenteIA({ pi, etapas, usuario, onFechar, onAplicado }) {
       if (a.status) p.status = a.status;
       if (a.percentual >= 0) p.percentual = Math.min(100, a.percentual);
       if (a.responsavel) p.responsavel_texto = a.responsavel;
+      // medição
+      if (a.medicao === "sim" || a.medicao_percentual >= 0 || a.medicao_valor >= 0) p.medicao = a.medicao !== "nao";
+      if (a.medicao === "nao") p.medicao = false;
+      if (a.medicao_percentual >= 0) p.medicao_percentual = Math.min(100, a.medicao_percentual);
+      if (a.medicao_valor >= 0) p.medicao_valor = a.medicao_valor;
+      // alertas de prazo
+      if (a.alertas_ref === "remover") p.alertas = null;
+      else if (a.alertas_ref && a.alertas_dias?.length) p.alertas = { ref: a.alertas_ref, dias: [...new Set(a.alertas_dias.filter((d) => d >= 0 && d <= 365))].slice(0, 3) };
       return p;
+    };
+    // equipes: definir / adicionar / remover sobre as atuais (só nomes cadastrados)
+    const novasAreas = (a, atuais = []) => {
+      const validas = (a.equipes || []).filter((x) => AREAS.includes(x));
+      if (!a.equipes_modo || !validas.length) return null;
+      if (a.equipes_modo === "definir") return validas;
+      if (a.equipes_modo === "adicionar") return [...new Set([...atuais, ...validas])];
+      return atuais.filter((x) => !validas.includes(x));
+    };
+    // alocação: igual ao Cronograma (período da etapa, 100% do dia); desalocar tira todos os períodos
+    const alocar = async (etapaId, ini, fim, a) => {
+      const ja = new Set(alocacoes.filter((x) => x.etapa_id === etapaId).map((x) => x.recurso_id));
+      const novos = (a.alocar_recursos || []).filter((rid) => recursos.some((r) => r.id === rid) && !ja.has(rid));
+      if (novos.length) {
+        const linhas = novos.map((rid) => ({ recurso_id: rid, pi_id: pi.id, etapa_id: etapaId, modo: "periodo_percentual", periodo_inicio: ini || todayISO(), periodo_fim: fim || ini || todayISO(), percentual: 100 }));
+        const { error } = await supabase.from("alocacoes_recurso").insert(linhas); if (error) throw error;
+        avisarAlocacao("criada", linhas);
+      }
+      const tirar = (a.desalocar_recursos || []).filter((rid) => ja.has(rid));
+      if (tirar.length) {
+        const linhas = alocacoes.filter((x) => x.etapa_id === etapaId && tirar.includes(x.recurso_id));
+        const { error } = await supabase.from("alocacoes_recurso").delete().in("id", linhas.map((x) => x.id)); if (error) throw error;
+        avisarAlocacao("removida", linhas);
+      }
     };
     for (const a of acoes) {
       try {
@@ -1025,16 +1112,36 @@ function AssistenteIA({ pi, etapas, usuario, onFechar, onAplicado }) {
             pi_id: pi.id, parent_etapa_id: pai, tipo: "campo", ordem, nome: a.nome || "Nova etapa",
             data_prevista_inicio: ini, data_prevista_fim: a.fim || ini, status: a.status || "nao_iniciada", percentual: a.percentual >= 0 ? a.percentual : 0,
             ...(a.responsavel ? { responsavel_texto: a.responsavel } : {}),
+            ...(() => { const c = campos(a, true); const extra = {}; ["medicao", "medicao_percentual", "medicao_valor", "alertas"].forEach((k) => { if (k in c) extra[k] = c[k]; }); return extra; })(),
+            // sub-etapa nova herda as equipes da macro
+            ...((() => { const paiE = etapas.find((e) => e.id === pai); const ar = [...new Set([...(paiE?.areas || []), ...(novasAreas(a, []) || [])])]; return ar.length ? { areas: ar } : {}; })()),
           }).select("id").single();
           if (error) throw error;
           mapa[a.ref] = data.id;
+          // ... e os recursos alocados em todas as subs da macro
+          const subsPai = pai ? etapas.filter((e) => e.parent_etapa_id === pai) : [];
+          const herdados = subsPai.length ? recursos.filter((r) => subsPai.every((s) => alocacoes.some((x) => x.etapa_id === s.id && x.recurso_id === r.id))).map((r) => r.id) : [];
+          await alocar(data.id, ini, a.fim || ini, { ...a, alocar_recursos: [...new Set([...(a.alocar_recursos || []), ...herdados])] });
           const dep = idDe(a.depende_de_ref);
           if (dep) await supabase.from("etapa_dependencias").insert({ etapa_id: data.id, depende_de_etapa_id: dep });
         } else if (a.tipo === "alterar_etapa") {
           const id = idDe(a.ref); if (!id) throw new Error("etapa não encontrada");
           const p = campos(a, false);
           if (temSubs(id)) { delete p.data_prevista_inicio; delete p.data_prevista_fim; delete p.status; delete p.percentual; } // macro calculada
+          const atual = etapas.find((e) => e.id === id);
+          const areas = novasAreas(a, atual?.areas || []); if (areas) p.areas = areas;
           if (Object.keys(p).length) { const { error } = await supabase.from("etapas").update(p).eq("id", id); if (error) throw error; }
+          // macro com sub-etapas: equipes e alocações valem para todas as subs (mantendo os extras de cada sub)
+          const subsDa = atual && !atual.parent_etapa_id ? etapas.filter((e) => e.parent_etapa_id === id) : [];
+          if (subsDa.length) {
+            for (const s of subsDa) {
+              if (areas) {
+                const extras = (s.areas || []).filter((x) => !(atual.areas || []).includes(x));
+                await supabase.from("etapas").update({ areas: [...new Set([...extras, ...areas])] }).eq("id", s.id);
+              }
+              await alocar(s.id, s.data_prevista_inicio, s.data_prevista_fim, a);
+            }
+          } else await alocar(id, p.data_prevista_inicio || atual?.data_prevista_inicio, p.data_prevista_fim || atual?.data_prevista_fim, a);
           const dep = idDe(a.depende_de_ref);
           if (dep && dep !== id) await supabase.from("etapa_dependencias").insert({ etapa_id: id, depende_de_etapa_id: dep });
         } else if (a.tipo === "excluir_etapa") {

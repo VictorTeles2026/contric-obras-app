@@ -255,7 +255,11 @@ export default function CronogramaVisao({ piFixo = null, acoes = null }) {
       return { e, tempo, feito, dif, sit };
     }).sort((a, b) => a.dif - b.dif);
   // quem está alocado na etapa (iniciais na coluna Resp.)
-  const pessoasDaEtapa = (etapa) => recursos.filter((r) => recursoBateNaEtapa(r.id, etapa));
+  // macro com sub-etapas: quem está alocado em qualquer uma das subs
+  const pessoasDaEtapa = (etapa) => {
+    const subs = etapa.calculada ? etapasDosPis.filter((s) => s.parent_etapa_id === etapa.id) : [];
+    return recursos.filter((r) => recursoBateNaEtapa(r.id, etapa) || subs.some((s) => recursoBateNaEtapa(r.id, s)));
+  };
 
   const marcas = useMemo(() => {
     // espaçamento das datas da régua conforme o zoom: pelo menos ~56px entre rótulos
