@@ -6,7 +6,7 @@ import { avisarAlocacao } from "../../lib/notificacoes";
 import { useAuth, podeEditar, pode } from "../../lib/AuthContext";
 import { supabase } from "../../lib/supabase";
 import { hojeISO as todayISO, addDias, isoLocal } from "../../lib/datas";
-import { LISTA_STATUS_ETAPA as STATUS, AREAS, STATUS_PI, COR_STATUS_PI, STATUS_ETAPA, FERIADOS_EXTRAS, datasAlertaEtapa } from "../../lib/constantes";
+import { LISTA_STATUS_ETAPA as STATUS, AREAS, STATUS_PI, COR_STATUS_PI, STATUS_ETAPA, FERIADOS_EXTRAS, datasAlertaEtapa, consolidarMacros } from "../../lib/constantes";
 import { useToast } from "../../lib/Toast";
 import PainelShell from "../../components/PainelShell";
 import AbasCronograma from "../../components/AbasCronograma";
@@ -95,6 +95,11 @@ function calcularDiasEFeriados(dataInicioStr, dataFimStr) {
   }
   return { totalDias, diasUteis, feriadosNac, feriadosSp };
 }
+// macro calculada: soma dos dias corridos e úteis das sub-etapas
+function SomaDiasSubs({ subs }) {
+  const soma = subs.reduce((s, e) => { const i = calcularDiasEFeriados(e.data_prevista_inicio, e.data_prevista_fim); return i ? { total: s.total + i.totalDias, uteis: s.uteis + i.diasUteis } : s; }, { total: 0, uteis: 0 });
+  return <div className="text-[11px] text-muteddim font-mono whitespace-nowrap" title="Soma dos dias das sub-etapas">Σ {soma.total}d · {soma.uteis}d úteis</div>;
+}
 function ResumoDiasPeriodo({ dataInicio, dataFim }) {
   const info = calcularDiasEFeriados(dataInicio, dataFim);
   if (!info) return null;
@@ -132,7 +137,9 @@ export default function CronogramaPage() {
     window.history.replaceState(null, "", url.toString());
   };
 
-  const { dados: etapas, recarregar: recarregarEtapas } = useTabela("etapas", { order: { coluna: "created_at" } });
+  const { dados: etapasBrutas, recarregar: recarregarEtapas } = useTabela("etapas", { order: { coluna: "created_at" } });
+  // macro com sub-etapas = resultado delas (o banco grava o mesmo via gatilho; aqui reflete na hora)
+  const etapas = useMemo(() => consolidarMacros(etapasBrutas), [etapasBrutas]);
   const { dados: dependencias, recarregar: recarregarDependencias } = useTabela("etapa_dependencias");
   const { dados: alocacoesRecurso, recarregar: recarregarAlocacoesRecurso } = useTabela("alocacoes_recurso");
   const { dados: solicitacoesPendentes } = useTabela("solicitacoes_alteracao_cronograma", { select: "id,etapa_id,status" });
@@ -516,6 +523,7 @@ export default function CronogramaPage() {
                     onCreateDependency={criarDependencia} dragOverId={dragOverId} setDragOverId={setDragOverId}
                     onReordenar={reordenarEtapa} dragOverRowId={dragOverRowId} setDragOverRowId={setDragOverRowId}
                     onToggleArea={toggleArea} recursos={recursos} alocs={alocsDaEtapa(macro.id)} onToggleRecurso={toggleRecursoNaEtapa}
+                    subs={subDe(macro.id)}
                   />
                   <SubEtapasDropzone macroId={macro.id} editavel={editavel} onDropTornarSub={tornarSubDe}>
                     {subDe(macro.id).map((sub) => (
@@ -693,7 +701,7 @@ function PainelAlertasEtapa({ etapa, editavel, alocs, recursos, onSalvar }) {
 }
 const isoParaBR = (iso) => iso.slice(0, 10).split("-").reverse().join("/");
 
-function EtapaRow({ etapa, editavel, onChange, onDelete, deps, onRemoverDep, anchorRef, onCreateDependency, dragOverId, setDragOverId, onReordenar, dragOverRowId, setDragOverRowId, onToggleArea, recursos, alocs, onToggleRecurso }) {
+function EtapaRow({ subs = [], etapa, editavel, onChange, onDelete, deps, onRemoverDep, anchorRef, onCreateDependency, dragOverId, setDragOverId, onReordenar, dragOverRowId, setDragOverRowId, onToggleArea, recursos, alocs, onToggleRecurso }) {
   const [confirmarExclusao, setConfirmarExclusao] = useState(false);
   const [equipeAberta, setEquipeAberta] = useState(false);
   const [alocAberta, setAlocAberta] = useState(false);
@@ -718,7 +726,9 @@ function EtapaRow({ etapa, editavel, onChange, onDelete, deps, onRemoverDep, anc
   const [percLocal, setPercLocal] = useCampoDebounced(etapa.percentual || 0, (v) => onChange(etapa.id, { percentual: Math.max(0, Math.min(100, Number(v) || 0)) }));
   // responsável: texto livre (ex: "Contric", "WESTROCK / Contric", "João")
   const [respLocal, setRespLocal, eventosResp] = useCampoDebounced(etapa.responsavel_texto || "", (v) => onChange(etapa.id, { responsavel_texto: v.trim() ? v : null }), 600, (v) => v.trim());
-  const datasInvertidas = inicioLocal && fimLocal && fimLocal < inicioLocal;
+  // macro com sub-etapas: datas, status e % são o resultado delas (somente leitura)
+  const calculada = !!etapa.calculada;
+  const datasInvertidas = !calculada && inicioLocal && fimLocal && fimLocal < inicioLocal;
   const corStatus = STATUS_ETAPA[etapa.status]?.barra || "#93A2B8";
   const [medicaoPercLocal, setMedicaoPercLocal] = useCampoDebounced(etapa.medicao_percentual ?? "", (v) => onChange(etapa.id, { medicao_percentual: v === "" ? null : Number(v) }));
   const [medicaoValorLocal, setMedicaoValorLocal] = useCampoDebounced(etapa.medicao_valor ?? "", (v) => onChange(etapa.id, { medicao_valor: v === "" ? null : Number(v) }));
@@ -765,23 +775,24 @@ function EtapaRow({ etapa, editavel, onChange, onDelete, deps, onRemoverDep, anc
 
       <div className="flex flex-col gap-0.5">
         <div className="flex gap-1">
-          <input type="date" value={inicioLocal} disabled={!editavel} aria-label="Início previsto"
+          <input type="date" value={calculada ? etapa.data_prevista_inicio || "" : inicioLocal} disabled={!editavel || calculada} aria-label="Início previsto" title={calculada ? "Calculado pelas sub-etapas" : undefined}
             onChange={(e) => setInicioLocal(e.target.value)}
             className="input !w-auto !py-1.5 !px-2 !text-xs" />
-          <input type="date" value={fimLocal} disabled={!editavel} aria-label="Término previsto"
+          <input type="date" value={calculada ? etapa.data_prevista_fim || "" : fimLocal} disabled={!editavel || calculada} aria-label="Término previsto" title={calculada ? "Calculado pelas sub-etapas" : undefined}
             onChange={(e) => setFimLocal(e.target.value)}
             className={`input !w-auto !py-1.5 !px-2 !text-xs ${datasInvertidas ? "!border-red" : ""}`} />
         </div>
-        <ResumoDiasPeriodo dataInicio={inicioLocal} dataFim={fimLocal} />
+        {calculada ? <SomaDiasSubs subs={subs} /> : <ResumoDiasPeriodo dataInicio={inicioLocal} dataFim={fimLocal} />}
         {datasInvertidas && <div className="text-[11px] text-red">⚠ término antes do início</div>}
         {depsComSobreposicao.length > 0 && <div className="text-[11px] text-red">⚠ sobreposição de datas com dependência</div>}
       </div>
 
-      <select value={etapa.status} disabled={!editavel} onChange={(e) => onChange(etapa.id, { status: e.target.value })} aria-label="Status"
+      <select value={etapa.status} disabled={!editavel || calculada} onChange={(e) => onChange(etapa.id, { status: e.target.value })} aria-label="Status" title={calculada ? "Calculado pelas sub-etapas" : undefined}
         className="input !w-auto !py-1.5 !px-2 !text-xs font-semibold" style={{ color: corStatus }}>
         {STATUS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
       </select>
-      {etapa.status === "em_andamento" && (
+      {calculada && <span className="selo bg-navy text-white" title="Datas, status e % calculados a partir das sub-etapas">Σ {etapa.percentual || 0}% · pelas sub-etapas</span>}
+      {!calculada && etapa.status === "em_andamento" && (
         <div className="relative">
           <input type="number" min="0" max="100" value={percLocal} disabled={!editavel} aria-label="Percentual concluído"
             onChange={(e) => setPercLocal(e.target.value)}

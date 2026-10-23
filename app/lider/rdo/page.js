@@ -8,7 +8,7 @@ import { supabase } from "../../../lib/supabase";
 import { useMinhasPis, agruparPorCliente } from "../../../lib/dados";
 import { NAV_LIDER } from "../../../lib/nav";
 import { hojeISO } from "../../../lib/datas";
-import { STATUS_ETAPA, LISTA_STATUS_ETAPA, CATEGORIAS_OCORRENCIA, etapasEmArvore } from "../../../lib/constantes";
+import { STATUS_ETAPA, LISTA_STATUS_ETAPA, CATEGORIAS_OCORRENCIA, etapasEmArvore, resumoDasSubs } from "../../../lib/constantes";
 import { useToast } from "../../../lib/Toast";
 import { gerarPdfRdoSeguro, nomeBaseAnexo } from "../../../lib/pdfRdo";
 import MobileShell from "../../../components/MobileShell";
@@ -80,6 +80,7 @@ export default function LiderRdoPage() {
   const hoje = hojeISO();
   const jaEnviouHoje = piAtivo && meusRdos.some((r) => r.pi_id === piAtivo.id && r.data === hoje && r.status !== "rejeitado");
 
+  const temSubs = (e) => !e.parent_etapa_id && etapasDoPi.some((s) => s.parent_etapa_id === e.id);
   const valorDe = (e) => ({
     status: statusPorEtapa[e.id]?.status ?? e.status,
     percentual: statusPorEtapa[e.id]?.percentual ?? (Number(e.percentual) || 0),
@@ -108,7 +109,8 @@ export default function LiderRdoPage() {
       ? [...ocorrencias, { categoria: novaCategoria, descricao: novaDesc.trim(), midias: novasMidias }]
       : ocorrencias;
     setEnviando(true);
-    const atividades = etapasDoPi.map((e) => {
+    // macro com sub-etapas é calculada pelas subs: não entra no RDO (só as subs e as macros sem subs)
+    const atividades = etapasDoPi.filter((e) => !temSubs(e)).map((e) => {
       const v = valorDe(e);
       return { etapa_id: e.id, nome: e.nome, status: v.status, percentual: v.status === "concluida" ? 100 : limitar(v.percentual) };
     });
@@ -220,6 +222,16 @@ export default function LiderRdoPage() {
           <div className="flex flex-col gap-3 animar-surgir">
             <div className="text-sm text-muted">Atualize o andamento de cada atividade.{alteradas.length > 0 && <strong className="text-cyan"> {alteradas.length} alterada(s).</strong>}</div>
             {etapasDoPi.map((e) => {
+              if (temSubs(e)) {
+                // macro: só o resultado das sub-etapas (atualiza conforme você marca as subs)
+                const r = resumoDasSubs(etapasDoPi.filter((s) => s.parent_etapa_id === e.id).map((s) => ({ ...s, ...valorDe(s) })));
+                return (
+                  <div key={e.id} className="flex items-center justify-between gap-2 px-1 pt-2">
+                    <span className="font-head font-bold text-base">{e.nome}</span>
+                    <span className="selo text-white shrink-0" style={{ background: STATUS_ETAPA[r.status]?.barra }}>{STATUS_ETAPA[r.status]?.rotulo} · {r.percentual}%</span>
+                  </div>
+                );
+              }
               const v = valorDe(e);
               const mudou = alteradas.some((a) => a.id === e.id);
               return (

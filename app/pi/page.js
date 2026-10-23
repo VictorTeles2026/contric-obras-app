@@ -8,7 +8,7 @@ import { useAuth, pode } from "../../lib/AuthContext";
 import { supabase } from "../../lib/supabase";
 import { BUCKET_DOCUMENTOS, linkTemporario, gerarPdfCronograma, baseNomeCronograma } from "../../lib/pdfRdo";
 import { formatarData, formatarDataHora, diasAte } from "../../lib/datas";
-import { STATUS_ETAPA, STATUS_PI, COR_STATUS_PI, PRAZOS, TIPOS_RECURSO, etapasEmArvore } from "../../lib/constantes";
+import { STATUS_ETAPA, STATUS_PI, COR_STATUS_PI, PRAZOS, TIPOS_RECURSO, etapasEmArvore, consolidarMacros } from "../../lib/constantes";
 import { useToast } from "../../lib/Toast";
 import PainelShell from "../../components/PainelShell";
 import { CabecalhoPagina, EstadoVazio, Esqueleto, Aviso, Modal, Spinner } from "../../components/ui";
@@ -51,7 +51,8 @@ export default function PaginaPi({ searchParams }) {
 // lista compacta de PIs ao lado do detalhe (troca de obra sem voltar)
 function ListaLateral({ idAtual }) {
   const { dados: pis } = useTabela("pis", { order: { coluna: "codigo" } });
-  const { dados: etapas } = useTabela("etapas", { select: "id,pi_id,parent_etapa_id,status,percentual,data_prevista_fim" });
+  const { dados: etapasBrutas } = useTabela("etapas", { select: "id,pi_id,parent_etapa_id,status,percentual,data_prevista_inicio,data_prevista_fim" });
+  const etapas = useMemo(() => consolidarMacros(etapasBrutas), [etapasBrutas]);
   const [busca, setBusca] = useState("");
   const [soAtivos, setSoAtivos] = useState(true);
   const termo = busca.trim().toLowerCase();
@@ -95,7 +96,8 @@ function ListaLateral({ idAtual }) {
 // ---------------- lista de PIs ----------------
 function ListaPis() {
   const { dados: pis, carregando } = useTabela("pis", { order: { coluna: "codigo" } });
-  const { dados: etapas } = useTabela("etapas", { select: "id,pi_id,parent_etapa_id,status,percentual,data_prevista_fim" });
+  const { dados: etapasBrutas } = useTabela("etapas", { select: "id,pi_id,parent_etapa_id,status,percentual,data_prevista_inicio,data_prevista_fim" });
+  const etapas = useMemo(() => consolidarMacros(etapasBrutas), [etapasBrutas]);
   const [busca, setBusca] = useState("");
   const [status, setStatus] = useState("ativo");
   const termo = busca.trim().toLowerCase();
@@ -254,7 +256,8 @@ function IndicadorAvanco({ avanco, macros, material, horas, irPara }) {
 }
 
 function AbaResumo({ pi, usuario, irPara }) {
-  const { dados: etapas } = useTabela("etapas", { filtro: [["pi_id", pi.id]] });
+  const { dados: etapasBrutas } = useTabela("etapas", { filtro: [["pi_id", pi.id]] });
+  const etapas = useMemo(() => consolidarMacros(etapasBrutas), [etapasBrutas]); // macro = resultado das subs
   const { dados: rdos } = useTabela("rdos", { select: "id,status", filtro: [["pi_id", pi.id]] });
   const { dados: horasPi } = useTabela("apontamentos_horas", { select: "id,status", filtro: [["pi_id", pi.id]] });
   const { dados: ocs } = useTabela("ocorrencias", { select: "id,status,rdo_id", filtro: [["pi_id", pi.id]] });
@@ -264,9 +267,9 @@ function AbaResumo({ pi, usuario, irPara }) {
 
   const macros = etapas.filter((e) => !e.parent_etapa_id);
   const avanco = macros.length ? Math.round(macros.reduce((s, e) => s + (e.status === "concluida" ? 100 : Number(e.percentual) || 0), 0) / macros.length) : 0;
-  const abertas = etapas.filter((e) => e.status !== "concluida");
+  const abertas = etapas.filter((e) => e.status !== "concluida" && !e.calculada); // etapas de trabalho, sem repetir a macro
   const atrasadas = abertas.filter((e) => (diasAte(e.data_prevista_fim) ?? 0) < 0);
-  const medicoes = abertas.filter((e) => e.medicao).sort((a, b) => String(a.data_prevista_fim || "9").localeCompare(String(b.data_prevista_fim || "9")));
+  const medicoes = etapas.filter((e) => e.status !== "concluida" && e.medicao).sort((a, b) => String(a.data_prevista_fim || "9").localeCompare(String(b.data_prevista_fim || "9")));
   const medProximas = medicoes.filter((e) => { const d = diasAte(e.data_prevista_fim); return d !== null && d <= PRAZOS.medicoes; });
   const idsEtapas = new Set(etapas.map((e) => e.id));
   const pend = {

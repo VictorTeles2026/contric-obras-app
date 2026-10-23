@@ -4,7 +4,7 @@ import { useState, useMemo, useEffect, useLayoutEffect, useRef } from "react";
 import Link from "next/link";
 import { useTabela } from "../lib/dados";
 import { tsLocal, diasAte as diffDias, formatarData as formatarDataIso } from "../lib/datas";
-import { AREAS, STATUS_ETAPA, PRAZOS, datasAlertaEtapa } from "../lib/constantes";
+import { AREAS, STATUS_ETAPA, PRAZOS, datasAlertaEtapa, consolidarMacros } from "../lib/constantes";
 
 import { CabecalhoPagina, EstadoVazio, Modal } from "./ui";
 import Icone from "./Icone";
@@ -52,7 +52,9 @@ function useFecharAoClicarFora(aberto, fechar) {
 // piFixo: mostra só aquele PI (sem escolha de PIs nem cabeçalho); acoes: botões extras no topo.
 export default function CronogramaVisao({ piFixo = null, acoes = null }) {
   const { dados: pis, carregando: carregandoPis } = useTabela("pis", { order: { coluna: "codigo" } });
-  const { dados: etapas } = useTabela("etapas", { order: { coluna: "created_at" } }); // mesma ordem de inserção do Cronograma
+  const { dados: etapasBrutas } = useTabela("etapas", { order: { coluna: "created_at" } }); // mesma ordem de inserção do Cronograma
+  // macro-etapa = resultado das sub-etapas (datas, %, status)
+  const etapas = useMemo(() => consolidarMacros(etapasBrutas), [etapasBrutas]);
   const { dados: recursos } = useTabela("recursos");
   const { dados: alocacoesRecurso } = useTabela("alocacoes_recurso");
   const [selecionarAberto, setSelecionarAberto] = useState(false);
@@ -226,7 +228,9 @@ export default function CronogramaVisao({ piFixo = null, acoes = null }) {
   // ---- indicadores e ritmo (sobre os PIs e filtros aplicados) ----
   const hojeIso = new Date().toLocaleDateString("sv-SE");
   const maisDias = (n) => { const d = new Date(`${hojeIso}T12:00:00`); d.setDate(d.getDate() + n); return d.toLocaleDateString("sv-SE"); };
-  const abertas = etapasDosPis.filter((e) => e.status !== "concluida" && e.data_prevista_fim);
+  // indicadores e ritmo contam as etapas de trabalho (sub-etapas e macros sem subs), sem repetir a macro calculada
+  const folhas = etapasDosPis.filter((e) => !e.calculada);
+  const abertas = folhas.filter((e) => e.status !== "concluida" && e.data_prevista_fim);
   const vencidas = abertas.filter((e) => e.data_prevista_fim < hojeIso);
   const vencem7 = abertas.filter((e) => e.data_prevista_fim >= hojeIso && e.data_prevista_fim <= maisDias(7));
   const alertasSemana = etapasDosPis.filter((e) => e.status !== "concluida").flatMap((e) => datasAlertaEtapa(e).filter((a) => a.data >= hojeIso && a.data <= maisDias(6)));
@@ -242,7 +246,7 @@ export default function CronogramaVisao({ piFixo = null, acoes = null }) {
   ];
   // ritmo: % do prazo já decorrido × % concluído das etapas em andamento
   const [ritmoTodas, setRitmoTodas] = useState(false);
-  const ritmo = etapasDosPis.filter((e) => e.status !== "concluida" && e.data_prevista_inicio && e.data_prevista_fim && e.data_prevista_inicio <= hojeIso)
+  const ritmo = folhas.filter((e) => e.status !== "concluida" && e.data_prevista_inicio && e.data_prevista_fim && e.data_prevista_inicio <= hojeIso)
     .map((e) => {
       const ini = tsLocal(e.data_prevista_inicio), fim = tsLocal(e.data_prevista_fim) + 86400000;
       const tempo = Math.max(0, Math.min(100, Math.round(((Date.now() - ini) / (fim - ini)) * 100)));

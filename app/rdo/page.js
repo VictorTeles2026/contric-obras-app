@@ -6,7 +6,7 @@ import { useAuth, pode } from "../../lib/AuthContext";
 import { supabase } from "../../lib/supabase";
 import { useMinhasPis } from "../../lib/dados";
 import { hojeISO } from "../../lib/datas";
-import { STATUS_ETAPA, LISTA_STATUS_ETAPA, CATEGORIAS_OCORRENCIA, etapasEmArvore } from "../../lib/constantes";
+import { STATUS_ETAPA, LISTA_STATUS_ETAPA, CATEGORIAS_OCORRENCIA, etapasEmArvore, resumoDasSubs } from "../../lib/constantes";
 import { useToast } from "../../lib/Toast";
 import { gerarPdfRdoSeguro, nomeBaseAnexo } from "../../lib/pdfRdo";
 import PainelShell from "../../components/PainelShell";
@@ -77,6 +77,7 @@ export default function RdoPage() {
     if (pdf) avisar("RDO Técnico enviado e PDF salvo em Documentos — pendente de validação em Aprovações.");
   };
 
+  const temSubs = (e) => !e.parent_etapa_id && etapasDoPi.some((s) => s.parent_etapa_id === e.id);
   const valorDe = (e) => ({
     status: statusPorEtapa[e.id]?.status ?? e.status,
     percentual: statusPorEtapa[e.id]?.percentual ?? (Number(e.percentual) || 0),
@@ -94,7 +95,8 @@ export default function RdoPage() {
   const enviarRdo = async () => {
     if (!piAtual || enviando) return;
     setEnviando(true);
-    const atividades = etapasDoPi.map((e) => {
+    // macro com sub-etapas é calculada pelas subs: não entra no RDO (só as subs e as macros sem subs)
+    const atividades = etapasDoPi.filter((e) => !temSubs(e)).map((e) => {
       const v = valorDe(e);
       return { etapa_id: e.id, nome: e.nome, status: v.status, percentual: v.status === "concluida" ? 100 : limitar(v.percentual) };
     });
@@ -164,6 +166,16 @@ export default function RdoPage() {
               <h2 className="titulo-quadro mb-3">Atividades</h2>
               <div className="flex flex-col gap-1.5">
                 {etapasDoPi.map((e) => {
+                  if (temSubs(e)) {
+                    // macro: resultado das sub-etapas
+                    const r = resumoDasSubs(etapasDoPi.filter((s) => s.parent_etapa_id === e.id).map((s) => ({ ...s, ...valorDe(s) })));
+                    return (
+                      <div key={e.id} className="flex items-center gap-2 px-3 pt-2 text-sm">
+                        <span className="flex-1 font-bold">{e.nome}</span>
+                        <span className="selo text-white" style={{ background: STATUS_ETAPA[r.status]?.barra }}>Σ {STATUS_ETAPA[r.status]?.rotulo} · {r.percentual}%</span>
+                      </div>
+                    );
+                  }
                   const v = valorDe(e);
                   const mudou = v.status !== e.status || (v.status === "em_andamento" && v.percentual !== (Number(e.percentual) || 0));
                   return (
