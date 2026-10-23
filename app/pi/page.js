@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useTabela, registrarLog, chamarApi } from "../../lib/dados";
@@ -48,8 +48,18 @@ export default function PaginaPi({ searchParams }) {
   );
 }
 
-// lista compacta de PIs ao lado do detalhe (troca de obra sem voltar)
+// lista de PIs ao lado do detalhe (troca de obra sem voltar). Fica RECOLHIDA numa aba fina à
+// esquerda; clicar na aba abre a lista por cima do conteúdo (a área do PI continua larga).
 function ListaLateral({ idAtual }) {
+  const [aberta, setAberta] = useState(false);
+  const painelRef = useRef(null);
+  useEffect(() => {
+    if (!aberta) return;
+    const fora = (e) => { if (painelRef.current && !painelRef.current.contains(e.target)) setAberta(false); };
+    const esc = (e) => { if (e.key === "Escape") setAberta(false); };
+    document.addEventListener("mousedown", fora); document.addEventListener("keydown", esc);
+    return () => { document.removeEventListener("mousedown", fora); document.removeEventListener("keydown", esc); };
+  }, [aberta]);
   const { dados: pis } = useTabela("pis", { order: { coluna: "codigo" } });
   const { dados: etapasBrutas } = useTabela("etapas", { select: "id,pi_id,parent_etapa_id,status,percentual,data_prevista_inicio,data_prevista_fim" });
   const etapas = useMemo(() => consolidarMacros(etapasBrutas), [etapasBrutas]);
@@ -63,9 +73,20 @@ function ListaLateral({ idAtual }) {
   };
   const atrasado = (piId) => etapas.some((e) => e.pi_id === piId && e.status !== "concluida" && (diasAte(e.data_prevista_fim) ?? 0) < 0);
   return (
-    <aside className="hidden xl:flex flex-col w-80 shrink-0 bg-superficie border-r border-line sticky top-0 h-screen">
+    <div ref={painelRef} className="relative shrink-0 z-40">
+      {/* aba recolhida */}
+      <button onClick={() => setAberta((v) => !v)} aria-expanded={aberta} title={aberta ? "Recolher a lista de PIs" : "Trocar de PI"}
+        className={`sticky top-0 h-screen w-9 flex flex-col items-center gap-3 pt-4 border-r border-line transition-colors ${aberta ? "bg-cyan/10 text-cyan" : "bg-superficie text-muted hover:text-cyan hover:bg-cyan/5"}`}>
+        <Icone nome="obra" className="w-4 h-4" />
+        <span className="text-xs font-semibold tracking-wider" style={{ writingMode: "vertical-rl", transform: "rotate(180deg)" }}>Lista de PIs</span>
+        <span className="text-xs">{aberta ? "‹" : "›"}</span>
+      </button>
+      {aberta && (
+    <aside className="absolute left-9 top-0 bottom-0 w-[min(20rem,85vw)] shadow-2xl animar-fade">
+      <div className="sticky top-0 h-screen flex flex-col bg-superficie border-r border-line">
       <div className="p-3 flex flex-col gap-2 border-b border-line">
         <div className="flex items-center justify-between"><span className="titulo-quadro">PIs</span>
+          <button onClick={() => setAberta(false)} className="p-1 rounded text-muted hover:text-textmain" aria-label="Recolher lista de PIs">‹</button>
           <button onClick={() => setSoAtivos((v) => !v)} className={`chip !py-1 ${soAtivos ? "chip-ativo" : ""}`}>{soAtivos ? "Só ativos" : "Todos"}</button></div>
         <div className="relative">
           <Icone nome="buscar" className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muteddim" />
@@ -76,7 +97,7 @@ function ListaLateral({ idAtual }) {
         {lista.map((p) => {
           const ativo = p.id === idAtual, prog = progresso(p.id);
           return (
-            <Link key={p.id} href={`/pi?id=${p.id}`}
+            <Link key={p.id} href={`/pi?id=${p.id}`} onClick={() => setAberta(false)}
               className={`block px-4 py-3 border-b border-line/60 ${ativo ? "bg-cyan/10 shadow-[inset_3px_0_0_rgb(var(--cor-cyan))]" : "hover:bg-panel"}`}>
               <div className="flex items-center justify-between gap-2">
                 <span className="font-mono text-[13px] font-semibold text-cyan">{p.codigo}</span>
@@ -89,7 +110,10 @@ function ListaLateral({ idAtual }) {
         })}
         {!lista.length && <div className="p-4 text-sm text-muteddim">Nenhum PI encontrado.</div>}
       </nav>
+      </div>
     </aside>
+      )}
+    </div>
   );
 }
 
@@ -128,7 +152,7 @@ function ListaPis() {
         {lista.map((p) => {
           const prog = progresso(p.id), atr = atrasadas(p.id);
           return (
-            <Link key={p.id} href={`/pi?id=${p.id}`} className="cartao cartao-interativo p-4 flex flex-col gap-2">
+            <Link key={p.id} href={`/pi?id=${p.id}`} onClick={() => setAberta(false)} className="cartao cartao-interativo p-4 flex flex-col gap-2">
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0">
                   <div className="text-sm font-semibold text-cyan">{p.codigo}</div>
