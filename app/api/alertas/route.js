@@ -301,16 +301,19 @@ export const POST = rotaSegura(async (req) => {
   if (corpo.acao === "enviar_pdf") {
     const mapa = await permissoesDe(admin, interno);
     if (!["pi.ver", "doc.cliente", "cliente.acessos"].some((c) => mapa[c] === "S" || mapa[c] === "P")) return NextResponse.json({ error: "Seu usuário não pode enviar documentos a clientes." }, { status: 403 });
-    const { piId, caminho, clienteIds, mensagem, assunto } = corpo;
-    if (!piId || !caminho || !String(caminho).startsWith(`${piId}/`) || !Array.isArray(clienteIds) || !clienteIds.length) return NextResponse.json({ error: "Dados inválidos." }, { status: 400 });
-    const [{ data: pi }, { data: clientes }, arquivo] = await Promise.all([
+    const { piId, clienteIds, mensagem, assunto } = corpo;
+    // um ou mais arquivos (ex: PDF e Excel do cronograma), sempre da pasta do próprio PI
+    const caminhos = (Array.isArray(corpo.caminhos) ? corpo.caminhos : [corpo.caminho]).filter(Boolean).slice(0, 5);
+    if (!piId || !caminhos.length || caminhos.some((c) => !String(c).startsWith(`${piId}/`) || String(c).includes("..")) || !Array.isArray(clienteIds) || !clienteIds.length) return NextResponse.json({ error: "Dados inválidos." }, { status: 400 });
+    const [{ data: pi }, { data: clientes }, ...baixados] = await Promise.all([
       admin.from("pis").select("codigo,cliente,projeto").eq("id", piId).maybeSingle(),
       admin.from("clientes").select("id,nome,email,ativo").in("id", clienteIds.slice(0, 50)),
-      admin.storage.from("documentos").download(caminho),
+      ...caminhos.map((c) => admin.storage.from("documentos").download(c)),
     ]);
-    if (arquivo.error || !arquivo.data) return NextResponse.json({ error: `Arquivo não encontrado: ${arquivo.error?.message || ""}` }, { status: 400 });
-    const base64 = Buffer.from(await arquivo.data.arrayBuffer()).toString("base64");
-    const nomeArq = String(caminho).split("/").pop();
+    const falhou = baixados.find((a) => a.error || !a.data);
+    if (falhou) return NextResponse.json({ error: `Arquivo não encontrado: ${falhou.error?.message || ""}` }, { status: 400 });
+    const anexos = await Promise.all(baixados.map(async (a, k) => ({ nome: String(caminhos[k]).split("/").pop(), base64: Buffer.from(await a.data.arrayBuffer()).toString("base64") })));
+    const nomeArq = anexos.map((a) => a.nome).join(" e ");
     let enviados = 0; const falhas = [];
     for (const c of (clientes || []).filter((x) => x.ativo !== false && emailReal(x.email))) {
       const paragrafos = [`Olá, <strong>${esc(c.nome)}</strong>!`, `Segue em anexo o documento <strong>${esc(nomeArq)}</strong> referente ao ${esc(pi?.codigo || "")} - ${esc(pi?.cliente || "")}${pi?.projeto ? ` (${esc(pi.projeto)})` : ""}.`];
@@ -320,7 +323,7 @@ export const POST = rotaSegura(async (req) => {
         para: c.email, assunto: String(assunto || nomeArq).slice(0, 150),
         texto: `Olá, ${c.nome}!\n\nSegue em anexo ${nomeArq} (${pi?.codigo || ""} - ${pi?.cliente || ""}).${mensagem ? `\n\n${mensagem}` : ""}\n\nEnviado por ${interno.nome} — Contric.`,
         html: emailCliente(esc(String(assunto || nomeArq)), paragrafos, null, "Contric"),
-        anexos: [{ nome: nomeArq, base64 }],
+        anexos,
       });
       if (r.enviado) enviados++; else falhas.push(`${c.nome}: ${r.motivo}`);
     }

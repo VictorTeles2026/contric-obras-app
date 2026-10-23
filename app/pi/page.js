@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { useTabela, registrarLog, chamarApi } from "../../lib/dados";
 import { useAuth, pode } from "../../lib/AuthContext";
 import { supabase } from "../../lib/supabase";
-import { BUCKET_DOCUMENTOS, linkTemporario, gerarPdfCronograma, baseNomeCronograma } from "../../lib/pdfRdo";
+import { BUCKET_DOCUMENTOS, linkTemporario, gerarPdfCronograma, gerarExcelCronograma, baseNomeCronograma } from "../../lib/pdfRdo";
 import { formatarData, formatarDataHora, diasAte } from "../../lib/datas";
 import { STATUS_ETAPA, STATUS_PI, COR_STATUS_PI, PRAZOS, TIPOS_RECURSO, etapasEmArvore, consolidarMacros } from "../../lib/constantes";
 import { useToast } from "../../lib/Toast";
@@ -331,7 +331,7 @@ function AbaCronograma({ pi }) {
   return (
     <>
       <CronogramaVisao piFixo={pi.id} acoes={<>
-        <button onClick={() => setGerandoPdf(true)} className="btn btn-primario btn-sm"><Icone nome="pdf" className="w-4 h-4" /> Gerar PDF</button>
+        <button onClick={() => setGerandoPdf(true)} className="btn btn-primario btn-sm"><Icone nome="pdf" className="w-4 h-4" /> Gerar PDF / Excel</button>
         {pode(usuario, "etapa.editar") && <Link href={`/cronograma?pi=${pi.id}`} className="btn btn-contorno btn-sm"><Icone nome="editar" className="w-4 h-4" /> Configurar Cronograma</Link>}
       </>} />
       {gerandoPdf && <ModalPdfCronograma pi={pi} usuario={usuario} onFechar={() => setGerandoPdf(false)} />}
@@ -348,6 +348,7 @@ function ModalPdfCronograma({ pi, usuario, onFechar }) {
   const { dados: clientes } = useTabela("clientes", { order: { coluna: "nome" } });
   const { dados: acessos } = useTabela("cliente_acessos", { filtro: [["pi_id", pi.id]] });
   const [op, setOp] = useState({ computador: true, sgo: false, meuEmail: false, viaSgo: false });
+  const [formato, setFormato] = useState("pdf"); // pdf | excel | ambos
   const [destinos, setDestinos] = useState([]);
   const [mensagem, setMensagem] = useState("");
   const [processando, setProcessando] = useState("");
@@ -361,34 +362,43 @@ function ModalPdfCronograma({ pi, usuario, onFechar }) {
   const gerar = async () => {
     if (!pronto) return;
     try {
-      setProcessando("Gerando PDF...");
-      const blob = await gerarPdfCronograma({ pi, etapas });
-      const nome = `${baseNomeCronograma(pi)}.pdf`;
+      // arquivos no formato escolhido (PDF, Excel ou os dois)
+      setProcessando("Gerando arquivo(s)...");
+      const base = baseNomeCronograma(pi);
+      const arquivos = [];
+      if (formato !== "excel") arquivos.push({ blob: await gerarPdfCronograma({ pi, etapas }), nome: `${base}.pdf`, tipo: "application/pdf" });
+      if (formato !== "pdf") arquivos.push({ blob: await gerarExcelCronograma({ pi, etapas }), nome: `${base}.xlsx`, tipo: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+      const nome = arquivos.map((a) => a.nome).join(" e ");
       if (op.computador || op.meuEmail) {
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement("a"); a.href = url; a.download = nome; document.body.appendChild(a); a.click(); a.remove();
-        setTimeout(() => URL.revokeObjectURL(url), 5000);
+        for (const arq of arquivos) {
+          const url = URL.createObjectURL(arq.blob);
+          const a = document.createElement("a"); a.href = url; a.download = arq.nome; document.body.appendChild(a); a.click(); a.remove();
+          setTimeout(() => URL.revokeObjectURL(url), 5000);
+        }
       }
-      let caminho = null;
+      const caminhos = [];
       if (op.sgo || op.viaSgo) {
         setProcessando("Salvando no SGO...");
-        caminho = `${pi.id}/${nome}`;
-        const { error } = await supabase.storage.from(BUCKET_DOCUMENTOS).upload(caminho, blob, { upsert: true, contentType: "application/pdf" });
-        if (error) throw new Error(`não foi possível salvar no SGO (${error.message})`);
-        await registrarLog(usuario, "Gerou PDF do cronograma", `${pi.codigo} — ${nome}`);
+        for (const arq of arquivos) {
+          const caminho = `${pi.id}/${arq.nome}`;
+          const { error } = await supabase.storage.from(BUCKET_DOCUMENTOS).upload(caminho, arq.blob, { upsert: true, contentType: arq.tipo });
+          if (error) throw new Error(`não foi possível salvar no SGO (${error.message})`);
+          caminhos.push(caminho);
+        }
+        await registrarLog(usuario, "Gerou cronograma (arquivo)", `${pi.codigo} — ${nome}`);
       }
       if (op.viaSgo) {
         setProcessando("Enviando...");
-        const { ok, json } = await chamarApi("/api/alertas", { acao: "enviar_pdf", piId: pi.id, caminho, clienteIds: destinos, mensagem, assunto: `Cronograma ${pi.codigo} - ${pi.cliente || ""}` });
+        const { ok, json } = await chamarApi("/api/alertas", { acao: "enviar_pdf", piId: pi.id, caminhos, clienteIds: destinos, mensagem, assunto: `Cronograma ${pi.codigo} - ${pi.cliente || ""}` });
         if (!ok) throw new Error(json.error || "falha no envio");
         avisar(`Cronograma enviado para ${json.enviados} contato(s).`);
       }
       if (op.meuEmail) {
-        const corpo = `Olá,\n\nSegue em anexo o cronograma atualizado do ${pi.codigo} - ${pi.cliente || ""}${pi.projeto ? ` (${pi.projeto})` : ""}.\n\n(O PDF "${nome}" foi baixado no seu computador: anexe-o a este e-mail.)\n\nAtenciosamente,\n${usuario?.nome || ""}`;
+        const corpo = `Olá,\n\nSegue em anexo o cronograma atualizado do ${pi.codigo} - ${pi.cliente || ""}${pi.projeto ? ` (${pi.projeto})` : ""}.\n\n(O arquivo ${nome} foi baixado no seu computador: anexe-o a este e-mail.)\n\nAtenciosamente,\n${usuario?.nome || ""}`;
         window.location.href = `mailto:?subject=${encodeURIComponent(`Cronograma ${pi.codigo} - ${pi.cliente || ""}`)}&body=${encodeURIComponent(corpo)}`;
       }
-      if (op.sgo && !op.viaSgo) avisar("PDF salvo em Documentos do PI.");
-      else if (op.computador && !op.sgo && !op.viaSgo && !op.meuEmail) avisar("PDF baixado.");
+      if (op.sgo && !op.viaSgo) avisar("Arquivo(s) salvo(s) em Documentos do PI.");
+      else if (op.computador && !op.sgo && !op.viaSgo && !op.meuEmail) avisar("Arquivo(s) baixado(s).");
       onFechar();
     } catch (e) {
       avisar(`Não foi possível concluir: ${e.message}`, "erro", 8000);
@@ -402,17 +412,27 @@ function ModalPdfCronograma({ pi, usuario, onFechar }) {
     </label>
   );
   return (
-    <Modal titulo={`PDF do cronograma — ${pi.codigo}`} onFechar={() => !processando && onFechar()} largura="max-w-lg" confirmarAoFechar={false}
+    <Modal titulo={`Cronograma em arquivo — ${pi.codigo}`} onFechar={() => !processando && onFechar()} largura="max-w-lg" confirmarAoFechar={false}
       rodape={<>
         <button onClick={onFechar} disabled={!!processando} className="btn btn-fantasma">Cancelar</button>
         <button onClick={gerar} disabled={!pronto || !!processando} className="btn btn-primario">{processando ? <><Spinner /> {processando}</> : "Gerar"}</button>
       </>}>
       <div className="flex flex-col gap-2.5">
-        <div className="text-sm text-muted">Layout do cronograma padrão (A3 paisagem): placar de status, EAP, responsável, duração, dias úteis, evolução e Gantt. Escolha uma ou mais opções:</div>
-        {opcao("computador", "Salvar no computador", "Baixa o PDF.")}
-        {opcao("sgo", "Salvar no SGO", "Guarda o PDF em Documentos deste PI.")}
-        {opcao("meuEmail", "Enviar por e-mail", "Baixa o PDF e abre um e-mail novo no seu programa de e-mail, pronto para anexar e enviar.")}
-        {opcao("viaSgo", "Enviar via SGO", "O SGO envia o e-mail com o PDF anexado para os contatos do cliente que você escolher.")}
+        <div>
+          <span className="rotulo">Formato</span>
+          <div className="flex p-1 rounded-xl bg-panel border border-line" role="radiogroup" aria-label="Formato">
+            {[["pdf", "PDF"], ["excel", "Excel"], ["ambos", "PDF + Excel"]].map(([v, l]) => (
+              <button key={v} type="button" role="radio" aria-checked={formato === v} onClick={() => setFormato(v)}
+                className={`flex-1 rounded-lg py-2 text-sm font-semibold ${formato === v ? "bg-white text-cyan shadow-sm" : "text-muted"}`}>{l}</button>
+            ))}
+          </div>
+          <div className="texto-apoio mt-1.5">Layout do cronograma padrão: placar de status, EAP, responsável, duração, dias úteis, evolução e Gantt.{formato !== "pdf" ? " No Excel, as fórmulas e o Gantt se atualizam ao mudar datas ou %." : ""}</div>
+        </div>
+        <div className="text-sm text-muted">Escolha uma ou mais opções:</div>
+        {opcao("computador", "Salvar no computador", "Baixa o(s) arquivo(s).")}
+        {opcao("sgo", "Salvar no SGO", "Guarda o(s) arquivo(s) em Documentos deste PI.")}
+        {opcao("meuEmail", "Enviar por e-mail", "Baixa o(s) arquivo(s) e abre um e-mail novo no seu programa de e-mail, pronto para anexar e enviar.")}
+        {opcao("viaSgo", "Enviar via SGO", "O SGO envia o e-mail com o(s) arquivo(s) anexado(s) para os contatos do cliente que você escolher.")}
         {op.viaSgo && (
           <div className="rounded-xl border border-line p-3 flex flex-col gap-2">
             <div className="text-xs font-semibold text-muted">Contatos de {pi.cliente || "cliente"} ({contatos.length})</div>
