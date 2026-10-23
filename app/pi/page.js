@@ -3,17 +3,18 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useTabela } from "../../lib/dados";
+import { useTabela, registrarLog, chamarApi } from "../../lib/dados";
 import { useAuth, pode } from "../../lib/AuthContext";
 import { supabase } from "../../lib/supabase";
-import { BUCKET_DOCUMENTOS, linkTemporario } from "../../lib/pdfRdo";
+import { BUCKET_DOCUMENTOS, linkTemporario, gerarPdfCronograma, baseNomeCronograma } from "../../lib/pdfRdo";
 import { formatarData, formatarDataHora, diasAte } from "../../lib/datas";
 import { STATUS_ETAPA, STATUS_PI, COR_STATUS_PI, PRAZOS, TIPOS_RECURSO, etapasEmArvore } from "../../lib/constantes";
 import { useToast } from "../../lib/Toast";
 import PainelShell from "../../components/PainelShell";
-import { CabecalhoPagina, EstadoVazio, Esqueleto, Aviso } from "../../components/ui";
+import { CabecalhoPagina, EstadoVazio, Esqueleto, Aviso, Modal, Spinner } from "../../components/ui";
 import Icone from "../../components/Icone";
 import { ModalQrPi } from "../../components/LeitorQR";
+import CronogramaVisao from "../../components/CronogramaVisao";
 import { horasDoLancamento } from "../../lib/horas";
 
 // Página do PI: tudo de uma obra num só lugar (Resumo, Cronograma, Equipe, Campo,
@@ -320,42 +321,114 @@ function AbaResumo({ pi, usuario, irPara }) {
   );
 }
 
-// ---------------- Cronograma (consulta) ----------------
+// ---------------- Cronograma: a mesma visão da página Cronograma, só deste PI ----------------
 function AbaCronograma({ pi }) {
-  const { dados: etapas, carregando } = useTabela("etapas", { filtro: [["pi_id", pi.id]], order: { coluna: "created_at" } });
-  const itens = useMemo(() => etapasEmArvore(etapas), [etapas]);
+  const { usuario } = useAuth();
+  const [gerandoPdf, setGerandoPdf] = useState(false);
   return (
-    <Secao titulo={`Etapas (${etapas.length})`} acao={<Link href={`/cronograma?pi=${pi.id}`} className="btn btn-contorno btn-sm"><Icone nome="editar" className="w-4 h-4" /> Editar no Cronograma</Link>}>
-      {carregando && <Esqueleto linhas={4} altura={36} />}
-      {!carregando && !itens.length && <EstadoVazio icone="cronograma" titulo="Sem etapas" texto="Monte o cronograma deste PI na tela Cronograma." />}
-      <div className="overflow-x-auto">
-        <table className="w-full text-sm min-w-[720px]">
-          {itens.length > 0 && <thead><tr className="text-left border-b border-line">
-            <th className="py-2 titulo-secao">Etapa</th><th className="py-2 titulo-secao">Status</th><th className="py-2 titulo-secao">Início</th>
-            <th className="py-2 titulo-secao">Fim</th><th className="py-2 titulo-secao text-right">Avanço</th><th className="py-2 titulo-secao">Equipes</th></tr></thead>}
-          <tbody>
-            {itens.map((e) => {
-              const st = STATUS_ETAPA[e.status] || STATUS_ETAPA.nao_iniciada;
-              const d = diasAte(e.data_prevista_fim);
-              const atrasada = e.status !== "concluida" && d !== null && d < 0;
-              return (
-                <tr key={e.id} className="border-b border-line/60">
-                  <td className={`py-2 pr-2 ${e.nivel ? "pl-5 text-muted" : "font-semibold"}`}>{e.nivel ? "› " : ""}{e.nome}{e.medicao && <span className="ml-1.5 selo bg-[#8E5CD9]/10 text-[#8E5CD9]">M-R$</span>}</td>
-                  <td className="py-2"><span className={`selo ${atrasada ? "bg-red/10 text-red" : st.classe}`}>{atrasada ? "Atrasada" : st.rotulo}</span></td>
-                  <td className="py-2 tabular-nums">{formatarData(e.data_prevista_inicio)}</td>
-                  <td className="py-2 tabular-nums">{formatarData(e.data_prevista_fim)}</td>
-                  <td className="py-2 text-right tabular-nums">{e.status === "concluida" ? 100 : Number(e.percentual) || 0}%</td>
-                  <td className="py-2 text-xs text-muted">{(e.areas || []).join(", ")}</td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
-    </Secao>
+    <>
+      <CronogramaVisao piFixo={pi.id} acoes={<>
+        <button onClick={() => setGerandoPdf(true)} className="btn btn-primario btn-sm"><Icone nome="pdf" className="w-4 h-4" /> Gerar PDF</button>
+        {pode(usuario, "etapa.editar") && <Link href={`/cronograma?pi=${pi.id}`} className="btn btn-contorno btn-sm"><Icone nome="editar" className="w-4 h-4" /> Configurar Cronograma</Link>}
+      </>} />
+      {gerandoPdf && <ModalPdfCronograma pi={pi} usuario={usuario} onFechar={() => setGerandoPdf(false)} />}
+    </>
   );
 }
 
+// Gerar PDF do cronograma: salvar no computador, salvar no SGO (Documentos do PI),
+// enviar pelo e-mail de quem está usando (baixa o PDF e abre o e-mail) e enviar via SGO
+// (para contatos do cliente, com o PDF anexado)
+function ModalPdfCronograma({ pi, usuario, onFechar }) {
+  const { avisar } = useToast();
+  const { dados: etapas } = useTabela("etapas", { filtro: [["pi_id", pi.id]] });
+  const { dados: clientes } = useTabela("clientes", { order: { coluna: "nome" } });
+  const { dados: acessos } = useTabela("cliente_acessos", { filtro: [["pi_id", pi.id]] });
+  const [op, setOp] = useState({ computador: true, sgo: false, meuEmail: false, viaSgo: false });
+  const [destinos, setDestinos] = useState([]);
+  const [mensagem, setMensagem] = useState("");
+  const [processando, setProcessando] = useState("");
+  // contatos do cliente: mesma empresa do PI ou com acesso a este PI no portal
+  const chave = (s) => String(s || "").trim().toLocaleLowerCase("pt-BR");
+  const contatos = clientes.filter((c) => c.ativo !== false && c.email && (chave(c.empresa) === chave(pi.cliente) || acessos.some((a) => a.cliente_id === c.id)));
+  const marcar = (k) => setOp((p) => ({ ...p, [k]: !p[k] }));
+  const algumaOpcao = Object.values(op).some(Boolean);
+  const pronto = algumaOpcao && (!op.viaSgo || destinos.length > 0) && etapas.length > 0;
+
+  const gerar = async () => {
+    if (!pronto) return;
+    try {
+      setProcessando("Gerando PDF...");
+      const blob = await gerarPdfCronograma({ pi, etapas });
+      const nome = `${baseNomeCronograma(pi)}.pdf`;
+      if (op.computador || op.meuEmail) {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a"); a.href = url; a.download = nome; document.body.appendChild(a); a.click(); a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 5000);
+      }
+      let caminho = null;
+      if (op.sgo || op.viaSgo) {
+        setProcessando("Salvando no SGO...");
+        caminho = `${pi.id}/${nome}`;
+        const { error } = await supabase.storage.from(BUCKET_DOCUMENTOS).upload(caminho, blob, { upsert: true, contentType: "application/pdf" });
+        if (error) throw new Error(`não foi possível salvar no SGO (${error.message})`);
+        await registrarLog(usuario, "Gerou PDF do cronograma", `${pi.codigo} — ${nome}`);
+      }
+      if (op.viaSgo) {
+        setProcessando("Enviando...");
+        const { ok, json } = await chamarApi("/api/alertas", { acao: "enviar_pdf", piId: pi.id, caminho, clienteIds: destinos, mensagem, assunto: `Cronograma ${pi.codigo} - ${pi.cliente || ""}` });
+        if (!ok) throw new Error(json.error || "falha no envio");
+        avisar(`Cronograma enviado para ${json.enviados} contato(s).`);
+      }
+      if (op.meuEmail) {
+        const corpo = `Olá,\n\nSegue em anexo o cronograma atualizado do ${pi.codigo} - ${pi.cliente || ""}${pi.projeto ? ` (${pi.projeto})` : ""}.\n\n(O PDF "${nome}" foi baixado no seu computador: anexe-o a este e-mail.)\n\nAtenciosamente,\n${usuario?.nome || ""}`;
+        window.location.href = `mailto:?subject=${encodeURIComponent(`Cronograma ${pi.codigo} - ${pi.cliente || ""}`)}&body=${encodeURIComponent(corpo)}`;
+      }
+      if (op.sgo && !op.viaSgo) avisar("PDF salvo em Documentos do PI.");
+      else if (op.computador && !op.sgo && !op.viaSgo && !op.meuEmail) avisar("PDF baixado.");
+      onFechar();
+    } catch (e) {
+      avisar(`Não foi possível concluir: ${e.message}`, "erro", 8000);
+    } finally { setProcessando(""); }
+  };
+
+  const opcao = (k, titulo, dica) => (
+    <label className={`flex items-start gap-3 rounded-xl border p-3 cursor-pointer ${op[k] ? "border-cyan bg-cyan/5" : "border-line"}`}>
+      <input type="checkbox" checked={op[k]} onChange={() => marcar(k)} className="mt-0.5 w-4 h-4 accent-cyan" />
+      <span className="text-sm"><strong>{titulo}</strong><span className="texto-apoio block">{dica}</span></span>
+    </label>
+  );
+  return (
+    <Modal titulo={`PDF do cronograma — ${pi.codigo}`} onFechar={() => !processando && onFechar()} largura="max-w-lg" confirmarAoFechar={false}
+      rodape={<>
+        <button onClick={onFechar} disabled={!!processando} className="btn btn-fantasma">Cancelar</button>
+        <button onClick={gerar} disabled={!pronto || !!processando} className="btn btn-primario">{processando ? <><Spinner /> {processando}</> : "Gerar"}</button>
+      </>}>
+      <div className="flex flex-col gap-2.5">
+        <div className="text-sm text-muted">Layout do cronograma padrão (A3 paisagem): placar de status, EAP, responsável, duração, dias úteis, evolução e Gantt. Escolha uma ou mais opções:</div>
+        {opcao("computador", "Salvar no computador", "Baixa o PDF.")}
+        {opcao("sgo", "Salvar no SGO", "Guarda o PDF em Documentos deste PI.")}
+        {opcao("meuEmail", "Enviar por e-mail", "Baixa o PDF e abre um e-mail novo no seu programa de e-mail, pronto para anexar e enviar.")}
+        {opcao("viaSgo", "Enviar via SGO", "O SGO envia o e-mail com o PDF anexado para os contatos do cliente que você escolher.")}
+        {op.viaSgo && (
+          <div className="rounded-xl border border-line p-3 flex flex-col gap-2">
+            <div className="text-xs font-semibold text-muted">Contatos de {pi.cliente || "cliente"} ({contatos.length})</div>
+            {contatos.length === 0 && <Aviso tipo="info">Nenhum contato cadastrado para este cliente. Cadastre em <strong>Clientes</strong> (mesma empresa do PI) ou dê acesso a este PI.</Aviso>}
+            {contatos.map((c) => (
+              <label key={c.id} className="flex items-center gap-2 text-sm cursor-pointer">
+                <input type="checkbox" className="accent-cyan w-4 h-4" checked={destinos.includes(c.id)} onChange={() => setDestinos((p) => (p.includes(c.id) ? p.filter((x) => x !== c.id) : [...p, c.id]))} />
+                <span className="flex-1 min-w-0 truncate">{c.nome}{c.funcao ? <span className="text-muted"> · {c.funcao}</span> : ""}</span>
+                <span className="text-xs text-muted truncate">{c.email}</span>
+              </label>
+            ))}
+            <textarea value={mensagem} onChange={(e) => setMensagem(e.target.value)} rows={2} className="input" placeholder="Mensagem (opcional)" />
+          </div>
+        )}
+        {!etapas.length && <Aviso tipo="info">Este PI ainda não tem etapas no cronograma.</Aviso>}
+      </div>
+    </Modal>
+  );
+}
 // ---------------- Equipe e recursos ----------------
 function AbaEquipe({ pi, usuario }) {
   const { dados: alocs, carregando } = useTabela("alocacoes_recurso", { filtro: [["pi_id", pi.id]] });

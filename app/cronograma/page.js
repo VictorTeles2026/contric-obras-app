@@ -10,7 +10,7 @@ import { LISTA_STATUS_ETAPA as STATUS, AREAS, STATUS_PI, COR_STATUS_PI, STATUS_E
 import { useToast } from "../../lib/Toast";
 import PainelShell from "../../components/PainelShell";
 import AbasCronograma from "../../components/AbasCronograma";
-import PainelSuspenso from "../../components/PainelSuspenso";
+import { PainelSuspenso } from "../../components/ui";
 import { Modal, Campo, EstadoVazio, Spinner } from "../../components/ui";
 import Icone from "../../components/Icone";
 import { JanelaPi } from "../../components/Editores";
@@ -434,6 +434,10 @@ export default function CronogramaPage() {
         <ExcluirPiModal pi={excluindoPi} onFechar={() => setExcluindoPi(null)}
           onExcluido={() => { setExcluindoPi(null); setPiSelecionadoId(pis.find((p) => p.id !== excluindoPi.id)?.id || ""); window.location.reload(); }} />
       )}
+      {/* sugestões do campo Responsável: os já usados neste PI + Contric e o cliente */}
+      <datalist id="sugestoes-responsavel">
+        {[...new Set(["Contric", piAtual?.cliente, piAtual?.cliente && `${piAtual.cliente} / Contric`, ...etapasDoPi.map((e) => e.responsavel_texto)].filter(Boolean))].map((s) => <option key={s} value={s} />)}
+      </datalist>
       {pisModalAberto && (
         <JanelaPi modo={pisModalModo} pi={pisModalModo === "edit" ? piAtual : null} onFechar={() => setPisModalAberto(false)}
           onSalvo={(id) => { setPiSelecionadoId(id); recarregarPis(); recarregarOrcamentos(); }} />
@@ -712,6 +716,8 @@ function EtapaRow({ etapa, editavel, onChange, onDelete, deps, onRemoverDep, anc
   const [inicioLocal, setInicioLocal] = useCampoDebounced(etapa.data_prevista_inicio || "", (v) => onChange(etapa.id, { data_prevista_inicio: v || null }), 300);
   const [fimLocal, setFimLocal] = useCampoDebounced(etapa.data_prevista_fim || "", (v) => onChange(etapa.id, { data_prevista_fim: v || null }), 300);
   const [percLocal, setPercLocal] = useCampoDebounced(etapa.percentual || 0, (v) => onChange(etapa.id, { percentual: Math.max(0, Math.min(100, Number(v) || 0)) }));
+  // responsável: texto livre (ex: "Contric", "WESTROCK / Contric", "João")
+  const [respLocal, setRespLocal, eventosResp] = useCampoDebounced(etapa.responsavel_texto || "", (v) => onChange(etapa.id, { responsavel_texto: v.trim() ? v : null }), 600, (v) => v.trim());
   const datasInvertidas = inicioLocal && fimLocal && fimLocal < inicioLocal;
   const corStatus = STATUS_ETAPA[etapa.status]?.barra || "#93A2B8";
   const [medicaoPercLocal, setMedicaoPercLocal] = useCampoDebounced(etapa.medicao_percentual ?? "", (v) => onChange(etapa.id, { medicao_percentual: v === "" ? null : Number(v) }));
@@ -753,6 +759,9 @@ function EtapaRow({ etapa, editavel, onChange, onDelete, deps, onRemoverDep, anc
       />
       <input value={nomeLocal} disabled={!editavel} onChange={(e) => setNomeLocal(e.target.value)} {...eventosNome} aria-label="Nome da etapa"
         className={`input !py-1.5 flex-1 min-w-[160px] font-head font-semibold disabled:!bg-transparent disabled:!border-transparent disabled:!text-textmain ${etapa.parent_etapa_id ? "!font-medium" : ""}`} />
+      <input value={respLocal} disabled={!editavel} onChange={(e) => setRespLocal(e.target.value)} {...eventosResp} aria-label="Responsável"
+        placeholder="Responsável" title="Responsável pela etapa (texto livre)" list="sugestoes-responsavel"
+        className="input !py-1.5 !w-40 !text-xs disabled:!bg-transparent disabled:!border-transparent" />
 
       <div className="flex flex-col gap-0.5">
         <div className="flex gap-1">

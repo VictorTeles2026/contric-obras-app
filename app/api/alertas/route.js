@@ -297,6 +297,37 @@ export const POST = rotaSegura(async (req) => {
   if (corpo.acao === "despachar") return NextResponse.json(await despachar(admin));
   if (corpo.acao === "cliente") return avisarClientes(admin, corpo);
   if (corpo.acao === "alocacao") return avisarAlocacao(admin, interno, corpo);
+  // PDF (ex: cronograma) salvo em Documentos do PI, enviado anexado para contatos escolhidos do cliente
+  if (corpo.acao === "enviar_pdf") {
+    const mapa = await permissoesDe(admin, interno);
+    if (!["pi.ver", "doc.cliente", "cliente.acessos"].some((c) => mapa[c] === "S" || mapa[c] === "P")) return NextResponse.json({ error: "Seu usuário não pode enviar documentos a clientes." }, { status: 403 });
+    const { piId, caminho, clienteIds, mensagem, assunto } = corpo;
+    if (!piId || !caminho || !String(caminho).startsWith(`${piId}/`) || !Array.isArray(clienteIds) || !clienteIds.length) return NextResponse.json({ error: "Dados inválidos." }, { status: 400 });
+    const [{ data: pi }, { data: clientes }, arquivo] = await Promise.all([
+      admin.from("pis").select("codigo,cliente,projeto").eq("id", piId).maybeSingle(),
+      admin.from("clientes").select("id,nome,email,ativo").in("id", clienteIds.slice(0, 50)),
+      admin.storage.from("documentos").download(caminho),
+    ]);
+    if (arquivo.error || !arquivo.data) return NextResponse.json({ error: `Arquivo não encontrado: ${arquivo.error?.message || ""}` }, { status: 400 });
+    const base64 = Buffer.from(await arquivo.data.arrayBuffer()).toString("base64");
+    const nomeArq = String(caminho).split("/").pop();
+    let enviados = 0; const falhas = [];
+    for (const c of (clientes || []).filter((x) => x.ativo !== false && emailReal(x.email))) {
+      const paragrafos = [`Olá, <strong>${esc(c.nome)}</strong>!`, `Segue em anexo o documento <strong>${esc(nomeArq)}</strong> referente ao ${esc(pi?.codigo || "")} - ${esc(pi?.cliente || "")}${pi?.projeto ? ` (${esc(pi.projeto)})` : ""}.`];
+      if (mensagem) paragrafos.push(esc(mensagem).replace(/\n/g, "<br>"));
+      paragrafos.push(`Enviado por ${esc(interno.nome)} — Contric.`);
+      const r = await enviarEmail({
+        para: c.email, assunto: String(assunto || nomeArq).slice(0, 150),
+        texto: `Olá, ${c.nome}!\n\nSegue em anexo ${nomeArq} (${pi?.codigo || ""} - ${pi?.cliente || ""}).${mensagem ? `\n\n${mensagem}` : ""}\n\nEnviado por ${interno.nome} — Contric.`,
+        html: emailCliente(esc(String(assunto || nomeArq)), paragrafos, null, "Contric"),
+        anexos: [{ nome: nomeArq, base64 }],
+      });
+      if (r.enviado) enviados++; else falhas.push(`${c.nome}: ${r.motivo}`);
+    }
+    await admin.from("logs_auditoria").insert({ usuario_id: interno.id, usuario_nome: interno.nome, acao: "Enviou PDF a clientes (SGO)", detalhe: `${pi?.codigo} — ${nomeArq} · ${enviados} enviado(s)${falhas.length ? ` · falhas: ${falhas.join("; ")}` : ""}` });
+    if (!enviados) return NextResponse.json({ error: falhas.length ? `Nenhum e-mail enviado — ${falhas[0]}` : "Nenhum contato com e-mail válido." }, { status: 400 });
+    return NextResponse.json({ enviados, falhas });
+  }
   // preferências: do próprio usuário, ou de vários usuários (Usuários → Alertas, exige usuario.editar)
   // corpo.itens = [{ usuarioId, alertas }] — sem itens, vale para quem chama
   if (corpo.acao === "preferencias") {
