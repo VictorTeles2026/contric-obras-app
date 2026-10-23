@@ -9,9 +9,9 @@ import { hojeISO as todayISO, addDias, isoLocal } from "../../lib/datas";
 import { LISTA_STATUS_ETAPA as STATUS, AREAS, STATUS_PI, COR_STATUS_PI, STATUS_ETAPA, FERIADOS_EXTRAS, datasAlertaEtapa, consolidarMacros } from "../../lib/constantes";
 import { useToast } from "../../lib/Toast";
 import PainelShell from "../../components/PainelShell";
-import AbasCronograma from "../../components/AbasCronograma";
+import { AbasCronograma } from "../../components/ui";
 import { PainelSuspenso } from "../../components/ui";
-import { Modal, Campo, EstadoVazio, Spinner } from "../../components/ui";
+import { Modal, Campo, EstadoVazio, Spinner, Aviso } from "../../components/ui";
 import Icone from "../../components/Icone";
 import { JanelaPi } from "../../components/Editores";
 
@@ -153,6 +153,7 @@ export default function CronogramaPage() {
 
   const [pisModalAberto, setPisModalAberto] = useState(false);
   const [excluindoPi, setExcluindoPi] = useState(null);
+  const [iaAberta, setIaAberta] = useState(false);
   const [pisModalModo, setPisModalModo] = useState("create");
   const [erro, setErro] = useState("");
 
@@ -398,6 +399,11 @@ export default function CronogramaPage() {
               <Icone nome="editar" className="w-4 h-4" /> Editar PI
             </button>
           )}
+          {editavel && piAtual && (
+            <button onClick={() => setIaAberta(true)} className="btn btn-sm !py-2 bg-navy text-white hover:opacity-90" title="Montar ou alterar o cronograma falando ou escrevendo">
+              <svg viewBox="0 0 24 24" className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3" /><path d="M5 11a7 7 0 0 0 14 0M12 18v3" /></svg> Assistente IA
+            </button>
+          )}
           {pode(usuario, "pi.excluir") && piAtual && (
             <button onClick={() => setExcluindoPi(piAtual)} className="btn btn-contorno-perigo btn-sm !py-2" title="Apagar o PI e tudo o que está associado a ele (somente Master)">
               <Icone nome="lixo" className="w-4 h-4" /> Excluir PI
@@ -445,6 +451,10 @@ export default function CronogramaPage() {
       <datalist id="sugestoes-responsavel">
         {[...new Set(["Contric", piAtual?.cliente, piAtual?.cliente && `${piAtual.cliente} / Contric`, ...etapasDoPi.map((e) => e.responsavel_texto)].filter(Boolean))].map((s) => <option key={s} value={s} />)}
       </datalist>
+      {iaAberta && piAtual && (
+        <AssistenteIA pi={piAtual} etapas={etapasDoPi} usuario={usuario} onFechar={() => setIaAberta(false)}
+          onAplicado={() => { recarregarEtapas(); recarregarDependencias(); }} />
+      )}
       {pisModalAberto && (
         <JanelaPi modo={pisModalModo} pi={pisModalModo === "edit" ? piAtual : null} onFechar={() => setPisModalAberto(false)}
           onSalvo={(id) => { setPiSelecionadoId(id); recarregarPis(); recarregarOrcamentos(); }} />
@@ -932,6 +942,165 @@ function ExcluirPiModal({ pi, onFechar, onExcluido }) {
           {erro && <div className="text-red">{erro}</div>}
         </div>
       )}
+    </Modal>
+  );
+}
+
+// ---------------- Assistente de IA: montar/alterar o cronograma por texto ou voz ----------------
+// 1) a pessoa fala ou escreve; 2) a IA devolve as ações; 3) prévia com caixas para marcar;
+// 4) "Aplicar" grava pelo próprio usuário (mesmas permissões e regras de sempre).
+const ROTULO_ACAO = { criar_etapa: ["Criar", "bg-green/10 text-green"], alterar_etapa: ["Alterar", "bg-cyan/10 text-cyan"], excluir_etapa: ["Excluir", "bg-red/10 text-red"], criar_dependencia: ["Dependência", "bg-[#8E5CD9]/10 text-[#8E5CD9]"] };
+function AssistenteIA({ pi, etapas, usuario, onFechar, onAplicado }) {
+  const { avisar } = useToast();
+  const [texto, setTexto] = useState("");
+  const [ouvindo, setOuvindo] = useState(false);
+  const [carregando, setCarregando] = useState(false);
+  const [aplicando, setAplicando] = useState(false);
+  const [resultado, setResultado] = useState(null);
+  const [marcadas, setMarcadas] = useState([]);
+  const [erro, setErro] = useState("");
+  const recRef = useRef(null);
+  const SR = typeof window !== "undefined" ? (window.SpeechRecognition || window.webkitSpeechRecognition) : null;
+  useEffect(() => () => recRef.current?.stop(), []);
+
+  const ouvir = () => {
+    if (!SR) { setErro("Este navegador não tem reconhecimento de voz. Use o Chrome ou o Edge, ou digite o pedido."); return; }
+    if (ouvindo) { recRef.current?.stop(); return; }
+    const rec = new SR();
+    rec.lang = "pt-BR"; rec.continuous = true; rec.interimResults = false;
+    rec.onresult = (ev) => {
+      let novo = "";
+      for (let i = ev.resultIndex; i < ev.results.length; i++) if (ev.results[i].isFinal) novo += ev.results[i][0].transcript;
+      if (novo) setTexto((t) => `${t}${t && !t.endsWith(" ") ? " " : ""}${novo.trim()}`);
+    };
+    rec.onerror = (ev) => { setErro(ev.error === "not-allowed" ? "Permita o uso do microfone no navegador." : `Microfone: ${ev.error}`); setOuvindo(false); };
+    rec.onend = () => setOuvindo(false);
+    recRef.current = rec; setErro(""); setOuvindo(true); rec.start();
+  };
+
+  const interpretar = async () => {
+    recRef.current?.stop();
+    if (!texto.trim()) return;
+    setCarregando(true); setErro(""); setResultado(null);
+    const { ok, json } = await chamarApi("/api/ia", { piId: pi.id, texto });
+    setCarregando(false);
+    if (!ok) { setErro(json.error || "Não foi possível interpretar."); return; }
+    setResultado(json); setMarcadas((json.acoes || []).map((_, i) => i));
+  };
+
+  const nomeDe = (ref, criadas = {}) => etapas.find((e) => e.id === ref)?.nome || (resultado?.acoes || []).find((a) => a.tipo === "criar_etapa" && a.ref === ref)?.nome || criadas[ref] || ref;
+  const detalhe = (a) => [
+    a.pai_ref && a.tipo === "criar_etapa" ? `dentro de "${nomeDe(a.pai_ref)}"` : "",
+    a.inicio || a.fim ? `${a.inicio ? isoParaBR(a.inicio) : "…"} a ${a.fim ? isoParaBR(a.fim) : "…"}` : "",
+    a.status ? STATUS_ETAPA[a.status]?.rotulo : "", a.percentual >= 0 ? `${a.percentual}%` : "",
+    a.responsavel ? `resp.: ${a.responsavel}` : "", a.depende_de_ref ? `depende de "${nomeDe(a.depende_de_ref)}"` : "",
+  ].filter(Boolean).join(" · ");
+
+  const aplicar = async () => {
+    const acoes = (resultado?.acoes || []).filter((_, i) => marcadas.includes(i));
+    if (!acoes.length) return;
+    setAplicando(true); setErro("");
+    const mapa = {}; // ref → id real (etapas novas)
+    const idDe = (ref) => (ref ? mapa[ref] || (etapas.some((e) => e.id === ref) ? ref : null) : null);
+    const temSubs = (id) => etapas.some((e) => e.parent_etapa_id === id) || Object.values(mapa).length && acoes.some((a) => a.tipo === "criar_etapa" && idDe(a.pai_ref) === id);
+    let feitas = 0; const falhas = [];
+    const campos = (a, nova) => {
+      const p = {};
+      if (a.nome && (nova || a.tipo === "alterar_etapa")) p.nome = a.nome;
+      if (a.inicio) p.data_prevista_inicio = a.inicio;
+      if (a.fim) p.data_prevista_fim = a.fim;
+      if (a.status) p.status = a.status;
+      if (a.percentual >= 0) p.percentual = Math.min(100, a.percentual);
+      if (a.responsavel) p.responsavel_texto = a.responsavel;
+      return p;
+    };
+    for (const a of acoes) {
+      try {
+        if (a.tipo === "criar_etapa") {
+          const pai = idDe(a.pai_ref);
+          const irmas = etapas.filter((e) => (e.parent_etapa_id || null) === (pai || null));
+          const ordem = (irmas.length ? Math.max(...irmas.map((e) => e.ordem ?? 0)) + 1 : 0) + feitas;
+          const ini = a.inicio || todayISO();
+          const { data, error } = await supabase.from("etapas").insert({
+            pi_id: pi.id, parent_etapa_id: pai, tipo: "campo", ordem, nome: a.nome || "Nova etapa",
+            data_prevista_inicio: ini, data_prevista_fim: a.fim || ini, status: a.status || "nao_iniciada", percentual: a.percentual >= 0 ? a.percentual : 0,
+            ...(a.responsavel ? { responsavel_texto: a.responsavel } : {}),
+          }).select("id").single();
+          if (error) throw error;
+          mapa[a.ref] = data.id;
+          const dep = idDe(a.depende_de_ref);
+          if (dep) await supabase.from("etapa_dependencias").insert({ etapa_id: data.id, depende_de_etapa_id: dep });
+        } else if (a.tipo === "alterar_etapa") {
+          const id = idDe(a.ref); if (!id) throw new Error("etapa não encontrada");
+          const p = campos(a, false);
+          if (temSubs(id)) { delete p.data_prevista_inicio; delete p.data_prevista_fim; delete p.status; delete p.percentual; } // macro calculada
+          if (Object.keys(p).length) { const { error } = await supabase.from("etapas").update(p).eq("id", id); if (error) throw error; }
+          const dep = idDe(a.depende_de_ref);
+          if (dep && dep !== id) await supabase.from("etapa_dependencias").insert({ etapa_id: id, depende_de_etapa_id: dep });
+        } else if (a.tipo === "excluir_etapa") {
+          const id = idDe(a.ref); if (!id) throw new Error("etapa não encontrada");
+          const { error } = await supabase.from("etapas").delete().eq("id", id); if (error) throw error;
+        } else if (a.tipo === "criar_dependencia") {
+          const id = idDe(a.ref), dep = idDe(a.depende_de_ref);
+          if (!id || !dep || id === dep) throw new Error("etapas da dependência não encontradas");
+          const { error } = await supabase.from("etapa_dependencias").insert({ etapa_id: id, depende_de_etapa_id: dep }); if (error) throw error;
+        }
+        feitas++;
+      } catch (e) { falhas.push(`${ROTULO_ACAO[a.tipo]?.[0]} "${a.nome || nomeDe(a.ref, mapa)}": ${e.message}`); }
+    }
+    await registrarLog(usuario, "Aplicou alterações do assistente de IA", `${pi.codigo} — ${feitas} de ${acoes.length} ação(ões)${falhas.length ? ` · falhas: ${falhas.join("; ")}` : ""}`);
+    setAplicando(false);
+    onAplicado();
+    if (falhas.length) { setErro(`${feitas} ação(ões) aplicada(s). Não foi possível: ${falhas.join(" · ")}`); return; }
+    avisar(`${feitas} alteração(ões) aplicada(s) no cronograma.`);
+    onFechar();
+  };
+
+  return (
+    <Modal titulo={`Assistente de IA — ${pi.codigo}`} onFechar={() => !aplicando && onFechar()} largura="max-w-2xl" confirmarAoFechar={!!texto && !resultado}
+      rodape={resultado?.acoes?.length ? <>
+        <button onClick={() => setResultado(null)} disabled={aplicando} className="btn btn-fantasma">Refazer pedido</button>
+        <button onClick={aplicar} disabled={aplicando || !marcadas.length} className="btn btn-sucesso">{aplicando ? <><Spinner /> Aplicando...</> : `Aplicar ${marcadas.length} alteração(ões)`}</button>
+      </> : <>
+        <button onClick={onFechar} className="btn btn-fantasma">Fechar</button>
+        <button onClick={interpretar} disabled={carregando || !texto.trim()} className="btn btn-primario">{carregando ? <><Spinner /> Interpretando...</> : "Interpretar pedido"}</button>
+      </>}>
+      <div className="flex flex-col gap-3">
+        {!resultado && <>
+          <div className="text-sm text-muted">Fale ou escreva o que quer fazer. Exemplos: <em>"Cria a macro Elétrica com levantamento de 3 dias a partir de 3/11 e projeto executivo de 9 dias depois dele, responsável Contric"</em> · <em>"Atrasa o comissionamento em 4 dias e empurra o startup"</em> · <em>"Marca o levantamento inicial como concluído"</em>.</div>
+          <div className="relative">
+            <textarea value={texto} onChange={(e) => setTexto(e.target.value)} rows={5} className="input pr-14" placeholder="Seu pedido..." autoFocus />
+            <button type="button" onClick={ouvir} aria-label={ouvindo ? "Parar de ouvir" : "Ditar por voz"} title={ouvindo ? "Parar" : "Ditar por voz"}
+              className={`absolute right-2 top-2 w-10 h-10 rounded-full flex items-center justify-center ${ouvindo ? "bg-red text-white animate-pulse" : "bg-cyan/10 text-cyan hover:bg-cyan/20"}`}>
+              <svg viewBox="0 0 24 24" className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3" /><path d="M5 11a7 7 0 0 0 14 0M12 18v3" /></svg>
+            </button>
+          </div>
+          {ouvindo && <div className="text-xs text-red font-semibold">Ouvindo... fale normalmente e clique no microfone para parar.</div>}
+        </>}
+        {resultado && (
+          <>
+            <div className="rounded-xl bg-cyan/5 border border-cyan/20 p-3 text-sm"><strong>IA:</strong> {resultado.resumo}</div>
+            {resultado.duvidas && <Aviso tipo="alerta">{resultado.duvidas}</Aviso>}
+            {!resultado.acoes?.length && <div className="text-sm text-muted">Nenhuma alteração a aplicar.</div>}
+            <div className="flex flex-col gap-1.5 max-h-[50vh] overflow-y-auto rolagem-fina">
+              {(resultado.acoes || []).map((a, i) => (
+                <label key={i} className={`flex items-start gap-2.5 rounded-lg border px-3 py-2 cursor-pointer ${marcadas.includes(i) ? "border-cyan/40 bg-white" : "border-line bg-panel opacity-60"}`}>
+                  <input type="checkbox" className="accent-cyan w-4 h-4 mt-0.5" checked={marcadas.includes(i)} onChange={() => setMarcadas((p) => (p.includes(i) ? p.filter((x) => x !== i) : [...p, i]))} />
+                  <span className="flex-1 min-w-0 text-sm">
+                    <span className={`selo mr-1.5 ${ROTULO_ACAO[a.tipo]?.[1]}`}>{ROTULO_ACAO[a.tipo]?.[0]}</span>
+                    <strong>{a.tipo === "criar_etapa" ? a.nome : nomeDe(a.ref)}</strong>
+                    {a.tipo === "alterar_etapa" && a.nome && a.nome !== nomeDe(a.ref) ? <span className="text-muted"> → "{a.nome}"</span> : ""}
+                    {detalhe(a) && <span className="block texto-apoio">{detalhe(a)}</span>}
+                    {a.explicacao && <span className="block text-xs text-muteddim">{a.explicacao}</span>}
+                  </span>
+                </label>
+              ))}
+            </div>
+          </>
+        )}
+        {erro && <Aviso tipo="erro">{erro}</Aviso>}
+        <div className="text-[11px] text-muteddim">O pedido e o cronograma deste PI são enviados à IA (Anthropic) só para interpretar. Nada é gravado sem você clicar em Aplicar.</div>
+      </div>
     </Modal>
   );
 }

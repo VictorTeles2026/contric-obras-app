@@ -9,7 +9,7 @@ import { formatarData, formatarDataHora } from "../../../lib/datas";
 import { STATUS_SOLICITACAO, etapasEmArvore } from "../../../lib/constantes";
 import { useToast } from "../../../lib/Toast";
 import PainelShell from "../../../components/PainelShell";
-import AbasCronograma from "../../../components/AbasCronograma";
+import { AbasCronograma } from "../../../components/ui";
 import CapturaMidia from "../../../components/CapturaMidia";
 import { EstadoVazio, Esqueleto, Modal, Campo, Aviso, Spinner } from "../../../components/ui";
 import Icone from "../../../components/Icone";

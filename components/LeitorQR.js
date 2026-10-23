@@ -5,6 +5,7 @@ import jsQR from "jsqr";
 import QRCode from "qrcode";
 import Icone from "./Icone";
 import { Modal, Spinner } from "./ui";
+import { carregarLogo } from "../lib/pdfRdo";
 
 // ======================= QR Code do PI =======================
 // O QR guarda o NÚMERO do PI — o mesmo formato que o leitor de QR do líder reconhece.
@@ -16,15 +17,16 @@ async function pdfQrPi(pi) {
   const { jsPDF } = await import("jspdf");
   const doc = new jsPDF({ unit: "mm", format: "a4", compress: true });
   const L = 210, M = 15;
+  // logo da Contric no topo (obrigatório em todo documento gerado)
+  const logo = await carregarLogo();
+  doc.addImage(logo, "JPEG", L / 2 - 16, 8, 32, 23.4, "logo-contric");
   doc.setTextColor(11, 46, 68);
-  doc.setFont("helvetica", "bold"); doc.setFontSize(14);
-  doc.text("CONTRIC — GESTÃO DE OBRAS", L / 2, 20, { align: "center" });
-  doc.setFontSize(54);
-  doc.text(`PI ${pi.codigo}`, L / 2, 46, { align: "center" });
-  doc.setFontSize(26);
+  doc.setFont("helvetica", "bold"); doc.setFontSize(48);
+  doc.text(`PI ${pi.codigo}`, L / 2, 50, { align: "center" });
+  doc.setFontSize(24);
   const cliente = doc.splitTextToSize(String(pi.cliente || ""), L - 2 * M);
-  doc.text(cliente, L / 2, 62, { align: "center" });
-  let y = 62 + cliente.length * 10;
+  doc.text(cliente, L / 2, 64, { align: "center" });
+  let y = 64 + cliente.length * 9.5;
   if (pi.projeto) {
     doc.setFont("helvetica", "normal"); doc.setFontSize(18);
     const proj = doc.splitTextToSize(String(pi.projeto), L - 2 * M);
@@ -73,7 +75,7 @@ export function ModalQrPi({ pi, onFechar, comPdf = false }) {
   const [img, setImg] = useState(null);
   const [ocupado, setOcupado] = useState(null);
   useEffect(() => { let vivo = true; gerarQrPi(pi).then((u) => vivo && setImg(u)); return () => { vivo = false; }; }, [pi]);
-  const acao = async (tipo) => { setOcupado(tipo); try { await (tipo === "pdf" ? baixarPdfQrPi(pi) : imprimirQrPi(pi)); } finally { setOcupado(null); } };
+  const acao = async (tipo) => { setOcupado(tipo); try { await (tipo === "pdf" ? baixarPdfQrPi(pi) : imprimirQrPi(pi)); } catch (e) { window.alert(`Não foi possível gerar o PDF: ${e.message}`); } finally { setOcupado(null); } };
   return (
     <Modal titulo={`QR Code — PI ${pi.codigo}`} onFechar={onFechar} confirmarAoFechar={false} largura="max-w-md"
       rodape={comPdf ? <>

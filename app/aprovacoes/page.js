@@ -17,7 +17,7 @@ import { CabecalhoPagina, EstadoVazio, Esqueleto, Aviso, Spinner } from "../../c
 import Icone from "../../components/Icone";
 import CartaoOcorrencia from "../../components/CartaoOcorrencia";
 import AcoesMaster from "../../components/AcoesMaster";
-import { AbasAprovacoes } from "../../components/AbasCronograma";
+import { AbasAprovacoes } from "../../components/ui";
 import { excluirRdo, excluirHoras, excluirOcorrencia, excluirSolicitacao } from "../../lib/exclusoes";
 
 const ROTULO_CAMPO = { data_prevista_inicio: "Data de início", data_prevista_fim: "Data de término", nome: "Nome da etapa", outro: "Outro" };

@@ -5,9 +5,10 @@ import { useTabela } from "../../../lib/dados";
 import { hojeISO, addDias, isoLocal, dataLocal, formatarData, horaCurta } from "../../../lib/datas";
 import { horasDoLancamento, fmtH } from "../../../lib/horas";
 import PainelShell from "../../../components/PainelShell";
-import { AbasRelatorios } from "../../../components/AbasCronograma";
+import { AbasRelatorios } from "../../../components/ui";
 import { CabecalhoPagina, EstadoVazio, Esqueleto, Campo } from "../../../components/ui";
 import Icone from "../../../components/Icone";
+import { gerarExcelTabela } from "../../../lib/pdfRdo";
 
 const PROPRIA = "__propria__"; // filtro "mão de obra própria" (sem empresa terceira)
 const AGRUPAR = [["pessoa", "Pessoa"], ["pi", "PI"], ["cliente", "Cliente"], ["empresa", "Empresa"], ["", "Sem agrupar"]];
@@ -92,16 +93,27 @@ export default function ControleHorasPage() {
   const totais = { total: soma(filtradas, "total"), normais: soma(filtradas, "normais"), extras: soma(filtradas, "extras") };
   const pessoasDistintas = new Set(filtradas.map((l) => l.usuario_id)).size;
 
-  const exportar = () => {
-    const cab = ["Data", "Nome", "Função", "Empresa", "PI", "Cliente", "Projeto", "Início", "Fim", "Normais", "Extras", "Total", "Status"];
-    const corpo = filtradas.map((l) => [
-      formatarData(l.data), l.pessoa?.nome, l.pessoa?.funcao, l.nomeEmpresa, l.pi?.codigo, l.pi?.cliente, l.pi?.projeto,
-      l.entrada ? horaCurta(l.entrada) : l.hora_inicio, l.saida ? horaCurta(l.saida) : l.hora_fim, num(l.normais), num(l.extras), num(l.total), l.status,
-    ]);
-    const texto = "﻿" + [cab, ...corpo].map((r) => r.map(csv).join(";")).join("\r\n");
-    const url = URL.createObjectURL(new Blob([texto], { type: "text/csv;charset=utf-8" }));
-    const a = document.createElement("a"); a.href = url; a.download = `controle-horas_${de}_a_${ate}.csv`; a.click();
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  // exporta em Excel (.xlsx) com o logo da Contric — antes era CSV, que não aceita imagem
+  const [exportando, setExportando] = useState(false);
+  const exportar = async () => {
+    setExportando(true);
+    try {
+      const cab = ["Data", "Nome", "Função", "Empresa", "PI", "Cliente", "Projeto", "Início", "Fim", "Normais (h)", "Extras (h)", "Total (h)", "Status"];
+      const corpo = filtradas.map((l) => [
+        formatarData(l.data), l.pessoa?.nome, l.pessoa?.funcao, l.nomeEmpresa, l.pi?.codigo, l.pi?.cliente, l.pi?.projeto,
+        l.entrada ? horaCurta(l.entrada) : l.hora_inicio, l.saida ? horaCurta(l.saida) : l.hora_fim,
+        Number(l.normais) || 0, Number(l.extras) || 0, Number(l.total) || 0, l.status,
+      ]);
+      const blob = await gerarExcelTabela({
+        titulo: "CONTROLE DE HORAS", subtitulo: `Período de ${formatarData(de)} a ${formatarData(ate)} · ${filtradas.length} lançamento(s)`,
+        cabecalho: cab, linhas: corpo, nomeAba: "Controle de horas",
+        larguras: [11, 26, 18, 18, 12, 20, 24, 8, 8, 11, 10, 10, 12], formatos: { 9: "0.00", 10: "0.00", 11: "0.00" },
+      });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a"); a.href = url; a.download = `controle-horas_${de}_a_${ate}.xlsx`; a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 2000);
+    } catch (e) { window.alert(`Não foi possível exportar: ${e.message}`); }
+    setExportando(false);
   };
 
   const limpar = () => { setPiId(""); setCliente(""); setEmpresaId(""); setRecursoId(""); setStatus("todos"); };
@@ -111,7 +123,7 @@ export default function ControleHorasPage() {
     <PainelShell>
       <div className="p-4 md:p-8 max-w-[1400px] mx-auto">
         <CabecalhoPagina titulo="Relatórios" subtitulo="Orçado × realizado de cada PI e controle das horas lançadas."
-          acoes={<button onClick={exportar} disabled={!filtradas.length} className="btn btn-contorno"><Icone nome="download" className="w-4 h-4" /> Exportar (Excel/CSV)</button>} />
+          acoes={<button onClick={exportar} disabled={!filtradas.length || exportando} className="btn btn-contorno"><Icone nome="download" className="w-4 h-4" /> {exportando ? "Gerando..." : "Exportar Excel"}</button>} />
         <AbasRelatorios />
 
         {/* ---------- filtros ---------- */}

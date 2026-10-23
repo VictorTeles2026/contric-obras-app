@@ -8,7 +8,7 @@ import { STATUS_ETAPA } from "../../lib/constantes";
 import { excluirRdo, excluirHoras, excluirOcorrencia } from "../../lib/exclusoes";
 import { supabase } from "../../lib/supabase";
 import PainelShell from "../../components/PainelShell";
-import { AbasAprovacoes } from "../../components/AbasCronograma";
+import { AbasAprovacoes } from "../../components/ui";
 import AcoesMaster from "../../components/AcoesMaster";
 import { EditorRdo, EditorHoras, EditorOcorrencia } from "../../components/Editores";
 import { ResumoRdoTecnico } from "../../components/RdoTecnico";
