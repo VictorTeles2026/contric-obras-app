@@ -84,6 +84,16 @@ export default function CapturaMidia({ value, onChange, compacto, baseNome }) {
     Array.from(e.target.files || []).forEach((f) => enviarArquivo(f, tipo));
     e.target.value = "";
   };
+  // carregar da galeria/computador: várias fotos e vídeos de uma vez; o tipo vem do próprio arquivo
+  const inputArquivoRef = useRef(null);
+  const aoCarregar = (e) => {
+    Array.from(e.target.files || []).forEach((f) => {
+      if (/^video\//.test(f.type)) enviarArquivo(f, "video");
+      else if (/^image\//.test(f.type)) enviarArquivo(f, "foto");
+      else setErro(`"${f.name}" não é foto nem vídeo.`);
+    });
+    e.target.value = "";
+  };
 
   const remover = (i) => onChange(midiasRef.current.filter((_, idx) => idx !== i));
   const tamanhoMiniatura = compacto ? "w-16 h-16" : "w-20 h-20";
@@ -101,6 +111,11 @@ export default function CapturaMidia({ value, onChange, compacto, baseNome }) {
           <Icone nome="video" className="w-[18px] h-[18px]" /> Vídeo
         </button>
         <input ref={inputVideoRef} type="file" accept="video/*" capture="environment" className="hidden" onChange={aoEscolher("video")} />
+
+        <button type="button" onClick={() => inputArquivoRef.current?.click()} disabled={!baseNome} className={classeBotao} title="Escolher fotos ou vídeos já salvos (galeria do celular ou arquivos do computador)">
+          <Icone nome="upload" className="w-[18px] h-[18px]" /> Carregar
+        </button>
+        <input ref={inputArquivoRef} type="file" accept="image/*,video/*" multiple className="hidden" onChange={aoCarregar} />
       </div>
 
       {!baseNome && <div className="text-xs text-muteddim mt-1.5">Escolha a obra para liberar fotos e vídeos.</div>}
