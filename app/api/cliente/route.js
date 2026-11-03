@@ -22,7 +22,7 @@ export const GET = rotaSegura(async (req) => {
     if (a.ver_ocorrencias_assinadas) {
       const { data: ocs } = await admin.from("ocorrencias").select("id,categoria,descricao,created_at,status,pdf_path,assinatura_cliente,assinatura_cliente_nome")
         .eq("pi_id", pi.id).eq("assinatura_cliente", true).order("created_at", { ascending: false });
-      for (const o of (ocs || []).filter((x) => x.pdf_path && x.status !== "rejeitado")) {
+      for (const o of (ocs || []).filter((x) => x.pdf_path && x.status !== "rejeitada" && x.status !== "rejeitado")) {
         const { data } = await admin.storage.from("documentos").createSignedUrl(o.pdf_path, 3600);
         if (data?.signedUrl) obra.ocorrencias.push({ id: o.id, data: o.created_at, categoria: o.categoria, descricao: o.descricao, status: o.status, assinadoPor: o.assinatura_cliente_nome, url: data.signedUrl });
       }

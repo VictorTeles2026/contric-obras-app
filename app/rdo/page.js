@@ -12,7 +12,7 @@ import { gerarPdfRdoSeguro, nomeBaseAnexo } from "../../lib/pdfRdo";
 import PainelShell from "../../components/PainelShell";
 import CapturaMidia from "../../components/CapturaMidia";
 import FormHoras from "../../components/FormHoras";
-import { CabecalhoPagina, Aviso, EstadoVazio, Spinner } from "../../components/ui";
+import { CabecalhoPagina, Aviso, EstadoVazio, Spinner, SeletorPi } from "../../components/ui";
 import Icone from "../../components/Icone";
 import ColetaAssinatura, { assinaturaValida, faltaNaAssinatura } from "../../components/AssinaturaCanvas";
 import { SeletorModeloRdo, CamposRdoTecnico, tecnicoVazio, faltaNoTecnico, limparTecnico } from "../../components/RdoTecnico";
@@ -130,9 +130,7 @@ export default function RdoPage() {
         {pis.length === 0 ? <EstadoVazio icone="obra" titulo="Nenhum PI" texto="Cadastre um PI no Cronograma primeiro." /> : (
           <>
             <div className="cartao p-4 mb-4 flex flex-col lg:flex-row lg:items-center gap-3">
-              <select value={piAtual?.id || ""} onChange={(e) => trocarPi(e.target.value)} className="input lg:!w-96 min-w-0" aria-label="PI">
-                {pis.map((p) => <option key={p.id} value={p.id}>{p.codigo} — {p.cliente}{p.projeto ? ` — ${p.projeto}` : ""}</option>)}
-              </select>
+              <SeletorPi pis={pis} value={piAtual?.id || ""} onChange={(v) => trocarPi(v)} className="input lg:!w-96 min-w-0" />
               <span className="text-sm text-muted flex flex-wrap items-center gap-1.5 min-w-0">
                 <Icone nome="usuarios" className="w-4 h-4" /> Líder responsável: <strong className="text-textmain">{liderResponsavel ? liderResponsavel.nome : "não identificado"}</strong>
               </span>

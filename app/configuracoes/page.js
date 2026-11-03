@@ -370,7 +370,9 @@ function EditorModeloEmail({ chave, valor, personalizado, onSalvar, onRestaurar 
   );
 }
 
-function EditorAlertas({ chave, valor, personalizado, onSalvar, onRestaurar }) {
+function EditorAlertas({ chave, valor: salvo, personalizado, onSalvar, onRestaurar }) {
+  // configuração salva antes de existir um tipo novo: completa com o padrão (o mesmo que o envio usa)
+  const valor = { ...PADROES.alertas, ...salvo };
   const [v, setV] = useState(valor);
   const [salvando, setSalvando] = useState(false);
   useEffect(() => { setV(valor); }, [JSON.stringify(valor)]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -381,7 +383,7 @@ function EditorAlertas({ chave, valor, personalizado, onSalvar, onRestaurar }) {
       <div className="flex flex-col gap-2.5">
         {TIPOS_ALERTA.map(([k, rotulo, dica]) => (
           <label key={k} className="flex items-start gap-3 cursor-pointer">
-            <input type="checkbox" checked={v[k] !== false} onChange={(e) => setV((p) => ({ ...p, [k]: e.target.checked }))} className="mt-1 w-4 h-4 accent-cyan" />
+            <input type="checkbox" checked={v[k] === true} onChange={(e) => setV((p) => ({ ...p, [k]: e.target.checked }))} className="mt-1 w-4 h-4 accent-cyan" />
             <span className="text-sm"><strong>{rotulo}</strong> <span className="texto-apoio block">{dica}</span></span>
           </label>
         ))}
@@ -393,7 +395,7 @@ function EditorAlertas({ chave, valor, personalizado, onSalvar, onRestaurar }) {
           <input type="time" value={v.silencioFim || ""} onChange={(e) => setV((p) => ({ ...p, silencioFim: e.target.value }))} className="input !w-36" /></label>
       </div>
       <p className="texto-apoio mt-2">E-mails gerados no silêncio saem junto com o resumo diário (por volta das 7h). Os resumos de aprovações e de prazos são enviados uma vez por dia, nesse horário.</p>
-      <Rodape alterado={alterado} salvando={salvando} onSalvar={async () => { setSalvando(true); await onSalvar(chave, v, TIPOS_ALERTA.filter(([k]) => v[k] !== false).map(([, r]) => r).join(", ") || "nenhum"); setSalvando(false); }}
+      <Rodape alterado={alterado} salvando={salvando} onSalvar={async () => { setSalvando(true); await onSalvar(chave, v, TIPOS_ALERTA.filter(([k]) => v[k] === true).map(([, r]) => r).join(", ") || "nenhum"); setSalvando(false); }}
         onDescartar={() => setV(valor)} personalizado={personalizado} onRestaurar={onRestaurar} />
     </>
   );

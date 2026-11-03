@@ -8,7 +8,7 @@ import { useMinhasPis, encontrarPiPorCodigo } from "../lib/dados";
 import { hojeISO, horaCurta, formatarData, formatarHoras } from "../lib/datas";
 import { useToast } from "../lib/Toast";
 import { horasPontoComAlmoco } from "../lib/horas";
-import FormHoras from "./FormHoras";
+import FormHoras, { FormHorasRecursos, podeLancarParaRecursos } from "./FormHoras";
 import UltimosLancamentos from "./UltimosLancamentos";
 import { Esqueleto, EstadoVazio, Segmentado, Aviso, Spinner } from "./ui";
 import Icone from "./Icone";
@@ -27,9 +27,11 @@ export default function PontoHoras({ usuario }) {
     <div className="p-4 flex flex-col gap-5 max-w-xl w-full mx-auto">
       <div className="font-head font-bold text-2xl pt-1">Minhas horas</div>
 
-      <Segmentado valor={modo} onChange={setModo} opcoes={[["checkin", "Check-in / out"], ["manual", "Lançar manual"]]} />
+      <Segmentado valor={modo} onChange={setModo} opcoes={[["checkin", "Check-in / out"], ["manual", "Lançar manual"], ...(podeLancarParaRecursos(usuario) ? [["recursos", "Para recursos"]] : [])]} />
 
-      {carregando ? <Esqueleto linhas={2} altura={120} /> : modo === "checkin"
+      {carregando ? <Esqueleto linhas={2} altura={120} /> : modo === "recursos"
+        ? <FormHorasRecursos usuario={usuario} meusPis={meusPis} todosPis={todosPis} onEnviado={mudou} />
+        : modo === "checkin"
         ? <CheckInOut usuario={usuario} todosPis={todosPis} meusPis={meusPis} onMudou={mudou} />
         : meusPis.length === 0
           ? <div className="cartao"><EstadoVazio icone="obra" titulo="Nenhuma obra" texto="Você ainda não está alocado em nenhuma obra. Peça a alocação ou use o check-in pelo QR Code." /></div>

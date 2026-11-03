@@ -9,7 +9,7 @@ import { hojeISO as todayISO, addDias, isoLocal } from "../../lib/datas";
 import { LISTA_STATUS_ETAPA as STATUS, AREAS, STATUS_PI, COR_STATUS_PI, STATUS_ETAPA, FERIADOS_EXTRAS, datasAlertaEtapa, consolidarMacros } from "../../lib/constantes";
 import { useToast } from "../../lib/Toast";
 import PainelShell from "../../components/PainelShell";
-import { AbasCronograma } from "../../components/ui";
+import { AbasCronograma, SeletorPi } from "../../components/ui";
 import { PainelSuspenso } from "../../components/ui";
 import { Modal, Campo, EstadoVazio, Spinner, Aviso } from "../../components/ui";
 import Icone from "../../components/Icone";
@@ -426,10 +426,7 @@ export default function CronogramaPage() {
     <div className="flex flex-col h-full">
       <div className="md:sticky md:top-0 z-20 bg-white/95 backdrop-blur border-b border-line px-4 md:px-6 py-3">
         <div className="flex flex-wrap items-center gap-2">
-          <select value={piAtual?.id || ""} onChange={(e) => setPiSelecionadoId(e.target.value)} className="input !w-full sm:!w-auto sm:min-w-[280px] sm:max-w-md font-semibold" aria-label="Selecionar PI">
-            <option value="">Selecione o PI...</option>
-            {pis.map((p) => <option key={p.id} value={p.id}>{p.codigo} — {p.cliente}{p.projeto ? ` — ${p.projeto}` : ""}</option>)}
-          </select>
+          <SeletorPi pis={pis} value={piAtual?.id || ""} onChange={(v) => setPiSelecionadoId(v)} className="input !w-full sm:!w-auto sm:min-w-[280px] sm:max-w-md font-semibold" />
           {pode(usuario, "pi.criar") && (
             <button onClick={() => { setPisModalModo("create"); setPisModalAberto(true); }} className="btn btn-primario btn-sm !py-2">
               <Icone nome="mais2" className="w-4 h-4" /> Novo PI

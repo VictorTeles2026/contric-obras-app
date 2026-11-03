@@ -374,3 +374,43 @@ export function AbasRelatorios() {
     </div>
   );
 }
+
+// ---------------- seletor de PI com busca (nº, cliente ou projeto), em ordem numérica ----------------
+// Substitui as listas suspensas comuns de PI. `vazio`: texto da opção "nenhum/todos" (valor "").
+const ordemPi = (a, b) => String(a.codigo || "").localeCompare(String(b.codigo || ""), "pt-BR", { numeric: true });
+export function SeletorPi({ pis = [], value, onChange, vazio = null, className = "input", ariaLabel = "Selecionar PI", desabilitado = false }) {
+  const [aberto, setAberto] = useState(false);
+  const [busca, setBusca] = useState("");
+  const ancoraRef = useRef(null);
+  const atual = pis.find((p) => p.id === value);
+  const termo = busca.trim().toLowerCase();
+  const lista = [...pis].sort(ordemPi).filter((p) => !termo || [p.codigo, p.cliente, p.projeto].some((c) => (c || "").toLowerCase().includes(termo)));
+  const escolher = (id) => { onChange(id); setAberto(false); setBusca(""); };
+  const rotulo = (p) => `${p.codigo} — ${p.cliente || ""}${p.projeto ? ` — ${p.projeto}` : ""}`;
+  return (
+    <div ref={ancoraRef} className="relative min-w-0">
+      <button type="button" disabled={desabilitado} onClick={() => setAberto((v) => !v)} aria-label={ariaLabel} aria-expanded={aberto}
+        className={`${className} !flex items-center gap-2 text-left cursor-pointer`}>
+        <span className={`flex-1 min-w-0 truncate ${atual ? "" : "text-muted"}`}>{atual ? rotulo(atual) : vazio || "Selecione o PI..."}</span>
+        <Icone nome="buscar" className="w-4 h-4 shrink-0 text-muteddim" />
+      </button>
+      <PainelSuspenso ancoraRef={ancoraRef} aberto={aberto} onFechar={() => { setAberto(false); setBusca(""); }} largura={420} alturaMax={420}>
+        <div className="p-1 sticky top-0 bg-white z-10">
+          <input autoFocus value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Buscar por nº, cliente ou projeto"
+            onKeyDown={(e) => { if (e.key === "Enter" && lista.length === 1) escolher(lista[0].id); }} className="input !py-1.5 text-sm" aria-label="Buscar PI" />
+        </div>
+        {vazio && !termo && (
+          <button type="button" onClick={() => escolher("")} className={`w-full text-left px-2.5 py-2 rounded-lg text-sm hover:bg-panel ${!value ? "font-semibold text-cyan" : "text-muted"}`}>{vazio}</button>
+        )}
+        {lista.map((p) => (
+          <button type="button" key={p.id} onClick={() => escolher(p.id)}
+            className={`w-full text-left px-2.5 py-2 rounded-lg text-sm hover:bg-panel ${p.id === value ? "bg-cyan/10" : ""}`}>
+            <span className="font-mono font-semibold text-cyan">{p.codigo}</span> <span className="font-medium">{p.cliente}</span>
+            {p.projeto && <span className="block text-xs text-muted truncate">{p.projeto}</span>}
+          </button>
+        ))}
+        {!lista.length && <div className="px-2.5 py-3 text-sm text-muteddim">Nenhum PI encontrado.</div>}
+      </PainelSuspenso>
+    </div>
+  );
+}

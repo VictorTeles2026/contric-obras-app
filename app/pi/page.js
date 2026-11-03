@@ -3,12 +3,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useTabela, registrarLog, chamarApi } from "../../lib/dados";
+import { useTabela, registrarLog, chamarApi, compararPis } from "../../lib/dados";
 import { useAuth, pode } from "../../lib/AuthContext";
 import { supabase } from "../../lib/supabase";
 import { BUCKET_DOCUMENTOS, linkTemporario, gerarPdfCronograma, gerarExcelCronograma, baseNomeCronograma } from "../../lib/pdfRdo";
 import { formatarData, formatarDataHora, diasAte } from "../../lib/datas";
-import { STATUS_ETAPA, STATUS_PI, COR_STATUS_PI, PRAZOS, TIPOS_RECURSO, etapasEmArvore, consolidarMacros } from "../../lib/constantes";
+import { STATUS_PI, COR_STATUS_PI, PRAZOS, TIPOS_RECURSO, etapasEmArvore, consolidarMacros } from "../../lib/constantes";
 import { useToast } from "../../lib/Toast";
 import PainelShell from "../../components/PainelShell";
 import { CabecalhoPagina, EstadoVazio, Esqueleto, Aviso, Modal, Spinner } from "../../components/ui";
@@ -124,13 +124,26 @@ function ListaPis() {
   const etapas = useMemo(() => consolidarMacros(etapasBrutas), [etapasBrutas]);
   const [busca, setBusca] = useState("");
   const [status, setStatus] = useState("ativo");
+  const [porCliente, setPorCliente] = useState(false); // padrão: nº do PI crescente; opção: separado por cliente
   const termo = busca.trim().toLowerCase();
-  const lista = pis.filter((p) => (!status || p.status === status) && (!termo || [p.codigo, p.cliente, p.projeto].some((c) => (c || "").toLowerCase().includes(termo))));
+  const lista = pis.filter((p) => (!status || p.status === status) && (!termo || [p.codigo, p.cliente, p.projeto].some((c) => (c || "").toLowerCase().includes(termo)))).sort(compararPis);
+  // grupos por cliente (sem diferenciar maiúsculas), em ordem alfabética; dentro de cada um, nº do PI crescente
+  const grupos = useMemo(() => {
+    if (!porCliente) return [{ titulo: null, itens: lista }];
+    const m = new Map();
+    lista.forEach((p) => {
+      const nome = (p.cliente || "").trim() || "Sem cliente", k = nome.toLocaleLowerCase("pt-BR");
+      if (!m.has(k)) m.set(k, { titulo: nome, itens: [] });
+      m.get(k).itens.push(p);
+    });
+    return [...m.values()].sort((a, b) => a.titulo.localeCompare(b.titulo, "pt-BR", { sensitivity: "base" }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [porCliente, pis, status, termo]);
   const progresso = (piId) => {
     const macros = etapas.filter((e) => e.pi_id === piId && !e.parent_etapa_id);
     return macros.length ? Math.round(macros.reduce((s, e) => s + (e.status === "concluida" ? 100 : Number(e.percentual) || 0), 0) / macros.length) : null;
   };
-  const atrasadas = (piId) => etapas.filter((e) => e.pi_id === piId && e.status !== "concluida" && (diasAte(e.data_prevista_fim) ?? 0) < 0).length;
+  const atrasadas = (piId) => etapas.filter((e) => e.pi_id === piId && !e.calculada && e.status !== "concluida" && (diasAte(e.data_prevista_fim) ?? 0) < 0).length; // sem contar a macro junto com as subs
 
   return (
     <div className="p-4 md:p-8">
@@ -144,15 +157,21 @@ function ListaPis() {
           {[["", "Todos"], ...Object.entries(STATUS_PI)].map(([v, l]) => (
             <button key={v} onClick={() => setStatus(v)} className={`chip ${status === v ? "chip-ativo" : ""}`}>{l}</button>
           ))}
+          <button onClick={() => setPorCliente((v) => !v)} aria-pressed={porCliente} className={`chip md:ml-2 ${porCliente ? "chip-ativo" : ""}`} title="Separar os PIs por cliente">
+            <Icone nome="usuarios" className="w-3.5 h-3.5" /> Por cliente
+          </button>
         </div>
       </div>
       {carregando && <Esqueleto linhas={4} altura={72} />}
       {!carregando && lista.length === 0 && <EstadoVazio icone="obra" titulo="Nenhum PI encontrado" texto="Ajuste a busca ou o filtro de status." />}
+      {grupos.map((g) => (
+      <div key={g.titulo || "todos"} className="mb-5">
+      {g.titulo && <div className="titulo-quadro mb-2">{g.titulo} <span className="text-muted font-normal">({g.itens.length})</span></div>}
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
-        {lista.map((p) => {
+        {g.itens.map((p) => {
           const prog = progresso(p.id), atr = atrasadas(p.id);
           return (
-            <Link key={p.id} href={`/pi?id=${p.id}`} onClick={() => setAberta(false)} className="cartao cartao-interativo p-4 flex flex-col gap-2">
+            <Link key={p.id} href={`/pi?id=${p.id}`} className="cartao cartao-interativo p-4 flex flex-col gap-2">
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0">
                   <div className="text-sm font-semibold text-cyan">{p.codigo}</div>
@@ -172,6 +191,8 @@ function ListaPis() {
           );
         })}
       </div>
+      </div>
+      ))}
     </div>
   );
 }

@@ -9,7 +9,7 @@ import { formatarData, formatarDataHora } from "../../../lib/datas";
 import { STATUS_SOLICITACAO, etapasEmArvore } from "../../../lib/constantes";
 import { useToast } from "../../../lib/Toast";
 import PainelShell from "../../../components/PainelShell";
-import { AbasCronograma } from "../../../components/ui";
+import { AbasCronograma, SeletorPi } from "../../../components/ui";
 import CapturaMidia from "../../../components/CapturaMidia";
 import { EstadoVazio, Esqueleto, Modal, Campo, Aviso, Spinner } from "../../../components/ui";
 import Icone from "../../../components/Icone";
@@ -61,9 +61,7 @@ export default function SolicitacoesCronogramaPage() {
     <PainelShell>
       <div className="flex flex-col min-h-full">
         <div className="bg-white border-b border-line px-4 md:px-6 py-3 flex flex-wrap items-center gap-2">
-          <select value={piId} onChange={(e) => setPiId(e.target.value)} className="input !w-full sm:!w-auto sm:min-w-[280px] sm:max-w-md font-semibold" aria-label="Selecionar PI">
-            {pis.map((p) => <option key={p.id} value={p.id}>{p.codigo} — {p.cliente}{p.projeto ? ` — ${p.projeto}` : ""}</option>)}
-          </select>
+          <SeletorPi pis={pis} value={piId} onChange={(v) => setPiId(v)} className="input !w-full sm:!w-auto sm:min-w-[280px] sm:max-w-md font-semibold" />
           {editavel && pi && (
             <button onClick={() => setNovaAberta(true)} className="btn btn-primario btn-sm !py-2 sm:ml-auto">
               <Icone nome="mais2" className="w-4 h-4" /> Registrar solicitação

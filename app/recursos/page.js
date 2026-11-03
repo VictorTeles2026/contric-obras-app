@@ -11,7 +11,7 @@ import { hojeISO, formatarData } from "../../lib/datas";
 import { TIPOS_RECURSO, AREAS, FUNCOES, UNIDADES } from "../../lib/constantes";
 import { useToast } from "../../lib/Toast";
 import PainelShell from "../../components/PainelShell";
-import { Modal, EstadoVazio, Esqueleto, Aviso, Campo, SeletorEquipes } from "../../components/ui";
+import { Modal, EstadoVazio, Esqueleto, Aviso, Campo, SeletorEquipes, SeletorPi } from "../../components/ui";
 import Icone from "../../components/Icone";
 import GraficoUtilizacao from "../../components/GraficoUtilizacao";
 import { ConfirmacaoDupla } from "../../components/AcoesMaster";
@@ -489,10 +489,7 @@ export default function RecursosPage({ searchParams }) {
                 <div className="titulo-quadro">{editandoAlocId ? "Editar alocação" : "Nova alocação"}</div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <Campo rotulo="PI">
-                    <select value={piEscolhido} onChange={(e) => { setPiEscolhido(e.target.value); setEtapaEscolhida(""); setSelecaoEtapas({}); }} className="input">
-                      <option value="">Selecione o PI...</option>
-                      {pis.map((p) => <option key={p.id} value={p.id}>{p.codigo} — {p.cliente}{p.projeto ? ` — ${p.projeto}` : ""}</option>)}
-                    </select>
+                    <SeletorPi pis={pis} value={piEscolhido} onChange={(v) => { setPiEscolhido(v); setEtapaEscolhida(""); setSelecaoEtapas({}); }} className="input" />
                   </Campo>
                   {editandoAlocId ? (
                     <Campo rotulo="Etapa (igual à alocação pelo Cronograma)" className="sm:col-span-2">
@@ -749,10 +746,7 @@ function AlocacaoEmMassaModal({ pis, recursos, opcoesEtapa, etapas, onAplicar, o
       </>}>
       <div className="flex flex-col gap-3 mb-4">
         <Campo rotulo="PI">
-          <select value={piId} onChange={(e) => { setPiId(e.target.value); setEtapaId(""); }} className="input">
-            <option value="">Selecione o PI...</option>
-            {pis.map((p) => <option key={p.id} value={p.id}>{p.codigo} — {p.cliente}{p.projeto ? ` — ${p.projeto}` : ""}</option>)}
-          </select>
+          <SeletorPi pis={pis} value={piId} onChange={(v) => { setPiId(v); setEtapaId(""); }} className="input" />
         </Campo>
         <Campo rotulo="Etapa (igual à alocação pelo Cronograma)">
           <select value={etapaId} disabled={!piId} className="input" onChange={(e) => {

@@ -1,18 +1,18 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { useTabela, registrarLog, chamarApi } from "../../lib/dados";
+import { useTabela, registrarLog, chamarApi, gravarTolerante } from "../../lib/dados";
 import { useAuth, pode } from "../../lib/AuthContext";
 import { supabase } from "../../lib/supabase";
-import { BUCKET_DOCUMENTOS, gerarPdfRdo, gerarPdfOcorrencia, linkTemporario } from "../../lib/pdfRdo";
-import { formatarDataHora } from "../../lib/datas";
+import { BUCKET_DOCUMENTOS, gerarPdfRdo, gerarPdfOcorrencia, linkTemporario, baseNomeRdo, baseNomeOcorrencia } from "../../lib/pdfRdo";
+import { formatarData, formatarDataHora } from "../../lib/datas";
 import { useToast } from "../../lib/Toast";
 import PainelShell from "../../components/PainelShell";
-import { CabecalhoPagina, EstadoVazio, Esqueleto, Aviso, Spinner, Modal } from "../../components/ui";
+import { CabecalhoPagina, EstadoVazio, Esqueleto, Aviso, Spinner, Modal, SeletorPi } from "../../components/ui";
 import Icone from "../../components/Icone";
 import { ConfirmarExclusao } from "../../components/AcoesMaster";
 import { EditorRdo, EditorOcorrencia } from "../../components/Editores";
-import { ehMaster, excluirDocumento } from "../../lib/exclusoes";
+import { excluirDocumento } from "../../lib/exclusoes";
 import { marcarDocumentosLidos } from "../../lib/dados";
 import { CLASSIFICACOES_DOC } from "../../lib/constantes";
 
@@ -98,6 +98,20 @@ export default function DocumentosPage() {
     setPastasPi(pastas || []);
     setPastasCliente(pastasLib || []);
     const todas = [...CLASSIFICACOES, ...(pastas || []).map((p) => [p.prefixo, p.nome])];
+    // PDF que existe na pasta mas perdeu o vínculo com o RDO/ocorrência: religa pelo nome do arquivo
+    const nomes = (lista.data || []).filter((f) => f.id).map((f) => f.name);
+    const usados = new Set([...(rdos || []), ...(ocorrencias || [])].map((x) => x.pdf_path).filter(Boolean));
+    const religar = async (tabela, registros, baseDe) => {
+      for (const r of registros.filter((x) => !x.pdf_path)) {
+        const base = baseDe(r);
+        const nome = nomes.find((n) => !usados.has(`${id}/${n}`) && (n === `${base}.pdf` || (n.startsWith(`${base}_`) && /^_\d+\.pdf$/.test(n.slice(base.length)))));
+        if (!nome) continue;
+        const { error } = await supabase.from(tabela).update({ pdf_path: `${id}/${nome}` }).eq("id", r.id);
+        if (!error) { r.pdf_path = `${id}/${nome}`; usados.add(r.pdf_path); }
+      }
+    };
+    await religar("rdos", rdos || [], (r) => baseNomeRdo(r, pi));
+    await religar("ocorrencias", (ocorrencias || []).filter((o) => !o.rdo_id), (o) => baseNomeOcorrencia(o, pi));
     const itens = [];
     (lista.data || []).filter((f) => f.id && !f.name.startsWith(".")).forEach((f) => {
       itens.push({
@@ -123,8 +137,8 @@ export default function DocumentosPage() {
     ]);
     setClientesPi((acessosPi || []).map((a) => a.clientes).filter(Boolean).sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR")));
     setDocsCliente(docsCliente || []);
-    setResultado({ pi, itens, rdosSemPdf: (rdos || []).filter((r) => !r.pdf_path),
-      ocorrenciasSemPdf: (ocorrencias || []).filter((o) => !o.rdo_id && !o.pdf_path), erro: lista.error?.message });
+    setResultado({ pi, itens, rdosSemPdf: (rdos || []).filter((r) => !r.pdf_path && !r.pdf_dispensado),
+      ocorrenciasSemPdf: (ocorrencias || []).filter((o) => !o.rdo_id && !o.pdf_path && !o.pdf_dispensado), erro: lista.error?.message });
     setBuscando(false);
   };
 
@@ -144,7 +158,6 @@ export default function DocumentosPage() {
   };
 
   // exclusão e edição de documentos: somente Master (registrado na Auditoria)
-  const master = ehMaster(usuario);
   const podeExcluirDoc = pode(usuario, "doc.excluir");
   const podeEditarRegistro = (i) => (i.rdo && pode(usuario, "rdo.editar")) || (i.ocorrencia && pode(usuario, "ocorrencia.editar"));
   const [excluindo, setExcluindo] = useState(null);
@@ -196,15 +209,23 @@ export default function DocumentosPage() {
 
   const gerarFaltantes = async () => {
     setGerando(true);
-    let ok = 0, falhas = 0;
+    let ok = 0, falhas = 0, motivo = "";
     for (const r of resultado.rdosSemPdf) {
-      try { await gerarPdfRdo(r.id); ok++; } catch { falhas++; }
+      try { await gerarPdfRdo(r.id); ok++; } catch (e) { falhas++; motivo = e.message; }
     }
     for (const o of resultado.ocorrenciasSemPdf) {
-      try { await gerarPdfOcorrencia(o.id); ok++; } catch { falhas++; }
+      try { await gerarPdfOcorrencia(o.id); ok++; } catch (e) { falhas++; motivo = e.message; }
     }
     setGerando(false);
-    avisar(`${ok} PDF(s) gerado(s)${falhas ? ` · ${falhas} com erro` : ""}.`, falhas ? "erro" : "sucesso");
+    avisar(`${ok} PDF(s) gerado(s)${falhas ? ` · ${falhas} com erro: ${motivo}` : ""}.`, falhas ? "erro" : "sucesso", falhas ? 9000 : 4000);
+    buscar(resultado.pi.id);
+  };
+  // "não precisa de PDF": tira o item do aviso (o registro continua existindo)
+  const dispensarPdf = async (tabela, id) => {
+    const { error, colunasIgnoradas } = await gravarTolerante({ pdf_dispensado: true }, (d) => supabase.from(tabela).update(d).eq("id", id));
+    if (error) { avisar(`Não foi possível dispensar: ${error.message}`, "erro", 7000); return; }
+    if (colunasIgnoradas?.length) { avisar("Rode o script documentos-pdf-dispensado.sql no Supabase.", "erro", 7000); return; }
+    await registrarLog(usuario, "Dispensou PDF", `${resultado.pi.codigo} — ${tabela === "rdos" ? "RDO" : "ocorrência"} ${id}`);
     buscar(resultado.pi.id);
   };
 
@@ -236,10 +257,7 @@ export default function DocumentosPage() {
         <form onSubmit={(e) => { e.preventDefault(); buscar(); }} className="cartao p-4 mb-5 flex flex-col sm:flex-row sm:items-end gap-3">
           <label className="block flex-1 min-w-0">
             <span className="rotulo">PI</span>
-            <select value={piId} onChange={(e) => setPiId(e.target.value)} className="input">
-              <option value="">Selecione o PI...</option>
-              {pis.map((p) => <option key={p.id} value={p.id}>{p.codigo} — {p.cliente}{p.projeto ? ` — ${p.projeto}` : ""}</option>)}
-            </select>
+            <SeletorPi pis={pis} value={piId} onChange={(v) => setPiId(v)} className="input" />
           </label>
           <button type="submit" disabled={!piId || buscando} className="btn btn-primario sm:min-w-[130px]">
             {buscando ? <><Spinner /> Buscando...</> : <><Icone nome="buscar" className="w-4 h-4" /> Buscar</>}
@@ -281,6 +299,21 @@ export default function DocumentosPage() {
                       {gerando ? <><Spinner /> Gerando...</> : "Gerar PDFs"}
                     </button>
                   )}
+                </div>
+                {/* quais são: dá para gerar todos ou dispensar os que não precisam de PDF */}
+                <div className="mt-2 flex flex-col gap-1 text-xs">
+                  {resultado.rdosSemPdf.map((r) => (
+                    <div key={r.id} className="flex items-center gap-2">
+                      <span className="flex-1 min-w-0 truncate">RDO{r.modelo === "tecnico" ? " Técnico" : ""} de {formatarData(r.data)} · {r.status}</span>
+                      {editavel && <button onClick={() => dispensarPdf("rdos", r.id)} className="underline shrink-0">Não precisa de PDF</button>}
+                    </div>
+                  ))}
+                  {resultado.ocorrenciasSemPdf.map((o) => (
+                    <div key={o.id} className="flex items-center gap-2">
+                      <span className="flex-1 min-w-0 truncate">Ocorrência {o.categoria} · {o.created_at ? formatarData(o.created_at.slice(0, 10)) : ""} · {o.status}</span>
+                      {editavel && <button onClick={() => dispensarPdf("ocorrencias", o.id)} className="underline shrink-0">Não precisa de PDF</button>}
+                    </div>
+                  ))}
                 </div>
               </Aviso>
             )}
@@ -419,7 +452,7 @@ export default function DocumentosPage() {
       )}
       {excluindo && (
         <ConfirmarExclusao titulo="Excluir documento"
-          descricao={`O arquivo "${excluindo.nome}" será apagado.${excluindo.rdo || excluindo.ocorrencia ? " O registro (RDO/ocorrência) continua existindo e o PDF pode ser gerado de novo aqui." : ""}`}
+          descricao={`O arquivo "${excluindo.nome}" será apagado.${excluindo.rdo || excluindo.ocorrencia ? " O registro (RDO/ocorrência) continua existindo e não será mais cobrado aqui; se quiser o PDF de novo, abra o registro e salve." : ""}`}
           onFechar={() => setExcluindo(null)}
           onConfirmar={async (motivo) => {
             const r = await excluirDocumento({ caminho: excluindo.caminho, pi: resultado.pi, usuario, motivo });

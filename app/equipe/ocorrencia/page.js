@@ -14,7 +14,7 @@ import MobileShell from "../../../components/MobileShell";
 import CapturaMidia from "../../../components/CapturaMidia";
 import ColetaAssinatura, { assinaturaValida, faltaNaAssinatura } from "../../../components/AssinaturaCanvas";
 import { EditorOcorrencia } from "../../../components/Editores";
-import { Esqueleto, EstadoVazio, Spinner } from "../../../components/ui";
+import { Esqueleto, EstadoVazio, Spinner, SeletorPi } from "../../../components/ui";
 import Icone from "../../../components/Icone";
 
 const COR = { pendente: "bg-amber/10 text-amber", aprovada: "bg-green/10 text-green", rejeitada: "bg-red/10 text-red" };
@@ -83,14 +83,7 @@ export default function EquipeOcorrenciaPage() {
             <div className="cartao p-4 flex flex-col gap-4">
               <label className="block">
                 <span className="rotulo">Obra</span>
-                <select value={piId} onChange={(e) => setPiId(e.target.value)} className="input input-lg">
-                  <option value="">Selecione...</option>
-                  {porCliente.map(([cliente, pisDoCliente]) => (
-                    <optgroup key={cliente} label={cliente}>
-                      {pisDoCliente.map((p) => <option key={p.id} value={p.id}>{p.codigo}{p.projeto ? ` — ${p.projeto}` : ""}</option>)}
-                    </optgroup>
-                  ))}
-                </select>
+                <SeletorPi pis={porCliente.flatMap(([, l]) => l)} value={piId} onChange={(v) => setPiId(v)} className="input input-lg" />
               </label>
               <div>
                 <span className="rotulo">Tipo</span>

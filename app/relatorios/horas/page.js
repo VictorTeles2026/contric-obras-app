@@ -5,7 +5,7 @@ import { useTabela } from "../../../lib/dados";
 import { hojeISO, addDias, isoLocal, dataLocal, formatarData, horaCurta } from "../../../lib/datas";
 import { horasDoLancamento, fmtH } from "../../../lib/horas";
 import PainelShell from "../../../components/PainelShell";
-import { AbasRelatorios } from "../../../components/ui";
+import { AbasRelatorios, SeletorPi } from "../../../components/ui";
 import { CabecalhoPagina, EstadoVazio, Esqueleto, Campo } from "../../../components/ui";
 import Icone from "../../../components/Icone";
 import { gerarExcelTabela } from "../../../lib/pdfRdo";
@@ -28,7 +28,6 @@ function diasEntre(de, ate) {
   for (let d = de; d <= ate && out.length < 400; d = addDias(d, 1)) out.push(d);
   return out;
 }
-const csv = (v) => `"${String(v ?? "").replace(/"/g, '""')}"`;
 const num = (n) => (Number(n) || 0).toLocaleString("pt-BR", { maximumFractionDigits: 2 });
 
 export default function ControleHorasPage() {
@@ -55,8 +54,9 @@ export default function ControleHorasPage() {
   const linhas = useMemo(() => apontamentos
     .filter((a) => a.status !== "rejeitado")
     .map((a) => {
-      const pessoa = usuarios.find((u) => u.id === a.usuario_id);
-      const recurso = recursos.find((r) => r.usuario_id === a.usuario_id);
+      // horas de recurso sem usuário (equipamento, veículo...): o "nome" é o do recurso
+      const recurso = (a.recurso_id && recursos.find((r) => r.id === a.recurso_id)) || (a.usuario_id ? recursos.find((r) => r.usuario_id === a.usuario_id) : null);
+      const pessoa = usuarios.find((u) => u.id === a.usuario_id) || (recurso ? { id: `r-${recurso.id}`, nome: recurso.nome, funcao: recurso.atributos?.funcao || "Recurso" } : undefined);
       const empresa = empresas.find((e) => e.id === recurso?.empresa_terceira_id);
       const pi = pis.find((p) => p.id === a.pi_id);
       const h = horasDoLancamento(a);
@@ -132,10 +132,7 @@ export default function ControleHorasPage() {
             <Campo rotulo="De"><input type="date" value={de} max={ate} onChange={(e) => setDe(e.target.value)} className="input" /></Campo>
             <Campo rotulo="Até"><input type="date" value={ate} min={de} onChange={(e) => setAte(e.target.value)} className="input" /></Campo>
             <Campo rotulo="PI">
-              <select value={piId} onChange={(e) => setPiId(e.target.value)} className="input">
-                <option value="">Todos</option>
-                {pis.map((p) => <option key={p.id} value={p.id}>{p.codigo} — {p.cliente}</option>)}
-              </select>
+              <SeletorPi pis={pis} value={piId} onChange={(v) => setPiId(v)} vazio="Todos" className="input" />
             </Campo>
             <Campo rotulo="Cliente">
               <select value={cliente} onChange={(e) => setCliente(e.target.value)} className="input">

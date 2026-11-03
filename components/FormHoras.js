@@ -2,13 +2,14 @@
 
 import { useMemo, useState } from "react";
 import { supabase } from "../lib/supabase";
-import { registrarLog, gravarTolerante } from "../lib/dados";
+import { registrarLog, gravarTolerante, useTabela } from "../lib/dados";
 import { agruparPorCliente } from "../lib/dados";
 import { hojeISO, addDias, formatarHoras } from "../lib/datas";
 import { horasComAlmoco, dividirHoras } from "../lib/horas";
 import { JORNADA } from "../lib/constantes";
 import { useToast } from "../lib/Toast";
-import { Spinner } from "./ui";
+import { Spinner, SeletorPi, Segmentado } from "./ui";
+import { valorPermissao } from "../lib/permissoes";
 
 // Lançamento manual de horas do dia.
 // - O almoço (padrão 12:00–13:00, em Configurações → Jornada) é descontado automaticamente.
@@ -158,6 +159,120 @@ export default function FormHoras({ usuario, pis, onEnviado, compacto = false })
         {enviando ? <><Spinner /> Enviando...</> : pisSelecionados.length > 1 ? `Enviar horas (${pisSelecionados.length} obras)` : "Enviar horas"}
       </button>
       {!compacto && pisSelecionados.length === 0 && <div className="text-xs text-center text-muteddim -mt-2">Selecione {variasObras ? "pelo menos uma obra" : "a obra"}.</div>}
+    </div>
+  );
+}
+
+// ---------------- Lançar horas para recursos e mão de obra ----------------
+// Quem pode: permissão "horas.lancar_equipe" (S = todos os PIs e recursos; P = só os PIs em que
+// a pessoa está alocada e os recursos alocados neles — caso do líder). Nunca para o pessoal de campo.
+export const podeLancarParaRecursos = (usuario) =>
+  !!usuario && !["funcionario", "terceiro"].includes(usuario.perfil) && ["S", "P"].includes(valorPermissao(usuario, "horas.lancar_equipe"));
+
+export function FormHorasRecursos({ usuario, meusPis, todosPis, onEnviado }) {
+  const { avisar } = useToast();
+  const escopoTotal = valorPermissao(usuario, "horas.lancar_equipe") === "S";
+  const pisDisponiveis = (escopoTotal ? todosPis.filter((p) => p.status === "ativo" || !p.status) : meusPis);
+  const { dados: recursos } = useTabela("recursos", { order: { coluna: "nome" } });
+  const { dados: alocacoes } = useTabela("alocacoes_recurso", { select: "recurso_id,pi_id" });
+  const [piId, setPiId] = useState(pisDisponiveis.length === 1 ? pisDisponiveis[0].id : "");
+  const [soAlocados, setSoAlocados] = useState(true);
+  const [busca, setBusca] = useState("");
+  const [marcados, setMarcados] = useState([]);
+  const [data, setData] = useState(hojeISO());
+  const [modo, setModo] = useState("horario"); // horario | total
+  const [inicio, setInicio] = useState("07:00");
+  const [fim, setFim] = useState("17:00");
+  const [total, setTotal] = useState("");
+  const [enviando, setEnviando] = useState(false);
+
+  const alocadosNoPi = new Set(alocacoes.filter((a) => a.pi_id === piId).map((a) => a.recurso_id));
+  const termo = busca.trim().toLowerCase();
+  // líder (escopo P): sempre só os alocados no PI; demais: alocados por padrão, ou todos se desmarcar
+  const visivel = (r) => (!escopoTotal || soAlocados ? alocadosNoPi.has(r.id) : true);
+  const lista = recursos.filter((r) => r.ativo !== false && visivel(r) && (!termo || (r.nome || "").toLowerCase().includes(termo)));
+  const maoDeObra = lista.filter((r) => r.tipo === "mao_obra_propria" || r.tipo === "mao_obra_terceira");
+  const outros = lista.filter((r) => !maoDeObra.includes(r));
+  const h = horasComAlmoco(inicio, fim);
+  const horas = modo === "total" ? Math.round((Number(total) || 0) * 4) / 4 : Math.round(h.liquidas * 4) / 4;
+  const pode = piId && marcados.length > 0 && horas > 0 && horas <= 24 && data <= hojeISO() && !enviando;
+  const marcar = (id) => setMarcados((p) => (p.includes(id) ? p.filter((x) => x !== id) : [...p, id]));
+
+  const enviar = async () => {
+    if (!pode) return;
+    setEnviando(true);
+    const linhas = marcados.map((rid) => {
+      const r = recursos.find((x) => x.id === rid);
+      return {
+        usuario_id: r?.usuario_id || null, recurso_id: rid, lancado_por: usuario.id, pi_id: piId, data, horas_totais: horas, status: "pendente",
+        ...(modo === "horario" ? { hora_inicio: inicio, hora_fim: fim } : {}),
+      };
+    });
+    const { error } = await supabase.from("apontamentos_horas").insert(linhas);
+    setEnviando(false);
+    if (error) {
+      avisar(/recurso_id|lancado_por|null value/i.test(error.message) ? "Rode o script horas-recursos.sql no Supabase." : `Não foi possível lançar: ${error.message}`, "erro", 8000);
+      return;
+    }
+    const pi = pisDisponiveis.find((p) => p.id === piId);
+    await registrarLog(usuario, "Lançou horas para recursos", `${pi?.codigo} — ${data} · ${horas}h · ${marcados.map((id) => recursos.find((r) => r.id === id)?.nome).join(", ")}`);
+    avisar(`${linhas.length} lançamento(s) de ${formatarHoras(horas)} enviados para validação.`);
+    setMarcados([]); onEnviado?.();
+  };
+
+  const item = (r) => (
+    <label key={r.id} className={`flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm cursor-pointer border ${marcados.includes(r.id) ? "border-cyan/40 bg-cyan/5" : "border-transparent bg-panel"}`}>
+      <input type="checkbox" className="accent-cyan w-4 h-4" checked={marcados.includes(r.id)} onChange={() => marcar(r.id)} />
+      <span className="flex-1 min-w-0 truncate">{r.nome}</span>
+      {!r.usuario_id && (r.tipo === "mao_obra_propria" || r.tipo === "mao_obra_terceira") && <span className="text-[10px] text-muteddim">sem usuário</span>}
+    </label>
+  );
+  return (
+    <div className="flex flex-col gap-4">
+      <div>
+        <span className="rotulo">Obra</span>
+        <SeletorPi pis={pisDisponiveis} value={piId} onChange={(v) => { setPiId(v); setMarcados([]); }} className="input" />
+        {!escopoTotal && <div className="texto-apoio mt-1">Somente as obras em que você está alocado e os recursos alocados nelas.</div>}
+      </div>
+      {piId && (
+        <div>
+          <div className="flex items-center justify-between gap-2 mb-1.5">
+            <span className="rotulo !mb-0">Recursos e mão de obra ({marcados.length} marcado(s))</span>
+            {escopoTotal && (
+              <label className="flex items-center gap-1.5 text-xs text-muted cursor-pointer">
+                <input type="checkbox" className="accent-cyan" checked={soAlocados} onChange={(e) => setSoAlocados(e.target.checked)} /> só alocados neste PI
+              </label>
+            )}
+          </div>
+          <input value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Buscar recurso..." className="input !py-1.5 mb-2" aria-label="Buscar recurso" />
+          <div className="flex flex-col gap-1 max-h-72 overflow-y-auto rolagem-fina">
+            {maoDeObra.length > 0 && <div className="text-[11px] font-semibold text-muted uppercase tracking-wide mt-1">Mão de obra</div>}
+            {maoDeObra.map(item)}
+            {outros.length > 0 && <div className="text-[11px] font-semibold text-muted uppercase tracking-wide mt-2">Equipamentos, veículos e outros</div>}
+            {outros.map(item)}
+            {!lista.length && <div className="text-sm text-muteddim py-2">Nenhum recurso {soAlocados || !escopoTotal ? "alocado neste PI" : "encontrado"}.</div>}
+          </div>
+        </div>
+      )}
+      <div>
+        <span className="rotulo">Dia</span>
+        <input type="date" value={data} max={hojeISO()} onChange={(e) => setData(e.target.value)} className="input" />
+      </div>
+      <Segmentado valor={modo} onChange={setModo} opcoes={[["horario", "Entrada e saída"], ["total", "Total de horas"]]} />
+      {modo === "horario" ? (
+        <div className="grid grid-cols-2 gap-3">
+          <label className="block"><span className="rotulo">Entrada</span><input type="time" value={inicio} onChange={(e) => setInicio(e.target.value)} className="input" /></label>
+          <label className="block"><span className="rotulo">Saída</span><input type="time" value={fim} onChange={(e) => setFim(e.target.value)} className="input" /></label>
+          <div className="col-span-2 text-sm text-muted">Horas por recurso: <strong className="text-textmain">{formatarHoras(horas)}</strong>{h.almoco > 0 ? ` (almoço ${JORNADA.almocoInicio}–${JORNADA.almocoFim} descontado)` : ""}</div>
+        </div>
+      ) : (
+        <label className="block"><span className="rotulo">Horas por recurso</span>
+          <input type="number" min="0.25" max="24" step="0.25" value={total} onChange={(e) => setTotal(e.target.value)} className="input" placeholder="Ex: 8" /></label>
+      )}
+      <button onClick={enviar} disabled={!pode} className="btn btn-alerta w-full">
+        {enviando ? <><Spinner /> Enviando...</> : `Lançar ${formatarHoras(horas || 0)} para ${marcados.length || 0} recurso(s)`}
+      </button>
+      <div className="texto-apoio">Os lançamentos vão para validação em Aprovações, como as horas de qualquer pessoa.</div>
     </div>
   );
 }

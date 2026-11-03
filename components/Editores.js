@@ -9,7 +9,7 @@ import { LISTA_STATUS_ETAPA, CATEGORIAS_OCORRENCIA, STATUS_PI } from "../lib/con
 import { horasEntreHorarios, hojeISO, isoLocal, addDias } from "../lib/datas";
 import { nomeBaseAnexo } from "../lib/pdfRdo";
 import { salvarEdicaoRdo, salvarEdicaoHoras, salvarEdicaoSolicitacao, salvarEdicaoOcorrencia } from "../lib/edicoes";
-import { Modal, Campo, Aviso, Spinner } from "./ui";
+import { Modal, Campo, Aviso, Spinner, SeletorPi } from "./ui";
 import CapturaMidia from "./CapturaMidia";
 import Icone from "./Icone";
 import { CamposRdoTecnico, tecnicoVazio, limparTecnico } from "./RdoTecnico";
@@ -178,9 +178,7 @@ export function EditorHoras({ registro, pis, comoAprovador, onFechar, onSalvo })
       rodape={<Rodape onFechar={onFechar} onSalvar={salvar} salvando={salvando} podeSalvar={valido} />}>
       <div className="flex flex-col gap-4">
         <Campo rotulo="Obra">
-          <select value={piId} onChange={(e) => setPiId(e.target.value)} className="input">
-            {pis.map((p) => <option key={p.id} value={p.id}>{p.codigo} — {p.cliente}</option>)}
-          </select>
+          <SeletorPi pis={pis} value={piId} onChange={(v) => setPiId(v)} className="input" />
         </Campo>
         <Campo rotulo="Dia trabalhado">
           <input type="date" value={data} max={isoLocal(new Date())} onChange={(e) => setData(e.target.value)} className="input" />

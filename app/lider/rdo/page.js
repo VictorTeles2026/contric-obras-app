@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useTabela, registrarLog, gravarTolerante } from "../../../lib/dados";
 import { useAuth } from "../../../lib/AuthContext";
 import { supabase } from "../../../lib/supabase";
-import { useMinhasPis, agruparPorCliente } from "../../../lib/dados";
+import { useMinhasPis } from "../../../lib/dados";
 import { NAV_LIDER } from "../../../lib/nav";
 import { hojeISO } from "../../../lib/datas";
 import { STATUS_ETAPA, LISTA_STATUS_ETAPA, CATEGORIAS_OCORRENCIA, etapasEmArvore, resumoDasSubs } from "../../../lib/constantes";
@@ -14,7 +14,7 @@ import { gerarPdfRdoSeguro, nomeBaseAnexo } from "../../../lib/pdfRdo";
 import MobileShell from "../../../components/MobileShell";
 import ColetaAssinatura, { assinaturaValida, faltaNaAssinatura } from "../../../components/AssinaturaCanvas";
 import CapturaMidia from "../../../components/CapturaMidia";
-import { Esqueleto, EstadoVazio, TelaSucesso, Aviso, Spinner } from "../../../components/ui";
+import { Esqueleto, EstadoVazio, TelaSucesso, Aviso, Spinner, SeletorPi } from "../../../components/ui";
 import Icone from "../../../components/Icone";
 import { SeletorModeloRdo, CamposRdoTecnico, tecnicoVazio, faltaNoTecnico, limparTecnico } from "../../../components/RdoTecnico";
 
@@ -27,7 +27,6 @@ export default function LiderRdoPage() {
   const { meusPis, carregando } = useMinhasPis(usuario);
   const [piEscolhidoId, setPiEscolhidoId] = useState(null);
   const piAtivo = meusPis.find((p) => p.id === piEscolhidoId) || meusPis[0];
-  const porCliente = useMemo(() => agruparPorCliente(meusPis), [meusPis]);
   const { dados: etapas } = useTabela("etapas");
   const { dados: meusRdos } = useTabela("rdos", { filtro: [["lider_id", usuario?.id]] });
   const etapasDoPi = useMemo(() => (piAtivo ? etapasEmArvore(etapas.filter((e) => e.pi_id === piAtivo.id)) : []), [etapas, piAtivo]);
@@ -175,13 +174,7 @@ export default function LiderRdoPage() {
           <div className="titulo-destaque mt-0.5">{piAtivo.projeto || piAtivo.cliente}</div>
           {piAtivo.projeto && <div className="text-sm text-muted">{piAtivo.cliente}</div>}
           {meusPis.length > 1 && (
-            <select value={piAtivo.id} onChange={(e) => trocarPi(e.target.value)} className="input mt-3" aria-label="Trocar de obra">
-              {porCliente.map(([cliente, pisDoCliente]) => (
-                <optgroup key={cliente} label={cliente}>
-                  {pisDoCliente.map((p) => <option key={p.id} value={p.id}>{p.codigo} — {p.projeto || p.cliente}</option>)}
-                </optgroup>
-              ))}
-            </select>
+            <div className="mt-3"><SeletorPi pis={meusPis} value={piAtivo.id} onChange={(v) => trocarPi(v)} className="input" /></div>
           )}
         </div>
 

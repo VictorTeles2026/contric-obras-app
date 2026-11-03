@@ -48,6 +48,12 @@ export default function AprovacoesPage() {
 
   const piInfo = (id) => pis.find((p) => p.id === id);
   const nomeUsuario = (id) => usuarios.find((u) => u.id === id)?.nome || "—";
+  // horas lançadas para um recurso (equipamento, veículo ou mão de obra sem usuário): mostra o recurso e quem lançou
+  const { dados: recursosH } = useTabela("recursos", { select: "id,nome" });
+  const nomeHoras = (h) => {
+    const nome = h.usuario_id ? nomeUsuario(h.usuario_id) : recursosH.find((r) => r.id === h.recurso_id)?.nome || "Recurso";
+    return h.lancado_por && h.lancado_por !== h.usuario_id ? `${nome} (lançado por ${nomeUsuario(h.lancado_por)})` : nome;
+  };
   const agora = () => new Date().toISOString();
 
   // ---------------- RDO ----------------
@@ -58,6 +64,8 @@ export default function AprovacoesPage() {
     if (aplicarNoCronograma) {
       const mudancas = (rdo.atividades || []).filter((a) => {
         const e = etapas.find((x) => x.id === a.etapa_id);
+        // macro com sub-etapas é calculada: RDOs antigos que traziam a macro não podem sobrescrevê-la
+        if (e && etapas.some((s) => s.parent_etapa_id === e.id)) return false;
         return e && (e.status !== a.status || Number(e.percentual || 0) !== Number(a.percentual || 0));
       });
       const resultados = await Promise.all(mudancas.map((a) =>
@@ -90,7 +98,7 @@ export default function AprovacoesPage() {
       status: "aprovado", decidido_por: usuario.id, decidido_em: agora(), horas_normais: normais, horas_extras: extras,
     }).eq("id", h.id);
     if (error) { avisar(`Erro ao aprovar: ${error.message}`, "erro", 6000); return; }
-    await registrarLog(usuario, "Aprovou horas", `${nomeUsuario(h.usuario_id)} · ${piInfo(h.pi_id)?.codigo} — ${normais}h normais + ${extras}h extras`);
+    await registrarLog(usuario, "Aprovou horas", `${nomeHoras(h)} · ${piInfo(h.pi_id)?.codigo} — ${normais}h normais + ${extras}h extras`);
     await notificar(h.usuario_id, `Horas aprovadas — ${formatarData(h.data)}`, `${piInfo(h.pi_id)?.codigo}: ${normais}h normais${extras ? ` + ${extras}h extras` : ""}. Aprovado por ${usuario.nome}.`);
     recarregarHoras();
     avisar("Horas aprovadas.");
@@ -98,7 +106,7 @@ export default function AprovacoesPage() {
   const reprovarHoras = async (h, motivo) => {
     const { error } = await supabase.from("apontamentos_horas").update({ status: "rejeitado", decidido_por: usuario.id, decidido_em: agora(), motivo_rejeicao: motivo }).eq("id", h.id);
     if (error) { avisar(`Erro ao reprovar: ${error.message}`, "erro", 6000); return; }
-    await registrarLog(usuario, "Reprovou horas", `${nomeUsuario(h.usuario_id)} · ${piInfo(h.pi_id)?.codigo} · motivo: ${motivo}`);
+    await registrarLog(usuario, "Reprovou horas", `${nomeHoras(h)} · ${piInfo(h.pi_id)?.codigo} · motivo: ${motivo}`);
     await notificar(h.usuario_id, `Horas reprovadas — ${formatarData(h.data)}`, `${piInfo(h.pi_id)?.codigo}. Reprovado por ${usuario.nome}.\nMotivo: ${motivo}`);
     recarregarHoras();
     avisar("Horas reprovadas — a pessoa foi notificada.", "info");
@@ -231,11 +239,11 @@ export default function AprovacoesPage() {
             {!c2 && horasPendentes.length === 0 && <EstadoVazio icone="relogio" titulo="Tudo em dia" texto="Nenhum registro de horas pendente." />}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               {cartoesHoras.map(({ chave, itens }) => itens.length > 1 ? (
-                <GrupoHorasCard key={`${chave}-${itens.map((h) => h.horas_totais).join("|")}`} itens={itens} piInfo={piInfo} pessoa={nomeUsuario(itens[0].usuario_id)}
+                <GrupoHorasCard key={`${chave}-${itens.map((h) => h.horas_totais).join("|")}`} itens={itens} piInfo={piInfo} pessoa={nomeHoras(itens[0])}
                   editavel={podeHoras} onAprovar={aprovarGrupo} onReprovar={(m) => reprovarGrupo(itens, m)} />
               ) : itens.map((h) => (
                 // a chave inclui o total: quando o check-out ou uma edição chega, o card reinicia os campos com o valor novo
-                <HorasCard key={`${h.id}-${h.horas_totais}`} registro={h} pi={piInfo(h.pi_id)} pessoa={nomeUsuario(h.usuario_id)} editavel={podeHoras}
+                <HorasCard key={`${h.id}-${h.horas_totais}`} registro={h} pi={piInfo(h.pi_id)} pessoa={nomeHoras(h)} editavel={podeHoras}
                   editadoPor={h.editado_por ? nomeUsuario(h.editado_por) : null}
                   onAprovar={aprovarHoras} onReprovar={(m) => reprovarHoras(h, m)} onEditar={() => setEditando({ tipo: "horas", item: h })}
                   rodapeMaster={<AcoesMaster permissaoExcluir="horas.excluir" excluir={(motivo) => excluirHoras({ registro: h, pi: piInfo(h.pi_id), pessoa: usuarios.find((u) => u.id === h.usuario_id), usuario, motivo })}

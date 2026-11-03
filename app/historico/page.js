@@ -8,7 +8,7 @@ import { STATUS_ETAPA } from "../../lib/constantes";
 import { excluirRdo, excluirHoras, excluirOcorrencia } from "../../lib/exclusoes";
 import { supabase } from "../../lib/supabase";
 import PainelShell from "../../components/PainelShell";
-import { AbasAprovacoes } from "../../components/ui";
+import { AbasAprovacoes, SeletorPi } from "../../components/ui";
 import AcoesMaster from "../../components/AcoesMaster";
 import { EditorRdo, EditorHoras, EditorOcorrencia } from "../../components/Editores";
 import { ResumoRdoTecnico } from "../../components/RdoTecnico";
@@ -70,10 +70,7 @@ export default function HistoricoPage() {
           {[["", "Todos"], ["rdo", "RDOs"], ["horas", "Horas"], ["ocorrencia", "Ocorrências"]].map(([v, l]) => (
             <button key={v} onClick={() => { setFiltro(v); setLimite(POR_PAGINA); }} className={`chip ${filtro === v ? "chip-ativo" : ""}`}>{l}</button>
           ))}
-          <select value={filtroPi} onChange={(e) => { setFiltroPi(e.target.value); setLimite(POR_PAGINA); }} className="input !w-auto sm:ml-auto">
-            <option value="">Todos os PIs</option>
-            {[...pis].sort((a, b) => (a.codigo || "").localeCompare(b.codigo || "")).map((p) => <option key={p.id} value={p.id}>{p.codigo} — {p.cliente}</option>)}
-          </select>
+          <SeletorPi pis={[...pis].sort((a, b) => (a.codigo || "").localeCompare(b.codigo || ""))} value={filtroPi} onChange={(v) => { setFiltroPi(v); setLimite(POR_PAGINA); }} vazio="Todos os PIs" className="input !w-auto sm:ml-auto" />
         </div>
 
         {(c1 || c2) && <Esqueleto linhas={4} altura={72} />}

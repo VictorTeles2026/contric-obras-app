@@ -9,7 +9,7 @@ import { useToast } from "../../lib/Toast";
 import PainelShell from "../../components/PainelShell";
 import VerSenhas from "../../components/VerSenhas";
 import { ConfirmarExclusao } from "../../components/AcoesMaster";
-import { CabecalhoPagina, EstadoVazio, Esqueleto, Aviso, Modal, Campo, Spinner } from "../../components/ui";
+import { CabecalhoPagina, EstadoVazio, Esqueleto, Aviso, Modal, Campo, Spinner, SeletorPi } from "../../components/ui";
 import Icone from "../../components/Icone";
 import { FormCliente, Credenciais } from "../../components/Editores";
 
@@ -180,10 +180,7 @@ function GerenciarAcessos({ cliente, pis, acessos, onFechar, onMudou, usuario })
       <div className="flex flex-col gap-4">
         <div className="rounded-xl border border-cyan/30 bg-cyan/5 p-3.5 flex flex-col gap-3">
           <div className="font-semibold text-sm">Dar acesso a um PI</div>
-          <select value={piId} onChange={(e) => setPiId(e.target.value)} className="input">
-            <option value="">Selecione o PI...</option>
-            {pis.filter((p) => !jaTem(p.id)).map((p) => <option key={p.id} value={p.id}>{p.codigo} — {p.cliente}{p.projeto ? ` — ${p.projeto}` : ""}</option>)}
-          </select>
+          <SeletorPi pis={pis.filter((p) => !jaTem(p.id))} value={piId} onChange={(v) => setPiId(v)} className="input" />
           <div className="flex flex-wrap gap-2">
             {ACESSOS.map(([k, l]) => (
               <label key={k} className={`chip cursor-pointer ${flags[k] ? "chip-ativo" : ""}`}>

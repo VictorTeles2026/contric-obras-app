@@ -6,7 +6,7 @@ import { useAuth, pode } from "../../lib/AuthContext";
 import { supabase } from "../../lib/supabase";
 import { useToast } from "../../lib/Toast";
 import PainelShell from "../../components/PainelShell";
-import { CabecalhoPagina, EstadoVazio, Aviso, Spinner } from "../../components/ui";
+import { CabecalhoPagina, EstadoVazio, Aviso, Spinner, SeletorPi } from "../../components/ui";
 import Icone from "../../components/Icone";
 import { formatarData, horaCurta } from "../../lib/datas";
 import AcoesMaster from "../../components/AcoesMaster";
@@ -94,10 +94,7 @@ export default function RelatoriosPage() {
         <div className="cartao p-4 mb-5 flex flex-col lg:flex-row lg:items-end gap-4 print:hidden">
           <label className="block flex-1 min-w-0">
             <span className="rotulo">PI</span>
-            <select value={piId} onChange={(e) => setPiId(e.target.value)} className="input">
-              <option value="">Selecione o PI...</option>
-              {pis.map((p) => <option key={p.id} value={p.id}>{p.codigo} — {p.cliente}{p.projeto ? ` — ${p.projeto}` : ""}</option>)}
-            </select>
+            <SeletorPi pis={pis} value={piId} onChange={(v) => setPiId(v)} className="input" />
           </label>
           <div className="flex items-center gap-2">
             <Flag rotulo="Custo" marcado={comCusto} onChange={setComCusto} />
@@ -155,6 +152,8 @@ function LancamentosHoras({ lancamentos, usuarios, categorias, pis, pi, editavel
   const master = pode(usuario, "relatorio.editar") && pode(usuario, "horas.excluir"); // ações restritas sobre lançamentos
   const [salvando, setSalvando] = useState({});
   const pessoa = (id) => usuarios.find((u) => u.id === id);
+  const { dados: recursosH } = useTabela("recursos", { select: "id,nome" });
+  const nomeLancamento = (l) => pessoa(l.usuario_id)?.nome || recursosH.find((r) => r.id === l.recurso_id)?.nome || "—";
   const inicio = (l) => (l.entrada ? horaCurta(l.entrada) : l.hora_inicio || "—");
   const fim = (l) => (l.saida ? horaCurta(l.saida) : l.entrada ? "em aberto" : l.hora_fim || "—");
   const semCodigo = lancamentos.filter((l) => (l.normais > 0 && !l.categoria_normal_id) || (l.extras > 0 && !l.categoria_extra_id)).length;
@@ -220,7 +219,7 @@ function LancamentosHoras({ lancamentos, usuarios, categorias, pis, pi, editavel
                 return (
                   <tr key={l.id} className="hover:bg-panel/50">
                     <td className="px-3 py-2 font-medium">
-                      {p?.nome || "—"}
+                      {p?.nome || nomeLancamento(l)}
                       {l.status === "pendente" && <span className="selo bg-amber/10 text-amber ml-1.5" title="Ainda não aprovado — conta como horas normais">pendente</span>}
                     </td>
                     <td className="px-3 py-2 text-muted">{p?.funcao || "—"}</td>
