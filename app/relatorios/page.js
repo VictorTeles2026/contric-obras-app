@@ -99,7 +99,7 @@ export default function RelatoriosPage() {
     });
     const secoes = [];
     if (visualizando.custo) secoes.push({ titulo: "Compra — Produto ou Serviço", tipo: "custo", colOrcado: "Custos Orçados", colRealizado: "Custos Realizados", linhas: linhasDe(categorias.filter((c) => c.grupo === "compra_reais")) });
-    if (visualizando.horas) secoes.push({ titulo: "MOI + Contric (horas)", tipo: "horas", colOrcado: "Horas Orçadas", colRealizado: "Horas Realizadas", linhas: linhasDe(categoriasHoras, apontadoPorCodigo) });
+    if (visualizando.horas) secoes.push({ titulo: "Relatório de Horas", tipo: "horas", colOrcado: "Horas Orçadas", colRealizado: "Horas Realizadas", linhas: linhasDe(categoriasHoras, apontadoPorCodigo) });
     const cod = (id) => categoriasHoras.find((c) => c.id === id)?.codigo || "";
     const lanc = visualizando.horas ? lancamentos.map((l) => {
       const p = usuarios.find((u) => u.id === l.usuario_id);
@@ -189,7 +189,7 @@ export default function RelatoriosPage() {
                   itens={itensDoPi} pi={piVisto} editavel={editavel} usuario={usuario} onSalvo={recarregarOrcamentos} />
               )}
               {visualizando.horas && (
-                <TabelaOrcadoRealizado key={`horas-${piVisto.id}`} tipo="horas" titulo="MOI + Contric (horas)"
+                <TabelaOrcadoRealizado key={`horas-${piVisto.id}`} tipo="horas" titulo="Relatório de Horas"
                   colOrcado="Horas Orçadas" colRealizado="Horas Realizadas"
                   categorias={categoriasHoras} apontado={apontadoPorCodigo}
                   itens={itensDoPi} pi={piVisto} editavel={editavel} usuario={usuario} onSalvo={recarregarOrcamentos} />
