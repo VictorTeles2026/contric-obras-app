@@ -184,6 +184,7 @@ export function FormHorasRecursos({ usuario, meusPis, todosPis, onEnviado }) {
   const [inicio, setInicio] = useState("07:00");
   const [fim, setFim] = useState("17:00");
   const [total, setTotal] = useState("");
+  const [extrasTxt, setExtrasTxt] = useState("0");
   const [enviando, setEnviando] = useState(false);
 
   const alocadosNoPi = new Set(alocacoes.filter((a) => a.pi_id === piId).map((a) => a.recurso_id));
@@ -195,7 +196,11 @@ export function FormHorasRecursos({ usuario, meusPis, todosPis, onEnviado }) {
   const outros = lista.filter((r) => !maoDeObra.includes(r));
   const h = horasComAlmoco(inicio, fim);
   const horas = modo === "total" ? Math.round((Number(total) || 0) * 4) / 4 : Math.round(h.liquidas * 4) / 4;
-  const pode = piId && marcados.length > 0 && horas > 0 && horas <= 24 && data <= hojeISO() && !enviando;
+  // normais × extras já no lançamento (quem aprova vê a sugestão e pode ajustar — mesma validação de sempre)
+  const extras = Math.round((Number(extrasTxt) || 0) * 4) / 4;
+  const normais = Math.max(0, Math.round((horas - extras) * 100) / 100);
+  const extrasOk = extras >= 0 && extras <= horas;
+  const pode = extrasOk && piId && marcados.length > 0 && horas > 0 && horas <= 24 && data <= hojeISO() && !enviando;
   const marcar = (id) => setMarcados((p) => (p.includes(id) ? p.filter((x) => x !== id) : [...p, id]));
 
   const enviar = async () => {
@@ -204,7 +209,7 @@ export function FormHorasRecursos({ usuario, meusPis, todosPis, onEnviado }) {
     const linhas = marcados.map((rid) => {
       const r = recursos.find((x) => x.id === rid);
       return {
-        usuario_id: r?.usuario_id || null, recurso_id: rid, lancado_por: usuario.id, pi_id: piId, data, horas_totais: horas, status: "pendente",
+        usuario_id: r?.usuario_id || null, recurso_id: rid, lancado_por: usuario.id, pi_id: piId, data, horas_totais: horas, horas_normais: normais, horas_extras: extras, status: "pendente",
         ...(modo === "horario" ? { hora_inicio: inicio, hora_fim: fim } : {}),
       };
     });
@@ -215,7 +220,7 @@ export function FormHorasRecursos({ usuario, meusPis, todosPis, onEnviado }) {
       return;
     }
     const pi = pisDisponiveis.find((p) => p.id === piId);
-    await registrarLog(usuario, "Lançou horas para recursos", `${pi?.codigo} — ${data} · ${horas}h · ${marcados.map((id) => recursos.find((r) => r.id === id)?.nome).join(", ")}`);
+    await registrarLog(usuario, "Lançou horas para recursos", `${pi?.codigo} — ${data} · ${normais}h normais + ${extras}h extras · ${marcados.map((id) => recursos.find((r) => r.id === id)?.nome).join(", ")}`);
     avisar(`${linhas.length} lançamento(s) de ${formatarHoras(horas)} enviados para validação.`);
     setMarcados([]); onEnviado?.();
   };
@@ -269,6 +274,12 @@ export function FormHorasRecursos({ usuario, meusPis, todosPis, onEnviado }) {
         <label className="block"><span className="rotulo">Horas por recurso</span>
           <input type="number" min="0.25" max="24" step="0.25" value={total} onChange={(e) => setTotal(e.target.value)} className="input" placeholder="Ex: 8" /></label>
       )}
+      <div className="grid grid-cols-2 gap-3">
+        <div><span className="rotulo">Normais</span><div className="input bg-panel tabular-nums">{formatarHoras(normais)}</div></div>
+        <label className="block"><span className="rotulo">Extras</span>
+          <input type="number" min="0" max={horas || 24} step="0.25" value={extrasTxt} onChange={(e) => setExtrasTxt(e.target.value)} className="input" /></label>
+        {!extrasOk && <div className="col-span-2 text-xs text-red">As extras não podem passar do total de horas.</div>}
+      </div>
       <button onClick={enviar} disabled={!pode} className="btn btn-alerta w-full">
         {enviando ? <><Spinner /> Enviando...</> : `Lançar ${formatarHoras(horas || 0)} para ${marcados.length || 0} recurso(s)`}
       </button>

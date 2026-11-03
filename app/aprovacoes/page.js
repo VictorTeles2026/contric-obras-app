@@ -483,8 +483,10 @@ function GrupoHorasCard({ itens, piInfo, pessoa, editavel, onAprovar, onReprovar
 function HorasCard({ registro, pi, pessoa, editadoPor, editavel, onAprovar, onReprovar, onEditar, rodapeMaster }) {
   const total = Number(registro.horas_totais) || 0;
   const emAberto = registro.entrada && !registro.saida;
-  const [normais, setNormais] = useState(total);
-  const [extras, setExtras] = useState(0);
+  // lançamento para recursos já traz a sugestão de normais/extras; quem aprova confirma ou ajusta
+  const sugerido = registro.status === "pendente" && registro.horas_normais != null;
+  const [normais, setNormais] = useState(sugerido ? Number(registro.horas_normais) : total);
+  const [extras, setExtras] = useState(sugerido ? Number(registro.horas_extras) || 0 : 0);
   const soma = Math.round((Number(normais) + Number(extras)) * 100) / 100;
   const diverge = !emAberto && Math.abs(soma - total) > 0.01;
   return (

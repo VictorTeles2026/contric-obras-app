@@ -1,5 +1,6 @@
+import { createClient } from "@supabase/supabase-js";
 import { NextResponse } from "next/server";
-import { exigirPermissao, gerarSenha, registrarSenha, decifrar, enviarEmail as enviarEmailReal, emailCliente, urlApp, rotaSegura } from "../../../lib/authServidor";
+import { exigirPermissao, gerarSenha, enviarEmail as enviarEmailReal, emailCliente, urlApp, rotaSegura } from "../../../lib/authServidor";
 
 // Envio automático de e-mail aos clientes TEMPORARIAMENTE DESLIGADO: as credenciais
 // aparecem numa mensagem pronta para copiar e encaminhar manualmente.
@@ -53,7 +54,6 @@ export const POST = rotaSegura(async (req) => {
       await admin.auth.admin.deleteUser(criado.user.id);
       return NextResponse.json({ error: /clientes/.test(e2.message) ? "Cadastro de clientes ainda não criado — rode o script clientes-senhas.sql." : e2.message }, { status: 400 });
     }
-    await registrarSenha(admin, { authUserId: criado.user.id, nome, email, tipo: "cliente", senha, definidaPor: interno.nome, origem: "criacao" });
     const msg = mensagemBoasVindas(cliente, senha, new URL(req.url).origin);
     const envio = await enviarEmail({ para: email, assunto: "Seu acesso à plataforma Contric", html: msg.html, texto: msg.texto });
     await log(admin, interno, "Cadastrou cliente", `${nome} (${email})${cliente.empresa ? ` — ${cliente.empresa}` : ""} · e-mail ${envio.enviado ? "enviado" : "NÃO enviado"}`);
@@ -90,7 +90,6 @@ export const POST = rotaSegura(async (req) => {
     const senha = gerarSenha(10);
     const { error } = await admin.auth.admin.updateUserById(cliente.auth_user_id, { password: senha });
     if (error) return NextResponse.json({ error: error.message }, { status: 400 });
-    await registrarSenha(admin, { authUserId: cliente.auth_user_id, nome: cliente.nome, email: cliente.email, tipo: "cliente", senha, definidaPor: interno.nome, origem: "redefinicao" });
     const msg = mensagemBoasVindas(cliente, senha, new URL(req.url).origin);
     const envio = await enviarEmail({ para: cliente.email, assunto: "Sua nova senha — plataforma Contric", html: msg.html, texto: msg.texto });
     await log(admin, interno, "Redefiniu senha de cliente", `${cliente.nome} · e-mail ${envio.enviado ? "enviado" : "NÃO enviado"}`);
@@ -98,12 +97,14 @@ export const POST = rotaSegura(async (req) => {
   }
 
   // ---------- enviar as credenciais por e-mail pelo SGO (botão na tela de credenciais) ----------
-  // a senha vem do registro cifrado no servidor (não confia no que o navegador mandar)
+  // a senha não fica guardada: vem da tela que acabou de mostrá-la e é CONFERIDA no login antes de enviar
   if (acao === "enviar_credenciais") {
     if (!tem("cliente.gerenciar") && !tem("cliente.senha")) return NextResponse.json({ error: "Seu usuário não tem permissão para esta ação." }, { status: 403 });
-    const { data: reg } = await admin.from("senhas_registradas").select("senha_cifrada").eq("auth_user_id", cliente.auth_user_id).order("created_at", { ascending: false }).limit(1).maybeSingle();
-    const senha = reg ? decifrar(reg.senha_cifrada) : null;
-    if (!senha) return NextResponse.json({ error: "Não encontrei a senha atual deste cliente. Gere uma nova senha e tente de novo." }, { status: 400 });
+    const senha = String(body.senha || "");
+    const teste = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY, { auth: { persistSession: false, autoRefreshToken: false } });
+    const { error: errSenha } = senha ? await teste.auth.signInWithPassword({ email: cliente.email, password: senha }) : { error: true };
+    if (errSenha) return NextResponse.json({ error: "A senha não confere com a atual do cliente. Gere uma nova senha e tente de novo." }, { status: 400 });
+    await teste.auth.signOut();
     const msg = mensagemBoasVindas(cliente, senha, new URL(req.url).origin);
     const envio = await enviarEmailReal({ para: cliente.email, assunto: "Seu acesso à plataforma Contric", html: msg.html, texto: msg.texto });
     await log(admin, interno, "Enviou acesso ao cliente por e-mail (SGO)", `${cliente.nome} (${cliente.email}) · ${envio.enviado ? "enviado" : `NÃO enviado: ${envio.motivo}`}`);

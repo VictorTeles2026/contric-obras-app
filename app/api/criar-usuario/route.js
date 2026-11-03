@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { exigirPermissao, PERFIS_VALIDOS, gerarPinUnico, registrarSenha } from "../../../lib/authServidor";
+import { exigirPermissao, PERFIS_VALIDOS, gerarPinUnico } from "../../../lib/authServidor";
 import { normalizarLogin, erroLogin, emailAuthDe, ehEmail } from "../../../lib/login";
 
 const equipesValidas = (v) => Array.isArray(v) ? [...new Set(v.map((x) => String(x).trim()).filter(Boolean))] : undefined;
@@ -14,6 +14,8 @@ async function criarUm(admin, solicitante, body) {
 
   if (!nome || !perfil) return { erro: "Nome e perfil são obrigatórios." };
   if (!PERFIS_VALIDOS.includes(perfil)) return { erro: "Perfil inválido." };
+  // SEGURANÇA: só o Master cria usuários Master
+  if (perfil === "master" && solicitante.perfil !== "master") return { erro: "Somente o Master pode criar usuários com perfil Master." };
   if (email && !ehEmail(email)) return { erro: "E-mail inválido." };
 
   const ehTerceiroAvulso = perfil === "terceiro" && tipoTerceiro === "avulso";
@@ -54,7 +56,6 @@ async function criarUm(admin, solicitante, body) {
     if (!error) usuario[k] = v;
   }
 
-  if (authUserId) await registrarSenha(admin, { authUserId, nome, email: email || login, tipo: "usuario", senha, definidaPor: solicitante.nome, origem: "criacao" });
   return { usuario };
 }
 

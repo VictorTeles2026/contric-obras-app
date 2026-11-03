@@ -25,7 +25,7 @@ export default function PontoHoras({ usuario }) {
 
   return (
     <div className="p-4 flex flex-col gap-5 max-w-xl w-full mx-auto">
-      <div className="font-head font-bold text-2xl pt-1">Minhas horas</div>
+      <div className="font-head font-bold text-2xl pt-1">Lançar Horas</div>
 
       <Segmentado valor={modo} onChange={setModo} opcoes={[["checkin", "Check-in / out"], ["manual", "Lançar manual"], ...(podeLancarParaRecursos(usuario) ? [["recursos", "Para recursos"]] : [])]} />
 

@@ -376,7 +376,7 @@ export function Credenciais({ dados, onFechar }) {
   const concluir = async () => {
     if (!viaSgo || envio?.enviado) { onFechar(); return; }
     setEnviando(true); setErro("");
-    const { ok, json } = await chamarApi("/api/clientes", { acao: "enviar_credenciais", id: cliente.id });
+    const { ok, json } = await chamarApi("/api/clientes", { acao: "enviar_credenciais", id: cliente.id, senha });
     setEnviando(false);
     if (!ok) { setErro(json.error || "Não foi possível enviar."); return; }
     avisar(`E-mail com o acesso enviado para ${cliente.email}.`);

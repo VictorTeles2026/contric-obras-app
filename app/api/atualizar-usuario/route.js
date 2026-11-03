@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { exigirPermissao, PERFIS_VALIDOS, gerarPinUnico, registrarSenha } from "../../../lib/authServidor";
+import { exigirPermissao, PERFIS_VALIDOS, gerarPinUnico } from "../../../lib/authServidor";
 import { normalizarLogin, erroLogin, emailAuthDe } from "../../../lib/login";
 
 const BANIDO = "876000h"; // ~100 anos = efetivamente desabilitado
@@ -29,6 +29,13 @@ export async function POST(req) {
 
   const { data: atual, error: erroAtual } = await admin.from("usuarios").select("*").eq("id", id).single();
   if (erroAtual) return NextResponse.json({ error: "Usuário não encontrado." }, { status: 404 });
+
+  // SEGURANÇA: só o Master mexe em contas de Master, promove alguém a Master ou muda perfis
+  // (antes, qualquer usuário com "editar usuários" podia virar Master ou trocar a senha de um Master)
+  if (solicitante.perfil !== "master") {
+    if (atual.perfil === "master") return NextResponse.json({ error: "Somente o Master pode alterar a conta de outro Master." }, { status: 403 });
+    if (perfil !== undefined && perfil !== atual.perfil) return NextResponse.json({ error: "Somente o Master pode mudar o perfil de um usuário." }, { status: 403 });
+  }
 
   const ativoFinal = ativo !== undefined ? ativo : atual.ativo;
 
@@ -122,7 +129,6 @@ export async function POST(req) {
   }
 
   if (novaSenha && usuario.auth_user_id) {
-    await registrarSenha(admin, { authUserId: usuario.auth_user_id, nome: usuario.nome, email: usuario.email, tipo: "usuario", senha: novaSenha, definidaPor: solicitante.nome, origem: "master" });
   }
   return NextResponse.json({ usuario });
 }

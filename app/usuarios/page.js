@@ -9,7 +9,6 @@ import { CabecalhoPagina, Modal, Campo, Aviso, Esqueleto, EstadoVazio, Spinner, 
 import { AREAS, FUNCOES, EQUIPE_CAMPO, ALERTAS, TIPOS_ALERTA } from "../../lib/constantes";
 import { normalizarLogin, erroLogin, ehEmail, sugerirLogin } from "../../lib/login";
 import Icone from "../../components/Icone";
-import VerSenhas from "../../components/VerSenhas";
 import { ConfirmacaoDupla } from "../../components/AcoesMaster";
 
 const PERFIS = [
@@ -45,7 +44,6 @@ export default function UsuariosPage() {
   const { usuario } = useAuth();
   const { avisar } = useToast();
   const souMaster = podeGerenciarUsuarios(usuario); // pode criar/editar/habilitar (permissão usuario.editar)
-  const podeVerSenha = pode(usuario, "usuario.senha");
   const podeExcluirUsuario = pode(usuario, "usuario.excluir");
   const { dados: usuarios, carregando, recarregar } = useTabela("usuarios", { order: { coluna: "nome" } });
   const { dados: empresas } = useTabela("empresas_terceiras", { order: { coluna: "nome" } });
@@ -62,7 +60,6 @@ export default function UsuariosPage() {
   const [filtroEmpresa, setFiltroEmpresa] = useState(""); // aba Usuários de Campo
   const [mostrarInativos, setMostrarInativos] = useState(true);
   const [alternando, setAlternando] = useState(null);
-  const [vendoSenha, setVendoSenha] = useState(null);
   const [excluindo, setExcluindo] = useState(null);
 
   const abrirNovo = () => { setEditando(null); setModalAberto(true); };
@@ -205,9 +202,6 @@ export default function UsuariosPage() {
                 )}
               </div>
               <div className="flex items-center gap-2 ml-auto">
-                {podeVerSenha && u.auth_user_id && (
-                  <button onClick={() => setVendoSenha(u)} className="btn btn-contorno btn-sm" title="Ver senha registrada"><Icone nome="chave" className="w-4 h-4" /> Senha</button>
-                )}
                 {souMaster && <button onClick={() => abrirEdicao(u)} className="btn btn-contorno btn-sm">Editar</button>}
                 {podeExcluirUsuario && u.id !== usuario?.id && (
                   <button onClick={() => setExcluindo(u)} className="p-2 rounded-lg text-muteddim hover:text-red hover:bg-red/5" title="Excluir usuário" aria-label={`Excluir ${u.nome}`}>
@@ -242,7 +236,6 @@ export default function UsuariosPage() {
               return { ok: true };
             }} />
         )}
-        {vendoSenha && <VerSenhas authUserId={vendoSenha.auth_user_id} nome={vendoSenha.nome} onFechar={() => setVendoSenha(null)} />}
         {modalAberto && (
           <ModalUsuario
             usuarioInicial={editando} deCampo={aba === "campo"} empresas={empresasAtivas}

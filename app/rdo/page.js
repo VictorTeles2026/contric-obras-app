@@ -244,7 +244,7 @@ export default function RdoPage() {
 
         {editavel && meusPis.length > 0 && (
           <section className="cartao p-4 md:p-5 mt-8 max-w-xl">
-            <h2 className="titulo-quadro mb-3">Minhas horas</h2>
+            <h2 className="titulo-quadro mb-3">Lançar Horas</h2>
             <FormHoras usuario={usuario} pis={meusPis} compacto />
           </section>
         )}

@@ -7,7 +7,6 @@ import { CLASSIFICACOES_DOC } from "../../lib/constantes";
 import { useAuth, podeGerenciarClientes, pode } from "../../lib/AuthContext";
 import { useToast } from "../../lib/Toast";
 import PainelShell from "../../components/PainelShell";
-import VerSenhas from "../../components/VerSenhas";
 import { ConfirmarExclusao } from "../../components/AcoesMaster";
 import { CabecalhoPagina, EstadoVazio, Esqueleto, Aviso, Modal, Campo, Spinner, SeletorPi } from "../../components/ui";
 import Icone from "../../components/Icone";
@@ -30,7 +29,6 @@ export default function ClientesPage() {
   const [form, setForm] = useState(null);            // {} novo | cliente (edição)
   const [credenciais, setCredenciais] = useState(null); // resultado de criar / nova senha
   const [gerenciando, setGerenciando] = useState(null); // cliente → acessos
-  const [vendoSenha, setVendoSenha] = useState(null);
   const [excluindo, setExcluindo] = useState(null);
   const [ocupado, setOcupado] = useState(null);
 
@@ -91,7 +89,6 @@ export default function ClientesPage() {
                     {podeAcessos && <button onClick={() => setGerenciando(c)} className="btn btn-primario btn-sm"><Icone nome="obra" className="w-4 h-4" /> Acessos ({meus.length})</button>}
                     {podeGerenciar && <button onClick={() => setForm(c)} className="btn btn-contorno btn-sm"><Icone nome="editar" className="w-4 h-4" /> Editar</button>}
                     {podeSenha && <button onClick={() => novaSenha(c)} disabled={ocupado === c.id} className="btn btn-contorno btn-sm">Nova senha</button>}
-                    {podeSenha && c.auth_user_id && <button onClick={() => setVendoSenha(c)} className="btn btn-contorno btn-sm"><Icone nome="chave" className="w-4 h-4" /> Senha</button>}
                     {podeGerenciar && <button onClick={() => acao(c, { acao: "ativo", ativo: !c.ativo }, c.ativo ? "Cliente desativado — não consegue mais entrar." : "Cliente reativado.")} disabled={ocupado === c.id}
                       className={`btn btn-sm border ${c.ativo ? "border-amber/40 text-amber bg-white" : "border-green/40 text-green bg-white"}`}>
                       {ocupado === c.id ? <Spinner className="w-3.5 h-3.5" /> : c.ativo ? "Desativar" : "Ativar"}
@@ -123,7 +120,6 @@ export default function ClientesPage() {
       {gerenciando && (
         <GerenciarAcessos cliente={gerenciando} pis={pis} acessos={acessosDe(gerenciando.id)} onFechar={() => setGerenciando(null)} onMudou={recarregarAcessos} usuario={usuario} />
       )}
-      {vendoSenha && <VerSenhas authUserId={vendoSenha.auth_user_id} nome={vendoSenha.nome} onFechar={() => setVendoSenha(null)} />}
       {excluindo && (
         <ConfirmarExclusao titulo={`Excluir ${excluindo.nome}`} descricao="O cliente perde o acesso à plataforma e o cadastro é apagado. Para só bloquear, use Desativar."
           onFechar={() => setExcluindo(null)}

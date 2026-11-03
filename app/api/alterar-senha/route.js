@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { identificar, registrarSenha, rotaSegura } from "../../../lib/authServidor";
+import { identificar, rotaSegura } from "../../../lib/authServidor";
 
 // Qualquer usuário (interno ou cliente) troca a PRÓPRIA senha, confirmando a senha atual.
 // A nova senha fica registrada (criptografada) para consulta exclusiva do Master.
@@ -21,7 +21,6 @@ export const POST = rotaSegura(async (req) => {
   if (error) return NextResponse.json({ error: error.message }, { status: 400 });
 
   const titular = interno || cliente;
-  await registrarSenha(admin, { authUserId: authUser.id, nome: titular.nome, email: authUser.email, tipo: interno ? "usuario" : "cliente", senha: novaSenha, definidaPor: titular.nome, origem: "propria" });
   await admin.from("logs_auditoria").insert({ usuario_id: interno?.id || null, usuario_nome: titular.nome, acao: "Alterou a própria senha", detalhe: interno ? "usuário interno" : "cliente (portal)" });
   return NextResponse.json({ ok: true });
 });

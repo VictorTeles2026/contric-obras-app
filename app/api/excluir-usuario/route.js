@@ -61,7 +61,6 @@ export const POST = rotaSegura(async (req) => {
   if (error) return NextResponse.json({ error: `Não foi possível excluir: ${error.message}` }, { status: 400 });
   if (u.auth_user_id) {
     await admin.auth.admin.deleteUser(u.auth_user_id);
-    await admin.from("senhas_registradas").delete().eq("auth_user_id", u.auth_user_id);
   }
 
   const detalhe = Object.entries(resumo).map(([k, v]) => `${k}: ${v}`).join(", ") || "sem registros próprios";
