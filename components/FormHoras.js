@@ -16,7 +16,8 @@ import { valorPermissao } from "../lib/permissoes";
 // - Só o LÍDER pode marcar várias obras no mesmo dia ("dia dividido"): as horas são divididas
 //   igualmente (blocos de 15 min) e ele pode ajustar a divisão; os registros ficam ligados por
 //   `grupo_lancamento`, e a aprovação trata o dia inteiro de uma vez. Os demais lançam 1 obra.
-export default function FormHoras({ usuario, pis, onEnviado, compacto = false }) {
+// `largo` (computador): obras à esquerda; dia, horários e envio à direita
+export default function FormHoras({ usuario, pis, onEnviado, compacto = false, largo = false }) {
   const { avisar } = useToast();
   const variasObras = usuario?.perfil === "lider";
   const porCliente = useMemo(() => agruparPorCliente(pis), [pis]);
@@ -67,8 +68,8 @@ export default function FormHoras({ usuario, pis, onEnviado, compacto = false })
   const codigo = (pid) => pis.find((p) => p.id === pid)?.codigo || "?";
 
   return (
-    <div className={`flex flex-col ${compacto ? "gap-4" : "gap-5"}`}>
-      <div>
+    <div className={largo ? "grid gap-6 md:grid-cols-2 items-start" : `flex flex-col ${compacto ? "gap-4" : "gap-5"}`}>
+      <div className={largo ? "md:max-h-[560px] md:overflow-y-auto rolagem-fina md:pr-1" : ""}>
         <div className="rotulo">{variasObras && pis.length > 1 ? "Em quais obras você trabalhou hoje? (pode marcar várias)" : "Obra"}</div>
         {/* grade única (ordenada por cliente) — agrupar em blocos deixava um card por linha no celular */}
         <div className={compacto ? "flex flex-wrap gap-2" : "grid grid-cols-2 gap-2"}>
@@ -87,6 +88,7 @@ export default function FormHoras({ usuario, pis, onEnviado, compacto = false })
         </div>
       </div>
 
+      <div className={largo ? "flex flex-col gap-5" : "contents"}>
       <div>
         <div className="rotulo">Dia trabalhado</div>
         <div className="flex gap-2 mb-2">
@@ -98,7 +100,7 @@ export default function FormHoras({ usuario, pis, onEnviado, compacto = false })
       </div>
 
       {/* empilhados no celular — evita o controle nativo de hora do iPhone estourar a largura */}
-      <div className={compacto ? "grid grid-cols-2 gap-3" : "flex flex-col gap-3"}>
+      <div className={compacto || largo ? "grid grid-cols-2 gap-3" : "flex flex-col gap-3"}>
         <label className="block">
           <span className="rotulo">Entrada</span>
           <input type="time" value={horaInicio} onChange={(e) => setHoraInicio(e.target.value)} className={tamanhoCampo} />
@@ -159,6 +161,7 @@ export default function FormHoras({ usuario, pis, onEnviado, compacto = false })
         {enviando ? <><Spinner /> Enviando...</> : pisSelecionados.length > 1 ? `Enviar horas (${pisSelecionados.length} obras)` : "Enviar horas"}
       </button>
       {!compacto && pisSelecionados.length === 0 && <div className="text-xs text-center text-muteddim -mt-2">Selecione {variasObras ? "pelo menos uma obra" : "a obra"}.</div>}
+      </div>
     </div>
   );
 }
@@ -169,7 +172,7 @@ export default function FormHoras({ usuario, pis, onEnviado, compacto = false })
 export const podeLancarParaRecursos = (usuario) =>
   !!usuario && !["funcionario", "terceiro"].includes(usuario.perfil) && ["S", "P"].includes(valorPermissao(usuario, "horas.lancar_equipe"));
 
-export function FormHorasRecursos({ usuario, meusPis, todosPis, onEnviado }) {
+export function FormHorasRecursos({ usuario, meusPis, todosPis, onEnviado, largo = false }) {
   const { avisar } = useToast();
   const escopoTotal = valorPermissao(usuario, "horas.lancar_equipe") === "S";
   const pisDisponiveis = (escopoTotal ? todosPis.filter((p) => p.status === "ativo" || !p.status) : meusPis);
@@ -233,7 +236,8 @@ export function FormHorasRecursos({ usuario, meusPis, todosPis, onEnviado }) {
     </label>
   );
   return (
-    <div className="flex flex-col gap-4">
+    <div className={largo ? "grid gap-6 md:grid-cols-2 items-start" : "flex flex-col gap-4"}>
+      <div className={largo ? "flex flex-col gap-4" : "contents"}>
       <div>
         <span className="rotulo">Obra</span>
         <SeletorPi pis={pisDisponiveis} value={piId} onChange={(v) => { setPiId(v); setMarcados([]); }} className="input" />
@@ -250,7 +254,7 @@ export function FormHorasRecursos({ usuario, meusPis, todosPis, onEnviado }) {
             )}
           </div>
           <input value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Buscar recurso..." className="input !py-1.5 mb-2" aria-label="Buscar recurso" />
-          <div className="flex flex-col gap-1 max-h-72 overflow-y-auto rolagem-fina">
+          <div className={`flex flex-col gap-1 overflow-y-auto rolagem-fina ${largo ? "max-h-[440px]" : "max-h-72"}`}>
             {maoDeObra.length > 0 && <div className="text-[11px] font-semibold text-muted uppercase tracking-wide mt-1">Mão de obra</div>}
             {maoDeObra.map(item)}
             {outros.length > 0 && <div className="text-[11px] font-semibold text-muted uppercase tracking-wide mt-2">Equipamentos, veículos e outros</div>}
@@ -259,6 +263,9 @@ export function FormHorasRecursos({ usuario, meusPis, todosPis, onEnviado }) {
           </div>
         </div>
       )}
+      {largo && !piId && <div className="rounded-xl border border-dashed border-line p-6 text-center text-sm text-muteddim">Escolha a obra para ver os recursos.</div>}
+      </div>
+      <div className={largo ? "flex flex-col gap-4 md:border-l md:border-line md:pl-6" : "contents"}>
       <div>
         <span className="rotulo">Dia</span>
         <input type="date" value={data} max={hojeISO()} onChange={(e) => setData(e.target.value)} className="input" />
@@ -284,6 +291,7 @@ export function FormHorasRecursos({ usuario, meusPis, todosPis, onEnviado }) {
         {enviando ? <><Spinner /> Enviando...</> : `Lançar ${formatarHoras(horas || 0)} para ${marcados.length || 0} recurso(s)`}
       </button>
       <div className="texto-apoio">Os lançamentos vão para validação em Aprovações, como as horas de qualquer pessoa.</div>
+      </div>
     </div>
   );
 }

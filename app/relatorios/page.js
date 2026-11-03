@@ -14,6 +14,8 @@ import { AbasRelatorios } from "../../components/ui";
 import { horasDoLancamento, fmtH } from "../../lib/horas";
 import { EditorHoras } from "../../components/Editores";
 import { excluirHoras, limparRealizados } from "../../lib/exclusoes";
+import { gerarPdfRelatorio, baseNomeRelatorio } from "../../lib/pdfRdo";
+import { consolidarMacros } from "../../lib/constantes";
 
 const VERDE_ESCURO = "#1B6E2D";
 const VERMELHO = "#D64545";
@@ -85,6 +87,59 @@ export default function RelatoriosPage() {
     if (l.categoria_extra_id) apontadoPorCodigo[l.categoria_extra_id] = (apontadoPorCodigo[l.categoria_extra_id] || 0) + l.extras;
   });
 
+  // ---- PDF / impressão: documento só com os dados (cabeçalho com logo e dados do PI) ----
+  const { avisar } = useToast();
+  const { dados: etapasPi } = useTabela("etapas", { filtro: [["pi_id", visualizando?.piId]] });
+  const { dados: recursosNomes } = useTabela("recursos", { select: "id,nome" });
+  const [gerando, setGerando] = useState("");
+  const montarPdf = async () => {
+    const linhasDe = (cats, apont = {}) => cats.map((c) => {
+      const it = itensDoPi.find((o) => o.categoria_id === c.id);
+      return { codigo: c.codigo, nome: c.nome, orcado: Number(it?.valor_orcado) || 0, realizado: (Number(it?.valor_realizado) || 0) + (apont[c.id] || 0) };
+    });
+    const secoes = [];
+    if (visualizando.custo) secoes.push({ titulo: "Compra — Produto ou Serviço", tipo: "custo", colOrcado: "Custos Orçados", colRealizado: "Custos Realizados", linhas: linhasDe(categorias.filter((c) => c.grupo === "compra_reais")) });
+    if (visualizando.horas) secoes.push({ titulo: "MOI + Contric (horas)", tipo: "horas", colOrcado: "Horas Orçadas", colRealizado: "Horas Realizadas", linhas: linhasDe(categoriasHoras, apontadoPorCodigo) });
+    const cod = (id) => categoriasHoras.find((c) => c.id === id)?.codigo || "";
+    const lanc = visualizando.horas ? lancamentos.map((l) => {
+      const p = usuarios.find((u) => u.id === l.usuario_id);
+      return {
+        nome: p?.nome || recursosNomes.find((r) => r.id === l.recurso_id)?.nome || "—", funcao: p?.funcao, data: l.data,
+        inicio: l.entrada ? horaCurta(l.entrada) : String(l.hora_inicio || "—").slice(0, 5), fim: l.saida ? horaCurta(l.saida) : l.entrada ? "em aberto" : String(l.hora_fim || "—").slice(0, 5),
+        normais: l.normais, extras: l.extras, codNormais: cod(l.categoria_normal_id), codExtras: cod(l.categoria_extra_id), pendente: l.status === "pendente",
+      };
+    }) : null;
+    // período e avanço físico a partir do cronograma
+    const ets = consolidarMacros(etapasPi);
+    const datas = ets.flatMap((e) => [e.data_prevista_inicio, e.data_prevista_fim]).filter(Boolean).sort();
+    const macros = ets.filter((e) => !e.parent_etapa_id);
+    const pct = (e) => (e.status === "concluida" ? 100 : Number(e.percentual) || 0);
+    const resumoPi = {
+      periodo: datas.length ? `${formatarData(datas[0])} a ${formatarData(datas[datas.length - 1])}` : null,
+      avanco: macros.length ? `${Math.round(macros.reduce((s, e) => s + pct(e), 0) / macros.length)}%` : null,
+    };
+    return gerarPdfRelatorio({ pi: piVisto, secoes, lancamentos: lanc, emitidoPor: usuario?.nome, resumoPi });
+  };
+  const exportar = async (modo) => {
+    setGerando(modo);
+    // a janela de impressão é aberta já no clique (senão o navegador bloqueia como pop-up)
+    const janela = modo === "imprimir" ? window.open("", "_blank") : null;
+    try {
+      const doc = await montarPdf();
+      if (modo === "pdf") doc.save(`${baseNomeRelatorio(piVisto)}.pdf`);
+      else {
+        doc.autoPrint();
+        const url = URL.createObjectURL(doc.output("blob"));
+        if (janela) janela.location.href = url; else window.open(url, "_blank");
+      }
+      registrarLog(usuario, modo === "pdf" ? "Gerou PDF do relatório" : "Imprimiu relatório", piVisto.codigo);
+    } catch (e) {
+      janela?.close();
+      avisar(`Não foi possível gerar o relatório: ${e.message}`, "erro", 7000);
+    }
+    setGerando("");
+  };
+
   return (
     <PainelShell>
       <div className="p-4 md:p-8">
@@ -116,7 +171,14 @@ export default function RelatoriosPage() {
                 <div className="text-xs font-mono text-cyan font-bold">{piVisto.codigo}</div>
                 <div className="titulo-destaque">{piVisto.cliente}{piVisto.projeto ? ` — ${piVisto.projeto}` : ""}</div>
               </div>
-              <button onClick={() => window.print()} className="btn btn-contorno btn-sm print:hidden">Imprimir</button>
+              <div className="flex gap-2 print:hidden">
+                <button onClick={() => exportar("pdf")} disabled={!!gerando} className="btn btn-primario btn-sm">
+                  {gerando === "pdf" ? <><Spinner /> Gerando...</> : <><Icone nome="download" className="w-4 h-4" /> Gerar PDF</>}
+                </button>
+                <button onClick={() => exportar("imprimir")} disabled={!!gerando} className="btn btn-contorno btn-sm">
+                  {gerando === "imprimir" ? <><Spinner /> Preparando...</> : "Imprimir"}
+                </button>
+              </div>
             </div>
             {!editavel && <Aviso tipo="info" className="mb-4 print:hidden">Modo visualização — seu perfil não pode lançar valores realizados.</Aviso>}
             <div className="flex flex-col gap-6">

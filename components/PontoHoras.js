@@ -17,27 +17,42 @@ import Icone from "./Icone";
 const LeitorQR = dynamic(() => import("./LeitorQR"), { ssr: false });
 
 // Check-in/out + lançamento manual de horas — usado por todos os perfis (equipe, líder e painel).
-export default function PontoHoras({ usuario }) {
+// `largo` (painel no computador): duas colunas — lançamento à esquerda, últimos lançamentos à direita
+export default function PontoHoras({ usuario, largo = false }) {
   const { meusPis, todosPis, carregando } = useMinhasPis(usuario);
   const [modo, setModo] = useState("checkin"); // "checkin" | "manual"
   const [versao, setVersao] = useState(0);
   const mudou = () => setVersao((v) => v + 1);
 
   return (
-    <div className="p-4 flex flex-col gap-5 max-w-xl w-full mx-auto">
-      <div className="font-head font-bold text-2xl pt-1">Lançar Horas</div>
+    <div className={`p-4 flex flex-col gap-5 w-full mx-auto ${largo ? "max-w-6xl lg:p-6" : "max-w-xl"}`}>
+      <div className={largo ? "flex flex-col lg:flex-row lg:items-end lg:justify-between gap-3" : "contents"}>
+        <div>
+          <div className="font-head font-bold text-2xl pt-1">Lançar Horas</div>
+          {largo && <div className="texto-apoio">Registre o ponto, lance horas manualmente ou para os recursos das obras. Tudo passa pela validação em Aprovações.</div>}
+        </div>
+        <div className={largo ? "lg:w-[460px]" : ""}>
+          <Segmentado valor={modo} onChange={setModo} opcoes={[["checkin", "Check-in / out"], ["manual", "Lançar manual"], ...(podeLancarParaRecursos(usuario) ? [["recursos", "Para recursos"]] : [])]} />
+        </div>
+      </div>
 
-      <Segmentado valor={modo} onChange={setModo} opcoes={[["checkin", "Check-in / out"], ["manual", "Lançar manual"], ...(podeLancarParaRecursos(usuario) ? [["recursos", "Para recursos"]] : [])]} />
-
+      <div className={largo ? "grid gap-5 lg:grid-cols-[minmax(0,1fr)_380px] items-start" : "contents"}>
+      <div className={largo && modo !== "checkin" ? "cartao p-5" : ""}>
       {carregando ? <Esqueleto linhas={2} altura={120} /> : modo === "recursos"
-        ? <FormHorasRecursos usuario={usuario} meusPis={meusPis} todosPis={todosPis} onEnviado={mudou} />
+        ? <FormHorasRecursos usuario={usuario} meusPis={meusPis} todosPis={todosPis} onEnviado={mudou} largo={largo} />
         : modo === "checkin"
-        ? <CheckInOut usuario={usuario} todosPis={todosPis} meusPis={meusPis} onMudou={mudou} />
+        ? <CheckInOut usuario={usuario} todosPis={todosPis} meusPis={meusPis} onMudou={mudou} largo={largo} />
         : meusPis.length === 0
           ? <div className="cartao"><EstadoVazio icone="obra" titulo="Nenhuma obra" texto="Você ainda não está alocado em nenhuma obra. Peça a alocação ou use o check-in pelo QR Code." /></div>
-          : <FormHoras usuario={usuario} pis={meusPis} onEnviado={mudou} />}
+          : <FormHoras usuario={usuario} pis={meusPis} onEnviado={mudou} largo={largo} />}
+      </div>
 
-      {!carregando && <UltimosLancamentos usuario={usuario} pis={todosPis} pisEditaveis={meusPis} versao={versao} />}
+      {!carregando && (
+        <div className={largo ? "lg:sticky lg:top-4 lg:max-h-[calc(100vh-2rem)] lg:overflow-y-auto rolagem-fina" : ""}>
+          <UltimosLancamentos usuario={usuario} pis={todosPis} pisEditaveis={meusPis} versao={versao} />
+        </div>
+      )}
+      </div>
     </div>
   );
 }
@@ -57,7 +72,7 @@ function Cronometro({ desde }) {
   return <>{Math.floor(min / 60)}h {String(min % 60).padStart(2, "0")}min</>;
 }
 
-function CheckInOut({ usuario, todosPis, meusPis, onMudou }) {
+function CheckInOut({ usuario, todosPis, meusPis, onMudou, largo }) {
   const { avisar } = useToast();
   // sem filtro de data: uma sessão esquecida aberta ontem precisa aparecer para ser fechada
   const { dados: meusApontamentos, carregando, recarregar } = useTabela("apontamentos_horas", {
@@ -154,17 +169,20 @@ function CheckInOut({ usuario, todosPis, meusPis, onMudou }) {
   }
 
   return (
-    <div className="flex flex-col gap-3 animar-fade">
+    <div className={`animar-fade ${largo ? "grid md:grid-cols-2 gap-4 items-start" : "flex flex-col gap-3"}`}>
+      <div className="flex flex-col gap-3">
       <button onClick={() => setScannerAberto(true)} className="rounded-2xl bg-gradient-to-br from-cyan to-navysoft text-white p-6 flex flex-col items-center gap-2 shadow-md active:scale-[0.99] transition-transform">
         <div className="w-14 h-14 rounded-2xl bg-white/15 flex items-center justify-center"><Icone nome="qr" className="w-8 h-8" /></div>
         <div className="font-head font-bold text-lg">Ler QR Code da obra</div>
         <div className="text-sm text-white/80">para fazer o check-in</div>
       </button>
+      {largo && digitarObra()}
+      </div>
 
       {meusPis.length > 0 && (
         <div className="cartao p-4">
           <div className="rotulo">Ou toque na sua obra</div>
-          <div className="flex flex-col gap-2">
+          <div className={largo ? "flex flex-col gap-2 max-h-[420px] overflow-y-auto rolagem-fina" : "flex flex-col gap-2"}>
             {meusPis.map((p) => (
               <button key={p.id} onClick={() => prepararCheckin(p)} disabled={processando}
                 className="flex items-center justify-between gap-3 text-left rounded-xl border border-line px-4 py-3 hover:border-cyan active:bg-cyan/5 transition-colors disabled:opacity-50">
@@ -179,6 +197,22 @@ function CheckInOut({ usuario, todosPis, meusPis, onMudou }) {
         </div>
       )}
 
+      {!largo && digitarObra()}
+      {largo && meusPis.length === 0 && <div className="cartao"><EstadoVazio icone="obra" titulo="Nenhuma obra alocada" texto="Use o QR Code ou digite o número da obra." /></div>}
+
+      {scannerAberto && (
+        <LeitorQR
+          onLido={(texto) => { setScannerAberto(false); prepararCheckin(texto); }}
+          onFechar={() => setScannerAberto(false)}
+        />
+      )}
+      {telaConfirmacao}
+    </div>
+  );
+
+  // chamado como função (não componente) para o campo não perder o foco a cada tecla
+  function digitarObra() {
+    return (
       <div className="cartao p-4 flex flex-col gap-3">
         <div className="rotulo !mb-0">Ou digite o número da obra</div>
         <form onSubmit={(e) => { e.preventDefault(); prepararCheckin(); }} className="flex gap-2">
@@ -190,16 +224,8 @@ function CheckInOut({ usuario, todosPis, meusPis, onMudou }) {
         </form>
         {erro && <div className="text-sm text-red">{erro}</div>}
       </div>
-
-      {scannerAberto && (
-        <LeitorQR
-          onLido={(texto) => { setScannerAberto(false); prepararCheckin(texto); }}
-          onFechar={() => setScannerAberto(false)}
-        />
-      )}
-      {telaConfirmacao}
-    </div>
-  );
+    );
+  }
 }
 
 // Tela cheia de confirmação — botões grandes, informação clara, fácil cancelar.
