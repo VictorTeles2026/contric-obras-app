@@ -10,53 +10,102 @@ import { useToast } from "../lib/Toast";
 import { horasPontoComAlmoco } from "../lib/horas";
 import FormHoras, { FormHorasRecursos, podeLancarParaRecursos } from "./FormHoras";
 import UltimosLancamentos from "./UltimosLancamentos";
-import { Esqueleto, EstadoVazio, Segmentado, Aviso, Spinner } from "./ui";
+import { Esqueleto, EstadoVazio, Segmentado, Aviso, Spinner, CabecalhoPagina } from "./ui";
 import Icone from "./Icone";
 
 // o leitor (jsqr) só é baixado quando a câmera é aberta — deixa a tela mais leve no 4G
 const LeitorQR = dynamic(() => import("./LeitorQR"), { ssr: false });
 
 // Check-in/out + lançamento manual de horas — usado por todos os perfis (equipe, líder e painel).
-// `largo` (painel no computador): duas colunas — lançamento à esquerda, últimos lançamentos à direita
+// `largo` (painel): cabeçalho, abas e cartões no padrão das demais páginas; no celular vira uma coluna só.
 export default function PontoHoras({ usuario, largo = false }) {
   const { meusPis, todosPis, carregando } = useMinhasPis(usuario);
-  const [modo, setModo] = useState("checkin"); // "checkin" | "manual"
+  const [modo, setModo] = useState("checkin"); // "checkin" | "manual" | "recursos"
   const [versao, setVersao] = useState(0);
   const mudou = () => setVersao((v) => v + 1);
+  const comRecursos = podeLancarParaRecursos(usuario);
+  // rótulos curtos no celular (os longos estouravam a largura da tela)
+  const abas = [["checkin", "Check-in / out", "Ponto"], ["manual", "Lançar manual", "Manual"], ...(comRecursos ? [["recursos", "Para recursos", "Recursos"]] : [])];
+  const seletorCurto = <Segmentado valor={modo} onChange={setModo} opcoes={abas.map(([v, , curto]) => [v, curto])} />;
 
+  const conteudo = carregando ? <Esqueleto linhas={2} altura={120} /> : modo === "recursos"
+    ? <FormHorasRecursos usuario={usuario} meusPis={meusPis} todosPis={todosPis} onEnviado={mudou} largo={largo} />
+    : modo === "checkin"
+    ? <CheckInOut usuario={usuario} todosPis={todosPis} meusPis={meusPis} onMudou={mudou} largo={largo} />
+    : meusPis.length === 0
+      ? <EstadoVazio icone="obra" titulo="Nenhuma obra" texto="Você ainda não está alocado em nenhuma obra. Peça a alocação ou use o check-in pelo QR Code." />
+      : <FormHoras usuario={usuario} pis={meusPis} onEnviado={mudou} largo={largo} />;
+
+  if (!largo) {
+    return (
+      <div className="p-4 flex flex-col gap-5 max-w-xl w-full min-w-0 mx-auto overflow-x-hidden">
+        <div className="font-head font-bold text-2xl pt-1">Lançar Horas</div>
+        {seletorCurto}
+        {conteudo}
+        {!carregando && <UltimosLancamentos usuario={usuario} pis={todosPis} pisEditaveis={meusPis} versao={versao} />}
+      </div>
+    );
+  }
+
+  const tituloCartao = { checkin: "Registrar ponto", manual: "Novo lançamento", recursos: "Lançar para recursos e mão de obra" }[modo];
   return (
-    <div className={`p-4 flex flex-col gap-5 w-full mx-auto ${largo ? "max-w-6xl lg:p-6" : "max-w-xl"}`}>
-      <div className={largo ? "flex flex-col lg:flex-row lg:items-end lg:justify-between gap-3" : "contents"}>
-        <div>
-          <div className="font-head font-bold text-2xl pt-1">Lançar Horas</div>
-          {largo && <div className="texto-apoio">Registre o ponto, lance horas manualmente ou para os recursos das obras. Tudo passa pela validação em Aprovações.</div>}
-        </div>
-        <div className={largo ? "lg:w-[460px]" : ""}>
-          <Segmentado valor={modo} onChange={setModo} opcoes={[["checkin", "Check-in / out"], ["manual", "Lançar manual"], ...(podeLancarParaRecursos(usuario) ? [["recursos", "Para recursos"]] : [])]} />
-        </div>
+    <div className="p-4 md:p-8 min-w-0 overflow-x-hidden">
+      <CabecalhoPagina titulo="Lançar Horas" subtitulo="Check-in, lançamento manual e horas dos recursos. Tudo passa pela validação em Aprovações." />
+      {/* abas sublinhadas (padrão das demais páginas) no computador; seletor compacto no celular */}
+      <div className="hidden md:flex gap-1 border-b border-line mb-5" role="tablist">
+        {abas.map(([v, rotulo]) => (
+          <button key={v} type="button" role="tab" aria-selected={modo === v} onClick={() => setModo(v)}
+            className={`relative px-4 py-2.5 text-sm font-semibold whitespace-nowrap transition-colors ${modo === v ? "text-cyan" : "text-muted hover:text-textmain"}`}>
+            {rotulo}
+            {modo === v && <span className="absolute left-0 right-0 -bottom-px h-0.5 bg-cyan rounded-full" />}
+          </button>
+        ))}
       </div>
+      <div className="md:hidden mb-4">{seletorCurto}</div>
 
-      <div className={largo ? "grid gap-5 lg:grid-cols-[minmax(0,1fr)_380px] items-start" : "contents"}>
-      <div className={largo && modo !== "checkin" ? "cartao p-5" : ""}>
-      {carregando ? <Esqueleto linhas={2} altura={120} /> : modo === "recursos"
-        ? <FormHorasRecursos usuario={usuario} meusPis={meusPis} todosPis={todosPis} onEnviado={mudou} largo={largo} />
-        : modo === "checkin"
-        ? <CheckInOut usuario={usuario} todosPis={todosPis} meusPis={meusPis} onMudou={mudou} largo={largo} />
-        : meusPis.length === 0
-          ? <div className="cartao"><EstadoVazio icone="obra" titulo="Nenhuma obra" texto="Você ainda não está alocado em nenhuma obra. Peça a alocação ou use o check-in pelo QR Code." /></div>
-          : <FormHoras usuario={usuario} pis={meusPis} onEnviado={mudou} largo={largo} />}
-      </div>
+      <ResumoHoras usuario={usuario} versao={versao} />
 
-      {!carregando && (
-        <div className={largo ? "lg:sticky lg:top-4 lg:max-h-[calc(100vh-2rem)] lg:overflow-y-auto rolagem-fina" : ""}>
-          <UltimosLancamentos usuario={usuario} pis={todosPis} pisEditaveis={meusPis} versao={versao} />
-        </div>
-      )}
+      <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_340px] gap-5 items-start">
+        <section className="cartao p-4 md:p-5 min-w-0">
+          <h2 className="titulo-quadro text-cyan mb-4">{tituloCartao}</h2>
+          {conteudo}
+        </section>
+        {!carregando && (
+          <aside className="min-w-0 lg:sticky lg:top-4 lg:max-h-[calc(100vh-2rem)] lg:overflow-y-auto rolagem-fina">
+            <UltimosLancamentos usuario={usuario} pis={todosPis} pisEditaveis={meusPis} versao={versao} />
+          </aside>
+        )}
       </div>
     </div>
   );
 }
 
+// faixa de números do painel: horas de hoje e da semana, pendentes e reprovados
+function ResumoHoras({ usuario, versao }) {
+  const { dados, recarregar } = useTabela("apontamentos_horas", { filtro: [["usuario_id", usuario?.id]], order: { coluna: "data", asc: false } });
+  useEffect(() => { if (versao) recarregar(); }, [versao, recarregar]);
+  const hoje = hojeISO();
+  const d = new Date(`${hoje}T12:00:00`); d.setDate(d.getDate() - ((d.getDay() + 6) % 7));
+  const segunda = d.toLocaleDateString("sv-SE");
+  const validos = dados.filter((a) => a.status !== "rejeitado");
+  const soma = (l) => l.reduce((s, a) => s + (Number(a.horas_totais) || 0), 0);
+  const itens = [
+    ["Hoje", formatarHoras(soma(validos.filter((a) => a.data === hoje)))],
+    ["Esta semana", formatarHoras(soma(validos.filter((a) => a.data >= segunda && a.data <= hoje)))],
+    ["Pendentes", dados.filter((a) => a.status === "pendente").length],
+    ["Reprovados", dados.filter((a) => a.status === "rejeitado").length],
+  ];
+  return (
+    <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
+      {itens.map(([r, v]) => (
+        <div key={r} className="cartao px-4 py-3 min-w-0">
+          <div className="text-xs text-muted">{r}</div>
+          <div className="font-head font-bold text-xl text-textmain tabular-nums">{v}</div>
+        </div>
+      ))}
+    </div>
+  );
+}
 // horas entre check-in e check-out, já sem o intervalo de almoço (Configurações → Jornada)
 function horasEntre(iniISO, fimISO) {
   return horasPontoComAlmoco(iniISO, fimISO);
@@ -169,7 +218,7 @@ function CheckInOut({ usuario, todosPis, meusPis, onMudou, largo }) {
   }
 
   return (
-    <div className={`animar-fade ${largo ? "grid md:grid-cols-2 gap-4 items-start" : "flex flex-col gap-3"}`}>
+    <div className={`animar-fade ${largo ? "grid grid-cols-1 md:grid-cols-2 gap-4 items-start [&>*]:min-w-0" : "flex flex-col gap-3"}`}>
       <div className="flex flex-col gap-3">
       <button onClick={() => setScannerAberto(true)} className="rounded-2xl bg-gradient-to-br from-cyan to-navysoft text-white p-6 flex flex-col items-center gap-2 shadow-md active:scale-[0.99] transition-transform">
         <div className="w-14 h-14 rounded-2xl bg-white/15 flex items-center justify-center"><Icone nome="qr" className="w-8 h-8" /></div>

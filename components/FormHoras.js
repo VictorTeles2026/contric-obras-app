@@ -68,7 +68,7 @@ export default function FormHoras({ usuario, pis, onEnviado, compacto = false, l
   const codigo = (pid) => pis.find((p) => p.id === pid)?.codigo || "?";
 
   return (
-    <div className={largo ? "grid gap-6 md:grid-cols-2 items-start" : `flex flex-col ${compacto ? "gap-4" : "gap-5"}`}>
+    <div className={largo ? "grid grid-cols-1 gap-6 md:grid-cols-2 items-start [&>*]:min-w-0" : `flex flex-col ${compacto ? "gap-4" : "gap-5"}`}>
       <div className={largo ? "md:max-h-[560px] md:overflow-y-auto rolagem-fina md:pr-1" : ""}>
         <div className="rotulo">{variasObras && pis.length > 1 ? "Em quais obras você trabalhou hoje? (pode marcar várias)" : "Obra"}</div>
         {/* grade única (ordenada por cliente) — agrupar em blocos deixava um card por linha no celular */}
@@ -236,7 +236,7 @@ export function FormHorasRecursos({ usuario, meusPis, todosPis, onEnviado, largo
     </label>
   );
   return (
-    <div className={largo ? "grid gap-6 md:grid-cols-2 items-start" : "flex flex-col gap-4"}>
+    <div className={largo ? "grid grid-cols-1 gap-6 md:grid-cols-2 items-start [&>*]:min-w-0" : "flex flex-col gap-4 min-w-0"}>
       <div className={largo ? "flex flex-col gap-4" : "contents"}>
       <div>
         <span className="rotulo">Obra</span>
