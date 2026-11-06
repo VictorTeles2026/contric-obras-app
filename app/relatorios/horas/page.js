@@ -338,7 +338,10 @@ function HorasOrcadas({ pis }) {
   // colunas: um PI cada, ou um cliente somando os PIs dele
   const colunas = agrupar === "cliente"
     ? [...new Set(pisFiltrados.map((p) => p.cliente || "—"))].sort().map((c) => ({ chave: c, titulo: c, sub: `${pisFiltrados.filter((p) => (p.cliente || "—") === c).length} PI(s)`, ids: pisFiltrados.filter((p) => (p.cliente || "—") === c).map((p) => p.id) }))
-    : pisFiltrados.map((p) => ({ chave: p.id, titulo: p.codigo, sub: p.cliente || "", ids: [p.id] }));
+    : pisFiltrados.map((p) => ({ chave: p.id, titulo: p.codigo, sub: p.cliente || "", ids: [p.id],
+        dica: [p.codigo, p.cliente, p.projeto].filter(Boolean).join(" · ") }));
+  // no agrupamento por cliente, a dica lista os PIs somados na coluna
+  colunas.forEach((c) => { if (!c.dica) c.dica = pisFiltrados.filter((p) => c.ids.includes(p.id)).map((p) => [p.codigo, p.projeto].filter(Boolean).join(" · ")).join("\n"); });
   const valor = (catId, ids) => orcamentos.reduce((s, o) => s + (o.categoria_id === catId && ids.includes(o.pi_id) ? Number(o.valor_orcado) || 0 : 0), 0);
   const todosIds = pisFiltrados.map((p) => p.id);
   const totalCol = (ids) => tipos.reduce((s, c) => s + valor(c.id, ids), 0);
@@ -399,7 +402,7 @@ function HorasOrcadas({ pis }) {
                   <th className="sticky left-0 z-30 bg-white px-3 py-2 text-left titulo-secao border-b border-r border-line w-[240px] min-w-[240px] max-w-[240px]">Tipo de hora</th>
                   <th className="sticky left-[240px] z-30 bg-cyan/10 px-3 py-2 text-right titulo-secao !text-cyan border-b border-r border-line min-w-[100px]">Total</th>
                   {colunas.map((c) => (
-                    <th key={c.chave} className="px-3 py-2 text-right border-b border-line min-w-[110px] align-bottom">
+                    <th key={c.chave} title={c.dica} className="px-3 py-2 text-right border-b border-line min-w-[110px] align-bottom cursor-help">
                       <div className="font-mono font-bold text-xs text-textmain">{c.titulo}</div>
                       {c.sub && <div className="text-[11px] font-normal text-muted truncate max-w-[140px] ml-auto">{c.sub}</div>}
                     </th>
