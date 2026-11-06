@@ -5,7 +5,7 @@ import { useTabela } from "../../../lib/dados";
 import { hojeISO, addDias, isoLocal, dataLocal, formatarData, horaCurta } from "../../../lib/datas";
 import { horasDoLancamento, fmtH } from "../../../lib/horas";
 import PainelShell from "../../../components/PainelShell";
-import { AbasRelatorios, SeletorPi } from "../../../components/ui";
+import { AbasRelatorios, SeletorPi, Segmentado } from "../../../components/ui";
 import { CabecalhoPagina, EstadoVazio, Esqueleto, Campo } from "../../../components/ui";
 import Icone from "../../../components/Icone";
 import { gerarExcelTabela } from "../../../lib/pdfRdo";
@@ -46,6 +46,7 @@ export default function ControleHorasPage() {
   const [status, setStatus] = useState("todos"); // todos | aprovado | pendente
   const [agrupar, setAgrupar] = useState("pessoa");
   const [somar, setSomar] = useState("total");
+  const [visao, setVisao] = useState("lancadas"); // lancadas | orcadas
 
   const clientes = [...new Set(pis.map((p) => p.cliente).filter(Boolean))].sort();
   const recursosMaoDeObra = recursos.filter((r) => r.usuario_id && (r.tipo === "mao_obra_propria" || r.tipo === "mao_obra_terceira"));
@@ -123,9 +124,13 @@ export default function ControleHorasPage() {
     <PainelShell>
       <div className="p-4 md:p-8 max-w-[1400px] mx-auto">
         <CabecalhoPagina titulo="Relatórios" subtitulo="Orçado × realizado de cada PI e controle das horas lançadas."
-          acoes={<button onClick={exportar} disabled={!filtradas.length || exportando} className="btn btn-contorno"><Icone nome="download" className="w-4 h-4" /> {exportando ? "Gerando..." : "Exportar Excel"}</button>} />
+          acoes={visao === "lancadas" && <button onClick={exportar} disabled={!filtradas.length || exportando} className="btn btn-contorno"><Icone nome="download" className="w-4 h-4" /> {exportando ? "Gerando..." : "Exportar Excel"}</button>} />
         <AbasRelatorios />
+        <div className="max-w-sm mb-4">
+          <Segmentado valor={visao} onChange={setVisao} opcoes={[["lancadas", "Horas lançadas"], ["orcadas", "Horas orçadas"]]} />
+        </div>
 
+        {visao === "orcadas" ? <HorasOrcadas pis={pis} /> : <>
         {/* ---------- filtros ---------- */}
         <div className="cartao p-4 mb-4">
           <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-7 gap-3">
@@ -309,7 +314,120 @@ export default function ControleHorasPage() {
             </section>
           </>
         )}
+        </>}
       </div>
     </PainelShell>
+  );
+}
+
+// ---------------- Horas orçadas: tipos de hora (MOI + Contric da abertura do PI) × PIs ----------------
+// Orçamento não tem data, pessoa nem aprovação: valem só os filtros de PI, cliente e status do PI.
+const STATUS_PI = [["ativo", "Ativos"], ["", "Todos"], ["concluido", "Concluídos"], ["pausado", "Pausados"]];
+function HorasOrcadas({ pis }) {
+  const { dados: categorias, carregando } = useTabela("categorias_orcamento", { order: { coluna: "ordem" } });
+  const { dados: orcamentos } = useTabela("orcamento_pi_item");
+  const [piId, setPiId] = useState("");
+  const [cliente, setCliente] = useState("");
+  const [statusPi, setStatusPi] = useState("ativo");
+  const [agrupar, setAgrupar] = useState("pi"); // pi | cliente
+  const [exportando, setExportando] = useState(false);
+
+  const tipos = categorias.filter((c) => c.grupo === "moi_horas");
+  const clientes = [...new Set(pis.map((p) => p.cliente).filter(Boolean))].sort();
+  const pisFiltrados = pis.filter((p) => (!piId || p.id === piId) && (!cliente || p.cliente === cliente) && (!statusPi || (p.status || "ativo") === statusPi));
+  // colunas: um PI cada, ou um cliente somando os PIs dele
+  const colunas = agrupar === "cliente"
+    ? [...new Set(pisFiltrados.map((p) => p.cliente || "—"))].sort().map((c) => ({ chave: c, titulo: c, sub: `${pisFiltrados.filter((p) => (p.cliente || "—") === c).length} PI(s)`, ids: pisFiltrados.filter((p) => (p.cliente || "—") === c).map((p) => p.id) }))
+    : pisFiltrados.map((p) => ({ chave: p.id, titulo: p.codigo, sub: p.cliente || "", ids: [p.id] }));
+  const valor = (catId, ids) => orcamentos.reduce((s, o) => s + (o.categoria_id === catId && ids.includes(o.pi_id) ? Number(o.valor_orcado) || 0 : 0), 0);
+  const todosIds = pisFiltrados.map((p) => p.id);
+  const totalCol = (ids) => tipos.reduce((s, c) => s + valor(c.id, ids), 0);
+  const fmt = (v) => (v ? `${num(v)} h` : "—");
+
+  const exportar = async () => {
+    setExportando(true);
+    try {
+      const cab = ["Cód.", "Tipo de hora", "Total (h)", ...colunas.map((c) => (agrupar === "cliente" ? c.titulo : `${c.titulo} ${c.sub}`.trim()))];
+      const corpo = [...tipos.map((c) => [c.codigo, c.nome, valor(c.id, todosIds), ...colunas.map((col) => valor(c.id, col.ids))]),
+        ["", "TOTAL", totalCol(todosIds), ...colunas.map((col) => totalCol(col.ids))]];
+      const formatos = Object.fromEntries(cab.slice(2).map((_, i) => [i + 2, "#,##0.##"]));
+      const blob = await gerarExcelTabela({ titulo: "HORAS ORÇADAS POR TIPO DE HORA", subtitulo: `${pisFiltrados.length} PI(s) · colunas por ${agrupar === "cliente" ? "cliente" : "PI"}`,
+        cabecalho: cab, linhas: corpo, nomeAba: "Horas orçadas", larguras: [8, 30, 12, ...colunas.map(() => 16)], formatos });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a"); a.href = url; a.download = `horas-orcadas_${hojeISO()}.xlsx`; a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 2000);
+    } catch (e) { window.alert(`Não foi possível exportar: ${e.message}`); }
+    setExportando(false);
+  };
+
+  return (
+    <>
+      <div className="cartao p-4 mb-4">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <Campo rotulo="PI"><SeletorPi pis={pis} value={piId} onChange={(v) => setPiId(v)} vazio="Todos" className="input" /></Campo>
+          <Campo rotulo="Cliente">
+            <select value={cliente} onChange={(e) => setCliente(e.target.value)} className="input">
+              <option value="">Todos</option>
+              {clientes.map((c) => <option key={c} value={c}>{c}</option>)}
+            </select>
+          </Campo>
+          <Campo rotulo="Status do PI">
+            <select value={statusPi} onChange={(e) => setStatusPi(e.target.value)} className="input">
+              {STATUS_PI.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+            </select>
+          </Campo>
+        </div>
+      </div>
+      <div className="flex flex-wrap items-center gap-2 mb-3">
+        <span className="text-sm font-semibold">Colunas por:</span>
+        {[["pi", "PI"], ["cliente", "Cliente"]].map(([v, l]) => <button key={v} onClick={() => setAgrupar(v)} className={`chip ${agrupar === v ? "chip-ativo" : ""}`}>{l}</button>)}
+        <button onClick={exportar} disabled={!colunas.length || exportando} className="btn btn-contorno btn-sm ml-auto"><Icone nome="download" className="w-4 h-4" /> {exportando ? "Gerando..." : "Exportar Excel"}</button>
+      </div>
+
+      {carregando ? <Esqueleto linhas={4} altura={48} /> : !colunas.length || !tipos.length ? (
+        <EstadoVazio icone="relogio" titulo="Nada para mostrar" texto={!tipos.length ? "Nenhum tipo de hora cadastrado no orçamento." : "Nenhum PI com esses filtros."} />
+      ) : (
+        <section className="cartao overflow-hidden">
+          <div className="px-4 py-3 border-b border-line flex flex-wrap items-center justify-between gap-2">
+            <h2 className="titulo-quadro text-cyan">Horas orçadas por tipo de hora</h2>
+            <span className="text-xs text-muted">{pisFiltrados.length} PI(s) · valores da abertura do PI</span>
+          </div>
+          <div className="overflow-auto rolagem-linha-tempo" style={{ maxHeight: "70vh" }}>
+            <table className="text-sm border-separate border-spacing-0">
+              <thead className="sticky top-0 z-20 bg-white">
+                <tr>
+                  <th className="sticky left-0 z-30 bg-white px-3 py-2 text-left titulo-secao border-b border-r border-line w-[240px] min-w-[240px] max-w-[240px]">Tipo de hora</th>
+                  <th className="sticky left-[240px] z-30 bg-cyan/10 px-3 py-2 text-right titulo-secao !text-cyan border-b border-r border-line min-w-[100px]">Total</th>
+                  {colunas.map((c) => (
+                    <th key={c.chave} className="px-3 py-2 text-right border-b border-line min-w-[110px] align-bottom">
+                      <div className="font-mono font-bold text-xs text-textmain">{c.titulo}</div>
+                      {c.sub && <div className="text-[11px] font-normal text-muted truncate max-w-[140px] ml-auto">{c.sub}</div>}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {tipos.map((c) => (
+                  <tr key={c.id} className="hover:bg-cyan/[0.03]">
+                    <td className="sticky left-0 z-10 bg-white px-3 py-2 border-b border-r border-line/70 w-[240px] min-w-[240px] max-w-[240px] truncate" title={c.nome}>
+                      <span className="font-mono text-xs text-muted inline-block w-10">{c.codigo}</span>{c.nome}
+                    </td>
+                    <td className="sticky left-[240px] z-10 bg-white px-3 py-2 text-right font-mono font-bold border-b border-r border-line/70">{fmt(valor(c.id, todosIds))}</td>
+                    {colunas.map((col) => { const v = valor(c.id, col.ids); return <td key={col.chave} className={`px-3 py-2 text-right font-mono border-b border-line/50 whitespace-nowrap ${v ? "" : "text-muteddim"}`}>{fmt(v)}</td>; })}
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot className="sticky bottom-0 z-20 bg-panel">
+                <tr>
+                  <td className="sticky left-0 z-30 bg-panel px-3 py-2.5 font-head font-bold border-t-2 border-r border-line">Total</td>
+                  <td className="sticky left-[240px] z-30 bg-panel px-3 py-2.5 text-right font-mono font-bold border-t-2 border-r border-line whitespace-nowrap">{fmt(totalCol(todosIds))}</td>
+                  {colunas.map((col) => <td key={col.chave} className="px-3 py-2.5 text-right font-mono font-bold border-t-2 border-line whitespace-nowrap">{fmt(totalCol(col.ids))}</td>)}
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        </section>
+      )}
+    </>
   );
 }

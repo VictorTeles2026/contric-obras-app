@@ -29,6 +29,7 @@ const LAYOUT_PADRAO = {
     { i: "lista-pis", x: 0, y: 2, w: 5, h: 9, minW: 3, minH: 4 },
     { i: "medicoes", x: 5, y: 2, w: 7, h: 9, minW: 4, minH: 4 },
     { i: "docs-nao-abertos", x: 0, y: 11, w: 12, h: 8, minW: 4, minH: 4 },
+    { i: "nao-iniciados", x: 0, y: 19, w: 12, h: 7, minW: 4, minH: 4 },
   ],
   md: [
     { i: "pis-ativos", x: 0, y: 0, w: 6, h: 2, minW: 3, minH: 2 },
@@ -38,6 +39,7 @@ const LAYOUT_PADRAO = {
     { i: "lista-pis", x: 0, y: 4, w: 12, h: 8, minW: 4, minH: 4 },
     { i: "medicoes", x: 0, y: 12, w: 12, h: 8, minW: 4, minH: 4 },
     { i: "docs-nao-abertos", x: 0, y: 20, w: 12, h: 8, minW: 4, minH: 4 },
+    { i: "nao-iniciados", x: 0, y: 28, w: 12, h: 7, minW: 4, minH: 4 },
   ],
   sm: [
     { i: "pis-ativos", x: 0, y: 0, w: 1, h: 2 },
@@ -47,6 +49,7 @@ const LAYOUT_PADRAO = {
     { i: "lista-pis", x: 0, y: 8, w: 1, h: 9 },
     { i: "medicoes", x: 0, y: 17, w: 1, h: 9 },
     { i: "docs-nao-abertos", x: 0, y: 26, w: 1, h: 9 },
+    { i: "nao-iniciados", x: 0, y: 35, w: 1, h: 9 },
   ],
 };
 const IDS = LAYOUT_PADRAO.lg.map((l) => l.i);
@@ -129,6 +132,7 @@ export default function DashboardPage() {
 
   const quadros = {
     "docs-nao-abertos": <DocumentosNaoAbertos usuario={usuario} pis={pis} />,
+    "nao-iniciados": <PisNaoIniciados pis={pisAtivos} etapas={etapas} />,
     "pis-ativos": <Indicador titulo="PIs ativos" valor={pisAtivos.length} detalhe={`${pis.length} no total`} icone="obra" cor="text-cyan bg-cyan/10" href="/cronograma" />,
     aprovacoes: <Indicador titulo="Aprovações pendentes" valor={pendencias} detalhe={`${rdosPendentes.length} RDO · ${horasPendentes.length} horas`} icone="aprovar"
       cor={pendencias ? "text-amber bg-amber/10" : "text-green bg-green/10"} href="/aprovacoes" destaque={pendencias > 0} />,
@@ -272,6 +276,68 @@ export default function DashboardPage() {
         )}
       </div>
     </PainelShell>
+  );
+}
+
+// PIs ativos sem cronograma ou sem nenhuma etapa iniciada (avanço > 0%, em andamento ou concluída)
+function PisNaoIniciados({ pis, etapas }) {
+  const [filtro, setFiltro] = useState(""); // "" | sem | nada
+  const iniciada = (e) => e.status === "concluida" || e.status === "em_andamento" || (Number(e.percentual) || 0) > 0;
+  const lista = pis.map((pi) => {
+    const doPi = etapas.filter((e) => e.pi_id === pi.id);
+    if (doPi.some(iniciada)) return null;
+    const inicio = doPi.map((e) => e.data_prevista_inicio).filter(Boolean).sort()[0] || null;
+    const d = diasAte(inicio);
+    return { pi, qtd: doPi.length, inicio, sem: doPi.length === 0, atrasado: d !== null && d < 0 };
+  }).filter(Boolean)
+    // sem cronograma primeiro, depois atrasados para iniciar, depois pela data de início
+    .sort((a, b) => (b.sem - a.sem) || (b.atrasado - a.atrasado) || (a.inicio || "9999").localeCompare(b.inicio || "9999"));
+  const visiveis = lista.filter((l) => !filtro || (filtro === "sem" ? l.sem : !l.sem));
+  return (
+    <section className="cartao p-4 md:p-5 h-full flex flex-col min-h-0">
+      <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+        <h2 className="titulo-quadro">PIs não iniciados <span className={`selo ml-1 ${lista.length ? "bg-amber/10 text-amber" : "bg-green/10 text-green"}`}>{lista.length}</span></h2>
+        <div className="flex flex-wrap gap-1.5">
+          {[["", "Todos"], ["sem", "Sem cronograma"], ["nada", "Nada iniciado"]].map(([v, l]) => (
+            <button key={v} onClick={() => setFiltro(v)} className={`chip ${filtro === v ? "chip-ativo" : ""}`}>{l}</button>
+          ))}
+        </div>
+      </div>
+      {visiveis.length === 0 ? (
+        <EstadoVazio icone="obra" titulo="Tudo em andamento" texto="Todos os PIs ativos têm cronograma com alguma etapa iniciada." />
+      ) : (
+        <div className="overflow-auto rolagem-fina flex-1 min-h-0">
+          <table className="w-full text-sm min-w-[620px]">
+            <thead className="sticky top-0 bg-white z-10">
+              <tr className="text-left border-b border-line">
+                <th className="py-2 pr-3 titulo-secao">PI</th>
+                <th className="py-2 pr-3 titulo-secao">Cliente / projeto</th>
+                <th className="py-2 pr-3 titulo-secao">Situação</th>
+                <th className="py-2 pr-3 titulo-secao">1º início previsto</th>
+                <th className="py-2 pr-3 titulo-secao text-right">Etapas</th>
+                <th className="py-2 titulo-secao" />
+              </tr>
+            </thead>
+            <tbody>
+              {visiveis.map(({ pi, qtd, inicio, sem, atrasado }) => (
+                <tr key={pi.id} className="border-b border-line/60 hover:bg-panel/60">
+                  <td className="py-2 pr-3 font-mono font-semibold text-cyan whitespace-nowrap">{pi.codigo}</td>
+                  <td className="py-2 pr-3 max-w-[280px]"><div className="truncate">{pi.cliente || "—"}{pi.projeto ? <span className="text-muted"> · {pi.projeto}</span> : ""}</div></td>
+                  <td className="py-2 pr-3 whitespace-nowrap">
+                    <span className={`selo ${sem ? "bg-red/10 text-red" : atrasado ? "bg-amber/10 text-amber" : "bg-panel text-muted"}`}>{sem ? "Sem cronograma" : atrasado ? "Atrasado p/ iniciar" : "Nada iniciado"}</span>
+                  </td>
+                  <td className={`py-2 pr-3 whitespace-nowrap tabular-nums ${atrasado ? "text-red" : ""}`}>{inicio ? formatarData(inicio) : "—"}</td>
+                  <td className="py-2 pr-3 text-right tabular-nums">{qtd}</td>
+                  <td className="py-2 text-right whitespace-nowrap">
+                    <Link href={sem ? `/cronograma?pi=${pi.id}` : `/pi?id=${pi.id}`} className="text-cyan text-sm font-semibold hover:underline">{sem ? "Configurar →" : "Abrir PI →"}</Link>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </section>
   );
 }
 
