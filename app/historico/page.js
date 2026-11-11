@@ -8,7 +8,7 @@ import { STATUS_ETAPA } from "../../lib/constantes";
 import { excluirRdo, excluirHoras, excluirOcorrencia } from "../../lib/exclusoes";
 import { supabase } from "../../lib/supabase";
 import PainelShell from "../../components/PainelShell";
-import { AbasAprovacoes, SeletorPi } from "../../components/ui";
+import { AbasAprovacoes, FiltroMulti, listaPis, passa } from "../../components/ui";
 import AcoesMaster from "../../components/AcoesMaster";
 import { EditorRdo, EditorHoras, EditorOcorrencia } from "../../components/Editores";
 import { ResumoRdoTecnico } from "../../components/RdoTecnico";
@@ -29,7 +29,7 @@ export default function HistoricoPage() {
   const { dados: ocorrencias, recarregar: rOc } = useTabela("ocorrencias", { order: { coluna: "created_at", asc: false } });
 
   const [filtro, setFiltro] = useState("");
-  const [filtroPi, setFiltroPi] = useState("");
+  const [filtroPi, setFiltroPi] = useState([]);
   const [limite, setLimite] = useState(POR_PAGINA);
   const [editando, setEditando] = useState(null); // { tipo, item, ocorrencias? }
   const piDe = (id) => pis.find((p) => p.id === id);
@@ -42,7 +42,7 @@ export default function HistoricoPage() {
     ...rdosTodos.filter((r) => decididos(r.status)).map((r) => ({ tipo: "rdo", ...r })),
     ...horasTodas.filter((h) => decididos(h.status)).map((h) => ({ tipo: "horas", ...h })),
     ...ocorrencias.filter((o) => !o.rdo_id && o.status && decididos(o.status)).map((o) => ({ tipo: "ocorrencia", ...o })),
-  ].filter((r) => (!filtro || r.tipo === filtro) && (!filtroPi || r.pi_id === filtroPi))
+  ].filter((r) => (!filtro || r.tipo === filtro) && passa(filtroPi, r.pi_id))
     .sort((a, b) => new Date(b.decidido_em || b.created_at) - new Date(a.decidido_em || a.created_at));
 
   const abrirEdicao = async (r) => {
@@ -70,7 +70,7 @@ export default function HistoricoPage() {
           {[["", "Todos"], ["rdo", "RDOs"], ["horas", "Horas"], ["ocorrencia", "Ocorrências"]].map(([v, l]) => (
             <button key={v} onClick={() => { setFiltro(v); setLimite(POR_PAGINA); }} className={`chip ${filtro === v ? "chip-ativo" : ""}`}>{l}</button>
           ))}
-          <SeletorPi pis={[...pis].sort((a, b) => (a.codigo || "").localeCompare(b.codigo || ""))} value={filtroPi} onChange={(v) => { setFiltroPi(v); setLimite(POR_PAGINA); }} vazio="Todos os PIs" className="input !w-auto sm:ml-auto" />
+          <div className="sm:ml-auto sm:w-72"><FiltroMulti todos="Todos os PIs" opcoes={listaPis(pis)} valor={filtroPi} onChange={(v) => { setFiltroPi(v); setLimite(POR_PAGINA); }} ariaLabel="Filtrar PI" /></div>
         </div>
 
         {(c1 || c2) && <Esqueleto linhas={4} altura={72} />}

@@ -5,7 +5,7 @@ import { useTabela, registrarLog, chamarApi } from "../../lib/dados";
 import { useAuth, podeGerenciarUsuarios, pode } from "../../lib/AuthContext";
 import { useToast } from "../../lib/Toast";
 import PainelShell from "../../components/PainelShell";
-import { CabecalhoPagina, Modal, Campo, Aviso, Esqueleto, EstadoVazio, Spinner, SeletorEquipes } from "../../components/ui";
+import { CabecalhoPagina, Modal, Campo, Aviso, Esqueleto, EstadoVazio, Spinner, SeletorEquipes, FiltroMulti, passa } from "../../components/ui";
 import { AREAS, FUNCOES, EQUIPE_CAMPO, ALERTAS, TIPOS_ALERTA } from "../../lib/constantes";
 import { normalizarLogin, erroLogin, ehEmail, sugerirLogin } from "../../lib/login";
 import Icone from "../../components/Icone";
@@ -55,9 +55,9 @@ export default function UsuariosPage() {
   const [editando, setEditando] = useState(null);
   const [pinGerado, setPinGerado] = useState(null);
   const [busca, setBusca] = useState("");
-  const [filtroPerfil, setFiltroPerfil] = useState("");
-  const [filtroEquipe, setFiltroEquipe] = useState("");
-  const [filtroEmpresa, setFiltroEmpresa] = useState(""); // aba Usuários de Campo
+  const [filtroPerfil, setFiltroPerfil] = useState([]);
+  const [filtroEquipe, setFiltroEquipe] = useState([]);
+  const [filtroEmpresa, setFiltroEmpresa] = useState([]); // aba Usuários de Campo
   const [mostrarInativos, setMostrarInativos] = useState(true);
   const [alternando, setAlternando] = useState(null);
   const [excluindo, setExcluindo] = useState(null);
@@ -79,8 +79,8 @@ export default function UsuariosPage() {
   const daAba = usuarios.filter((u) => (aba === "campo" ? ehDeCampo(u) : !ehDeCampo(u)));
   const termo = busca.trim().toLowerCase();
   const filtrados = daAba.filter((u) =>
-    (!filtroPerfil || u.perfil === filtroPerfil) && (!filtroEquipe || equipesDe(u).some((x) => x.trim().toLowerCase() === filtroEquipe.toLowerCase())) &&
-    (aba !== "campo" || !filtroEmpresa || (filtroEmpresa === "__propria" ? u.perfil !== "terceiro" : (u.empresa_terceira || "").trim().toLowerCase() === filtroEmpresa)) && (mostrarInativos || u.ativo) &&
+    passa(filtroPerfil, u.perfil) && (!filtroEquipe.length || equipesDe(u).some((x) => filtroEquipe.some((f) => x.trim().toLowerCase() === f.toLowerCase()))) &&
+    (aba !== "campo" || !filtroEmpresa.length || filtroEmpresa.some((f) => f === "__propria" ? u.perfil !== "terceiro" : (u.empresa_terceira || "").trim().toLowerCase() === f)) && (mostrarInativos || u.ativo) &&
     (!termo || [u.nome, u.email, loginDe(u), u.funcao, u.empresa_terceira].some((c) => (c || "").toLowerCase().includes(termo))));
   const qtdCampo = usuarios.filter(ehDeCampo).length;
 
@@ -134,22 +134,14 @@ export default function UsuariosPage() {
             <Icone nome="buscar" className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muteddim" />
             <input value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Buscar por nome, usuário, e-mail, função ou empresa" className="input pl-9" />
           </div>
-          <select value={filtroPerfil} onChange={(e) => setFiltroPerfil(e.target.value)} className="input sm:!w-56">
-            <option value="">Todos os perfis</option>
-            {PERFIS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-          </select>
-          <select value={filtroEquipe} onChange={(e) => setFiltroEquipe(e.target.value)} className="input sm:!w-52">
-            <option value="">Todas as equipes</option>
-            {AREAS.map((a) => <option key={a} value={a}>{a}</option>)}
-          </select>
+          <div className="sm:w-56 shrink-0"><FiltroMulti todos="Todos os perfis" opcoes={PERFIS} valor={filtroPerfil} onChange={setFiltroPerfil} ariaLabel="Filtrar perfil" /></div>
+          <div className="sm:w-52 shrink-0"><FiltroMulti todos="Todas as equipes" opcoes={AREAS.map((a) => [a, a])} valor={filtroEquipe} onChange={setFiltroEquipe} ariaLabel="Filtrar equipe" /></div>
           {aba === "campo" && (
-            <select value={filtroEmpresa} onChange={(e) => setFiltroEmpresa(e.target.value)} className={`input sm:!w-52 ${filtroEmpresa ? "!border-cyan/40 !text-cyan" : ""}`} aria-label="Filtrar por empresa terceira">
-              <option value="">Todas as empresas</option>
-              <option value="__propria">Contric (mão de obra própria)</option>
-              {[...new Set([...empresas.map((e) => e.nome), ...daAba.map((u) => u.empresa_terceira).filter(Boolean)].map((n) => n.trim()))]
-                .sort((a, b) => a.localeCompare(b, "pt-BR"))
-                .map((n) => <option key={n} value={n.toLowerCase()}>{n}</option>)}
-            </select>
+            <div className="sm:w-52 shrink-0">
+              <FiltroMulti todos="Todas as empresas" valor={filtroEmpresa} onChange={setFiltroEmpresa} ariaLabel="Filtrar por empresa terceira"
+                opcoes={[["__propria", "Contric (mão de obra própria)"], ...[...new Set([...empresas.map((e) => e.nome), ...daAba.map((u) => u.empresa_terceira).filter(Boolean)].map((n) => n.trim()))]
+                  .sort((a, b) => a.localeCompare(b, "pt-BR")).map((n) => [n.toLowerCase(), n])]} />
+            </div>
           )}
           <label className="flex items-center gap-2 text-sm text-muted whitespace-nowrap px-1 cursor-pointer">
             <input type="checkbox" className="accent-cyan w-4 h-4" checked={mostrarInativos} onChange={(e) => setMostrarInativos(e.target.checked)} />

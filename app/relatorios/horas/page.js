@@ -5,7 +5,7 @@ import { useTabela } from "../../../lib/dados";
 import { hojeISO, addDias, isoLocal, dataLocal, formatarData, horaCurta } from "../../../lib/datas";
 import { horasDoLancamento, fmtH } from "../../../lib/horas";
 import PainelShell from "../../../components/PainelShell";
-import { AbasRelatorios, SeletorPi, Segmentado } from "../../../components/ui";
+import { AbasRelatorios, Segmentado, FiltroMulti, listaPis, passa } from "../../../components/ui";
 import { CabecalhoPagina, EstadoVazio, Esqueleto, Campo } from "../../../components/ui";
 import Icone from "../../../components/Icone";
 import { gerarExcelTabela } from "../../../lib/pdfRdo";
@@ -39,11 +39,11 @@ export default function ControleHorasPage() {
 
   const [de, setDe] = useState(periodoRapido("mes")[0]);
   const [ate, setAte] = useState(hojeISO());
-  const [piId, setPiId] = useState("");
-  const [cliente, setCliente] = useState("");
-  const [empresaId, setEmpresaId] = useState("");
-  const [recursoId, setRecursoId] = useState("");
-  const [status, setStatus] = useState("todos"); // todos | aprovado | pendente
+  const [piId, setPiId] = useState([]);
+  const [cliente, setCliente] = useState([]);
+  const [empresaId, setEmpresaId] = useState([]);
+  const [recursoId, setRecursoId] = useState([]);
+  const [status, setStatus] = useState([]); // vazio = aprovadas e pendentes
   const [agrupar, setAgrupar] = useState("pessoa");
   const [somar, setSomar] = useState("total");
   const [visao, setVisao] = useState("lancadas"); // lancadas | orcadas
@@ -69,11 +69,11 @@ export default function ControleHorasPage() {
 
   const filtradas = linhas.filter((l) =>
     l.data >= de && l.data <= ate &&
-    (!piId || l.pi_id === piId) &&
-    (!cliente || l.pi?.cliente === cliente) &&
-    (!empresaId || (empresaId === PROPRIA ? !l.empresa && l.nomeEmpresa === "Contric (própria)" : l.empresa?.id === empresaId)) &&
-    (!recursoId || l.recurso?.id === recursoId) &&
-    (status === "todos" || l.status === status))
+    passa(piId, l.pi_id) &&
+    passa(cliente, l.pi?.cliente) &&
+    (!empresaId.length || empresaId.some((e) => e === PROPRIA ? !l.empresa && l.nomeEmpresa === "Contric (própria)" : l.empresa?.id === e)) &&
+    passa(recursoId, l.recurso?.id) &&
+    passa(status, l.status))
     .sort((a, b) => a.data.localeCompare(b.data) || (a.pessoa?.nome || "").localeCompare(b.pessoa?.nome || ""));
 
   const chaveGrupo = (l, g = agrupar) => g === "pi" ? l.pi?.codigo || "—" : g === "cliente" ? l.pi?.cliente || "—" : g === "empresa" ? l.nomeEmpresa : g === "pessoa" ? l.pessoa?.nome || "—" : "Todos os lançamentos";
@@ -117,8 +117,8 @@ export default function ControleHorasPage() {
     setExportando(false);
   };
 
-  const limpar = () => { setPiId(""); setCliente(""); setEmpresaId(""); setRecursoId(""); setStatus("todos"); };
-  const filtrosAtivos = [piId, cliente, empresaId, recursoId].filter(Boolean).length + (status !== "todos" ? 1 : 0);
+  const limpar = () => { setPiId([]); setCliente([]); setEmpresaId([]); setRecursoId([]); setStatus([]); };
+  const filtrosAtivos = [piId, cliente, empresaId, recursoId, status].filter((f) => f.length).length;
 
   return (
     <PainelShell>
@@ -137,33 +137,20 @@ export default function ControleHorasPage() {
             <Campo rotulo="De"><input type="date" value={de} max={ate} onChange={(e) => setDe(e.target.value)} className="input" /></Campo>
             <Campo rotulo="Até"><input type="date" value={ate} min={de} onChange={(e) => setAte(e.target.value)} className="input" /></Campo>
             <Campo rotulo="PI">
-              <SeletorPi pis={pis} value={piId} onChange={(v) => setPiId(v)} vazio="Todos" className="input" />
+              <FiltroMulti opcoes={listaPis(pis)} valor={piId} onChange={setPiId} ariaLabel="Filtrar PI" />
             </Campo>
             <Campo rotulo="Cliente">
-              <select value={cliente} onChange={(e) => setCliente(e.target.value)} className="input">
-                <option value="">Todos</option>
-                {clientes.map((c) => <option key={c} value={c}>{c}</option>)}
-              </select>
+              <FiltroMulti opcoes={clientes.map((c) => [c, c])} valor={cliente} onChange={setCliente} ariaLabel="Filtrar cliente" />
             </Campo>
             <Campo rotulo="Empresa terceira">
-              <select value={empresaId} onChange={(e) => setEmpresaId(e.target.value)} className="input">
-                <option value="">Todas</option>
-                <option value={PROPRIA}>Contric (mão de obra própria)</option>
-                {empresas.map((e) => <option key={e.id} value={e.id}>{e.nome}{e.ativa ? "" : " (inativa)"}</option>)}
-              </select>
+              <FiltroMulti todos="Todas" valor={empresaId} onChange={setEmpresaId} ariaLabel="Filtrar empresa"
+                opcoes={[[PROPRIA, "Contric (mão de obra própria)"], ...empresas.map((e) => [e.id, `${e.nome}${e.ativa ? "" : " (inativa)"}`])]} />
             </Campo>
             <Campo rotulo="Recurso">
-              <select value={recursoId} onChange={(e) => setRecursoId(e.target.value)} className="input">
-                <option value="">Todos</option>
-                {recursosMaoDeObra.map((r) => <option key={r.id} value={r.id}>{r.nome}</option>)}
-              </select>
+              <FiltroMulti opcoes={recursosMaoDeObra.map((r) => [r.id, r.nome])} valor={recursoId} onChange={setRecursoId} ariaLabel="Filtrar recurso" />
             </Campo>
             <Campo rotulo="Situação">
-              <select value={status} onChange={(e) => setStatus(e.target.value)} className="input">
-                <option value="todos">Aprovadas e pendentes</option>
-                <option value="aprovado">Só aprovadas</option>
-                <option value="pendente">Só pendentes</option>
-              </select>
+              <FiltroMulti todos="Aprovadas e pendentes" opcoes={[["aprovado", "Aprovadas"], ["pendente", "Pendentes"]]} valor={status} onChange={setStatus} ariaLabel="Filtrar situação" />
             </Campo>
           </div>
           <div className="flex flex-wrap items-center gap-2 mt-3">
@@ -322,19 +309,19 @@ export default function ControleHorasPage() {
 
 // ---------------- Horas orçadas: tipos de hora (MOI + Contric da abertura do PI) × PIs ----------------
 // Orçamento não tem data, pessoa nem aprovação: valem só os filtros de PI, cliente e status do PI.
-const STATUS_PI = [["ativo", "Ativos"], ["", "Todos"], ["concluido", "Concluídos"], ["pausado", "Pausados"]];
+const STATUS_PI = [["ativo", "Ativos"], ["concluido", "Concluídos"], ["pausado", "Pausados"], ["cancelado", "Cancelados"]];
 function HorasOrcadas({ pis }) {
   const { dados: categorias, carregando } = useTabela("categorias_orcamento", { order: { coluna: "ordem" } });
   const { dados: orcamentos } = useTabela("orcamento_pi_item");
-  const [piId, setPiId] = useState("");
-  const [cliente, setCliente] = useState("");
-  const [statusPi, setStatusPi] = useState("ativo");
+  const [piId, setPiId] = useState([]);
+  const [cliente, setCliente] = useState([]);
+  const [statusPi, setStatusPi] = useState(["ativo"]);
   const [agrupar, setAgrupar] = useState("pi"); // pi | cliente
   const [exportando, setExportando] = useState(false);
 
   const tipos = categorias.filter((c) => c.grupo === "moi_horas");
   const clientes = [...new Set(pis.map((p) => p.cliente).filter(Boolean))].sort();
-  const pisFiltrados = pis.filter((p) => (!piId || p.id === piId) && (!cliente || p.cliente === cliente) && (!statusPi || (p.status || "ativo") === statusPi));
+  const pisFiltrados = pis.filter((p) => passa(piId, p.id) && passa(cliente, p.cliente) && passa(statusPi, p.status || "ativo"));
   // colunas: um PI cada, ou um cliente somando os PIs dele
   const colunas = agrupar === "cliente"
     ? [...new Set(pisFiltrados.map((p) => p.cliente || "—"))].sort().map((c) => ({ chave: c, titulo: c, sub: `${pisFiltrados.filter((p) => (p.cliente || "—") === c).length} PI(s)`, ids: pisFiltrados.filter((p) => (p.cliente || "—") === c).map((p) => p.id) }))
@@ -367,18 +354,9 @@ function HorasOrcadas({ pis }) {
     <>
       <div className="cartao p-4 mb-4">
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-          <Campo rotulo="PI"><SeletorPi pis={pis} value={piId} onChange={(v) => setPiId(v)} vazio="Todos" className="input" /></Campo>
-          <Campo rotulo="Cliente">
-            <select value={cliente} onChange={(e) => setCliente(e.target.value)} className="input">
-              <option value="">Todos</option>
-              {clientes.map((c) => <option key={c} value={c}>{c}</option>)}
-            </select>
-          </Campo>
-          <Campo rotulo="Status do PI">
-            <select value={statusPi} onChange={(e) => setStatusPi(e.target.value)} className="input">
-              {STATUS_PI.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-            </select>
-          </Campo>
+          <Campo rotulo="PI"><FiltroMulti opcoes={listaPis(pis)} valor={piId} onChange={setPiId} ariaLabel="Filtrar PI" /></Campo>
+          <Campo rotulo="Cliente"><FiltroMulti opcoes={clientes.map((c) => [c, c])} valor={cliente} onChange={setCliente} ariaLabel="Filtrar cliente" /></Campo>
+          <Campo rotulo="Status do PI"><FiltroMulti opcoes={STATUS_PI} valor={statusPi} onChange={setStatusPi} ariaLabel="Filtrar status do PI" /></Campo>
         </div>
       </div>
       <div className="flex flex-wrap items-center gap-2 mb-3">

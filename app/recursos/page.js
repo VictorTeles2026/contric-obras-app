@@ -11,7 +11,7 @@ import { hojeISO, formatarData } from "../../lib/datas";
 import { TIPOS_RECURSO, AREAS, FUNCOES, UNIDADES } from "../../lib/constantes";
 import { useToast } from "../../lib/Toast";
 import PainelShell from "../../components/PainelShell";
-import { Modal, EstadoVazio, Esqueleto, Aviso, Campo, SeletorEquipes, SeletorPi } from "../../components/ui";
+import { Modal, EstadoVazio, Esqueleto, Aviso, Campo, SeletorEquipes, SeletorPi, FiltroMulti, passa } from "../../components/ui";
 import Icone from "../../components/Icone";
 import GraficoUtilizacao from "../../components/GraficoUtilizacao";
 import { ConfirmacaoDupla } from "../../components/AcoesMaster";
@@ -77,7 +77,7 @@ export default function RecursosPage({ searchParams }) {
   };
   const [busca, setBusca] = useState("");
   const [buscaAplicada, setBuscaAplicada] = useState("");
-  const [filtroEquipe, setFiltroEquipe] = useState("");
+  const [filtroEquipe, setFiltroEquipe] = useState([]);
   const [mostrarDesabilitados, setMostrarDesabilitados] = useState(true);
   const [alternandoAtivo, setAlternandoAtivo] = useState(false);
   const alternarAtivo = async (r) => {
@@ -111,7 +111,7 @@ export default function RecursosPage({ searchParams }) {
 
   const recursosFiltrados = useMemo(() => {
     const termo = buscaAplicada.trim().toLowerCase();
-    return recursos.filter((r) => (mostrarDesabilitados || r.ativo !== false) && (!filtroEquipe || (r.equipes || []).includes(filtroEquipe)) && (!termo ||
+    return recursos.filter((r) => (mostrarDesabilitados || r.ativo !== false) && (!filtroEquipe.length || (r.equipes || []).some((e) => filtroEquipe.includes(e))) && (!termo ||
       r.nome.toLowerCase().includes(termo) ||
       rotuloTipo(r.tipo).toLowerCase().includes(termo) ||
       (r.atributos?.funcao || "").toLowerCase().includes(termo) ||
@@ -364,10 +364,8 @@ export default function RecursosPage({ searchParams }) {
           <input value={busca} onChange={(e) => { setBusca(e.target.value); setBuscaAplicada(e.target.value); }}
             placeholder="Buscar por nome, tipo, função, equipe..." className="input pl-9" />
         </div>
-        <select value={filtroEquipe} onChange={(e) => setFiltroEquipe(e.target.value)} className={`input mb-2 !py-2 !text-sm ${filtroEquipe ? "!border-cyan/40 !text-cyan" : ""}`} aria-label="Filtrar por equipe">
-          <option value="">Todas as equipes</option>
-          {AREAS.map((a) => <option key={a} value={a}>{a}</option>)}
-        </select>
+        <div className="mb-2"><FiltroMulti todos="Todas as equipes" opcoes={AREAS.map((a) => [a, a])} valor={filtroEquipe} onChange={setFiltroEquipe}
+          className={`input !py-2 !text-sm ${filtroEquipe.length ? "!border-cyan/40 !text-cyan" : ""}`} ariaLabel="Filtrar por equipe" /></div>
         <label className="flex items-center gap-2 text-sm text-muted mb-2 px-1 cursor-pointer">
           <input type="checkbox" className="accent-cyan w-4 h-4" checked={mostrarDesabilitados} onChange={(e) => setMostrarDesabilitados(e.target.checked)} />
           Mostrar desabilitados ({recursos.filter((r) => r.ativo === false).length})
@@ -714,13 +712,13 @@ function AlocacaoEmMassaModal({ pis, recursos, opcoesEtapa, etapas, onAplicar, o
   const [fim, setFim] = useState(hojeISO());
   const [perc, setPerc] = useState(100);
   const [busca, setBusca] = useState("");
-  const [filtroTipo, setFiltroTipo] = useState("");
-  const [filtroEquipeM, setFiltroEquipeM] = useState("");
+  const [filtroTipo, setFiltroTipo] = useState([]);
+  const [filtroEquipeM, setFiltroEquipeM] = useState([]);
   const [selecionados, setSelecionados] = useState(preSelecionados || []);
   const [aplicando, setAplicando] = useState(false);
 
   const filtrados = recursos.filter((r) => r.ativo !== false &&
-    (!filtroTipo || r.tipo === filtroTipo) && (!filtroEquipeM || (r.equipes || []).includes(filtroEquipeM)) &&
+    passa(filtroTipo, r.tipo) && (!filtroEquipeM.length || (r.equipes || []).some((e) => filtroEquipeM.includes(e))) &&
     (!busca.trim() || r.nome.toLowerCase().includes(busca.trim().toLowerCase()))
   );
   const toggle = (id) => setSelecionados((p) => p.includes(id) ? p.filter((x) => x !== id) : [...p, id]);
@@ -775,14 +773,8 @@ function AlocacaoEmMassaModal({ pis, recursos, opcoesEtapa, etapas, onAplicar, o
       <div className="border-t border-line pt-4">
         <div className="flex flex-col sm:flex-row gap-2 mb-2">
           <input placeholder="Buscar recurso..." value={busca} onChange={(e) => setBusca(e.target.value)} className="input flex-1" />
-          <select value={filtroTipo} onChange={(e) => setFiltroTipo(e.target.value)} className="input sm:!w-48">
-            <option value="">Todos os tipos</option>
-            {TIPOS_RECURSO.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-          </select>
-          <select value={filtroEquipeM} onChange={(e) => setFiltroEquipeM(e.target.value)} className="input sm:!w-48">
-            <option value="">Todas as equipes</option>
-            {AREAS.map((a) => <option key={a} value={a}>{a}</option>)}
-          </select>
+          <div className="sm:w-48 shrink-0"><FiltroMulti todos="Todos os tipos" opcoes={TIPOS_RECURSO} valor={filtroTipo} onChange={setFiltroTipo} ariaLabel="Filtrar tipo" /></div>
+          <div className="sm:w-48 shrink-0"><FiltroMulti todos="Todas as equipes" opcoes={AREAS.map((a) => [a, a])} valor={filtroEquipeM} onChange={setFiltroEquipeM} ariaLabel="Filtrar equipe" /></div>
         </div>
         <div className="flex justify-between items-center mb-2">
           <span className="text-xs text-muted">{filtrados.length} resultado(s) · <strong>{selecionados.length}</strong> selecionado(s)</span>

@@ -414,3 +414,45 @@ export function SeletorPi({ pis = [], value, onChange, vazio = null, className =
     </div>
   );
 }
+
+// Filtro de múltipla escolha: `valor` é uma lista; lista vazia = todos.
+// `opcoes`: [[valor, rotulo, detalhe?], ...]. Use `listaPis(pis)` para montar as opções de PI.
+export function FiltroMulti({ opcoes = [], valor = [], onChange, todos = "Todos", className = "input", ariaLabel = "Filtro" }) {
+  const [aberto, setAberto] = useState(false);
+  const [busca, setBusca] = useState("");
+  const ancoraRef = useRef(null);
+  const termo = busca.trim().toLowerCase();
+  const lista = opcoes.filter(([, r, d]) => !termo || `${r} ${d || ""}`.toLowerCase().includes(termo));
+  const alternar = (v) => onChange(valor.includes(v) ? valor.filter((x) => x !== v) : [...valor, v]);
+  const nomes = opcoes.filter(([v]) => valor.includes(v)).map(([, r]) => r);
+  const resumo = !valor.length ? todos : nomes.length === 1 ? nomes[0] : `${nomes.length} selecionados`;
+  return (
+    <div ref={ancoraRef} className="relative min-w-0">
+      <button type="button" onClick={() => setAberto((v) => !v)} aria-label={ariaLabel} aria-expanded={aberto} title={nomes.join("\n")}
+        className={`${className} !flex items-center gap-2 text-left cursor-pointer`}>
+        <span className={`flex-1 min-w-0 truncate ${valor.length ? "" : "text-muted"}`}>{resumo}</span>
+        {valor.length > 1 && <span className="selo bg-cyan/10 text-cyan shrink-0">{valor.length}</span>}
+        <svg viewBox="0 0 24 24" className="w-4 h-4 shrink-0 text-muteddim" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="m6 9 6 6 6-6" /></svg>
+      </button>
+      <PainelSuspenso ancoraRef={ancoraRef} aberto={aberto} onFechar={() => { setAberto(false); setBusca(""); }} largura={340} alturaMax={400}>
+        <div className="p-1 sticky top-0 bg-white z-10 flex flex-col gap-1">
+          {opcoes.length > 7 && <input autoFocus value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Buscar..." className="input !py-1.5 text-sm" aria-label="Buscar opção" />}
+          <div className="flex items-center justify-between px-1.5 text-xs">
+            <button type="button" onClick={() => onChange([...new Set([...valor, ...lista.map(([v]) => v)])])} className="text-cyan hover:underline">Marcar {termo ? "encontrados" : "todos"}</button>
+            <button type="button" onClick={() => onChange([])} className="text-muted hover:underline">Limpar ({todos.toLowerCase()})</button>
+          </div>
+        </div>
+        {lista.map(([v, r, d]) => (
+          <label key={v} className={`flex items-start gap-2.5 px-2.5 py-2 rounded-lg text-sm cursor-pointer hover:bg-panel ${valor.includes(v) ? "bg-cyan/10" : ""}`}>
+            <input type="checkbox" checked={valor.includes(v)} onChange={() => alternar(v)} className="mt-0.5 accent-cyan" />
+            <span className="min-w-0"><span className="font-medium">{r}</span>{d && <span className="block text-xs text-muted truncate">{d}</span>}</span>
+          </label>
+        ))}
+        {!lista.length && <div className="px-2.5 py-3 text-sm text-muteddim">Nada encontrado.</div>}
+      </PainelSuspenso>
+    </div>
+  );
+}
+export const listaPis = (pis) => [...pis].sort(ordemPi).map((p) => [p.id, `${p.codigo} — ${p.cliente || ""}`, p.projeto]);
+// lista vazia = sem filtro
+export const passa = (lista, v) => !lista.length || lista.includes(v);

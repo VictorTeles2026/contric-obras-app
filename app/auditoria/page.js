@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useTabela } from "../../lib/dados";
 import PainelShell from "../../components/PainelShell";
-import { CabecalhoPagina, EstadoVazio, Esqueleto } from "../../components/ui";
+import { CabecalhoPagina, EstadoVazio, Esqueleto, FiltroMulti, passa } from "../../components/ui";
 import Icone from "../../components/Icone";
 
 const POR_PAGINA = 100;
@@ -12,13 +12,13 @@ export default function AuditoriaPage() {
   // mais recentes primeiro (antes vinham os mais antigos no topo)
   const { dados: logs, carregando } = useTabela("logs_auditoria", { order: { coluna: "created_at", asc: false } });
   const [busca, setBusca] = useState("");
-  const [filtroUsuario, setFiltroUsuario] = useState("");
+  const [filtroUsuario, setFiltroUsuario] = useState([]);
   const [limite, setLimite] = useState(POR_PAGINA);
 
   const usuariosComLog = [...new Set(logs.map((l) => l.usuario_nome))].sort();
   const termo = busca.trim().toLowerCase();
   const filtrados = logs.filter((l) =>
-    (!filtroUsuario || l.usuario_nome === filtroUsuario) &&
+    passa(filtroUsuario, l.usuario_nome) &&
     (!termo || `${l.acao} ${l.detalhe || ""} ${l.usuario_nome || ""}`.toLowerCase().includes(termo))
   );
 
@@ -32,10 +32,10 @@ export default function AuditoriaPage() {
             <Icone nome="buscar" className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muteddim" />
             <input placeholder="Buscar por ação, detalhe ou pessoa..." value={busca} onChange={(e) => { setBusca(e.target.value); setLimite(POR_PAGINA); }} className="input pl-9" />
           </div>
-          <select value={filtroUsuario} onChange={(e) => { setFiltroUsuario(e.target.value); setLimite(POR_PAGINA); }} className="input sm:!w-60">
-            <option value="">Todos os usuários</option>
-            {usuariosComLog.map((u) => <option key={u} value={u}>{u}</option>)}
-          </select>
+          <div className="sm:w-60 shrink-0">
+            <FiltroMulti todos="Todos os usuários" opcoes={usuariosComLog.map((u) => [u, u])} valor={filtroUsuario}
+              onChange={(v) => { setFiltroUsuario(v); setLimite(POR_PAGINA); }} ariaLabel="Filtrar usuário" />
+          </div>
         </div>
 
         {carregando && <Esqueleto linhas={6} altura={44} />}
