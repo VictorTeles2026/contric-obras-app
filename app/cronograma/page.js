@@ -261,43 +261,44 @@ export default function CronogramaPage() {
     recarregarDependencias();
   };
 
-  const reordenarEtapa = async (dragId, targetId) => {
-    if (dragId === targetId) return;
-    const dragEtapa = etapasDoPi.find((e) => e.id === dragId);
-    const targetEtapa = etapasDoPi.find((e) => e.id === targetId);
-    if (!dragEtapa || !targetEtapa) return;
-    const parentDrag = dragEtapa.parent_etapa_id || null;
-    const parentTarget = targetEtapa.parent_etapa_id || null;
-
-    if (parentDrag === parentTarget) {
-      // mesmo grupo (duas macro-etapas, ou duas sub-etapas da mesma macro) → reordenar posição
-      const irmas = etapasDoPi.filter((e) => (e.parent_etapa_id || null) === parentDrag).sort(porOrdem);
-      const semArrastada = irmas.filter((e) => e.id !== dragId);
-      const idxAlvo = semArrastada.findIndex((e) => e.id === targetId);
-      const novaSequencia = [...semArrastada.slice(0, idxAlvo + 1), dragEtapa, ...semArrastada.slice(idxAlvo + 1)];
-      await Promise.all(novaSequencia.map((e, i) => supabase.from("etapas").update({ ordem: i }).eq("id", e.id)));
-    } else {
-      // grupos diferentes → muda de pai (comportamento anterior), vai pro fim da nova lista
-      if (parentTarget === dragId) return;
-      const novosIrmaos = etapasDoPi.filter((e) => (e.parent_etapa_id || null) === parentTarget && e.id !== dragId);
-      const novaOrdem = novosIrmaos.length ? Math.max(...novosIrmaos.map((e) => e.ordem ?? 0)) + 1 : 0;
-      const filhas = etapasDoPi.filter((e) => e.parent_etapa_id === dragId);
-      if (parentTarget) {
-        for (const filha of filhas) await supabase.from("etapas").update({ parent_etapa_id: parentTarget }).eq("id", filha.id);
-      }
-      await supabase.from("etapas").update({ parent_etapa_id: parentTarget, ordem: novaOrdem }).eq("id", dragId);
+  // Arrastar e soltar: move a etapa para ANTES/DEPOIS da etapa alvo (no mesmo nível dela) ou
+  // DENTRO de uma macro (vira sub-etapa, no fim). Soltar no nível das macros transforma sub em macro;
+  // soltar entre sub-etapas transforma macro em sub (as subs dela sobem junto, logo abaixo dela).
+  const [movendo, setMovendo] = useState(false);
+  const moverEtapa = async (dragId, targetId, posicao) => {
+    if (!dragId || dragId === targetId || movendo) return;
+    const drag = etapasDoPi.find((e) => e.id === dragId);
+    const alvo = etapasDoPi.find((e) => e.id === targetId);
+    if (!drag || !alvo) return;
+    if (posicao === "dentro" && alvo.parent_etapa_id) posicao = "depois"; // sub não tem sub-etapas
+    const novoPai = posicao === "dentro" ? alvo.id : alvo.parent_etapa_id || null;
+    if (novoPai === dragId) return; // macro dentro dela mesma
+    const filhas = etapasDoPi.filter((e) => e.parent_etapa_id === dragId).sort(porOrdem);
+    const sobeJunto = novoPai ? filhas : []; // macro virando sub: as subs dela vêm junto, no mesmo nível
+    const fora = new Set([dragId, ...sobeJunto.map((f) => f.id)]);
+    const irmas = etapasDoPi.filter((e) => (e.parent_etapa_id || null) === novoPai && !fora.has(e.id)).sort(porOrdem);
+    let idx = posicao === "dentro" ? irmas.length : irmas.findIndex((e) => e.id === alvo.id) + (posicao === "depois" ? 1 : 0);
+    if (idx < 0) idx = irmas.length;
+    const sequencia = [...irmas.slice(0, idx), drag, ...sobeJunto, ...irmas.slice(idx)];
+    setMovendo(true);
+    const resultados = await Promise.all(sequencia.map((e, i) => {
+      const mudou = (e.parent_etapa_id || null) !== novoPai || e.ordem !== i;
+      return mudou ? supabase.from("etapas").update({ parent_etapa_id: novoPai, ordem: i }).eq("id", e.id) : null;
+    }));
+    // a etapa que virou macro: o antigo grupo de subs dela é renumerado para não deixar buracos
+    const paiAntigo = drag.parent_etapa_id || null;
+    if (paiAntigo !== novoPai) {
+      const restantes = etapasDoPi.filter((e) => (e.parent_etapa_id || null) === paiAntigo && !fora.has(e.id)).sort(porOrdem);
+      await Promise.all(restantes.map((e, i) => (e.ordem !== i ? supabase.from("etapas").update({ ordem: i }).eq("id", e.id) : null)));
     }
+    setMovendo(false);
+    const falha = resultados.find((r) => r?.error);
+    if (falha) setErro(falha.error.message);
+    else registrarLog(usuario, "Reordenou etapa", `"${drag.nome}" ${posicao === "dentro" ? `virou sub-etapa de "${alvo.nome}"` : `${posicao === "antes" ? "antes de" : "depois de"} "${alvo.nome}"`}${novoPai ? "" : " (macro-etapa)"}`);
     recarregarEtapas();
   };
-  const tornarSubDe = async (dragId, macroId) => {
-    if (dragId === macroId) return;
-    const irmas = subDe(macroId).filter((e) => e.id !== dragId);
-    const novaOrdem = irmas.length ? Math.max(...irmas.map((e) => e.ordem ?? 0)) + 1 : 0;
-    const filhas = etapasDoPi.filter((e) => e.parent_etapa_id === dragId);
-    for (const filha of filhas) await supabase.from("etapas").update({ parent_etapa_id: macroId }).eq("id", filha.id);
-    await supabase.from("etapas").update({ parent_etapa_id: macroId, ordem: novaOrdem }).eq("id", dragId);
-    recarregarEtapas();
-  };
+  const reordenarEtapa = moverEtapa;
+  const tornarSubDe = (dragId, macroId) => moverEtapa(dragId, macroId, "dentro");
 
   // ---- Equipe (áreas) ----
   // equipe na MACRO com sub-etapas: marcar/desmarcar distribui para todas as subs dela
@@ -522,7 +523,7 @@ export default function CronogramaPage() {
               )}
               {editavel && macroEtapas.length > 0 && (
                 <span className="hidden md:inline text-xs text-muteddim">
-                  Dica: arraste <strong>⋮⋮</strong> para reordenar · arraste o <span className="inline-block w-2 h-2 rounded-full bg-cyan align-middle" /> até outra etapa para criar dependência · botão direito na seta para excluí-la
+                  Dica: arraste <strong>⋮⋮</strong> e solte na borda de cima/baixo de outra etapa para mover, ou no meio de uma macro para virar sub-etapa · arraste o <span className="inline-block w-2 h-2 rounded-full bg-cyan align-middle" /> até outra etapa para criar dependência · botão direito na seta para excluí-la
                 </span>
               )}
             </div>
@@ -610,10 +611,17 @@ export default function CronogramaPage() {
 
 function SubEtapasDropzone({ macroId, editavel, onDropTornarSub, children }) {
   const [emCima, setEmCima] = useState(false);
+  // o destaque some ao terminar qualquer arraste (mesmo se o drop foi numa linha dentro da área)
+  useEffect(() => {
+    const limpar = () => setEmCima(false);
+    window.addEventListener("drop", limpar); window.addEventListener("dragend", limpar);
+    return () => { window.removeEventListener("drop", limpar); window.removeEventListener("dragend", limpar); };
+  }, []);
   return (
     <div
       onDragOver={(e) => { if (editavel && e.dataTransfer.types.includes("text/x-reorder-etapa")) { e.preventDefault(); setEmCima(true); } }}
-      onDragLeave={() => setEmCima(false)}
+      onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) setEmCima(false); }}
+      onDragEnd={() => setEmCima(false)}
       onDrop={(e) => {
         if (!editavel || !e.dataTransfer.types.includes("text/x-reorder-etapa")) return;
         e.preventDefault(); setEmCima(false);
@@ -760,7 +768,16 @@ function EtapaRow({ subs = [], etapa, editavel, onChange, onDelete, deps, onRemo
   const [equipeAberta, setEquipeAberta] = useState(false);
   const [alocAberta, setAlocAberta] = useState(false);
   const isDragOver = dragOverId === etapa.id;
-  const isDragOverRow = dragOverRowId === etapa.id;
+  const isDragOverRow = dragOverRowId?.id === etapa.id;
+  const posDrop = isDragOverRow ? dragOverRowId.pos : null;
+  // onde o mouse está na linha: metade de cima = antes; de baixo = depois;
+  // numa macro, a faixa do meio = dentro (virar sub-etapa dela)
+  const posicaoDoMouse = (e) => {
+    const r = e.currentTarget.getBoundingClientRect();
+    const y = (e.clientY - r.top) / r.height;
+    if (!etapa.parent_etapa_id && y > 0.3 && y < 0.7) return "dentro";
+    return y < 0.5 ? "antes" : "depois";
+  };
   const depsComSobreposicao = deps.filter((d) => d.data_prevista_fim && etapa.data_prevista_inicio && d.data_prevista_fim > etapa.data_prevista_inicio);
   const areas = etapa.areas || [];
   // listas "Equipe" e "Alocação": abrem em primeiro plano (PainelSuspenso), presas ao botão
@@ -789,20 +806,36 @@ function EtapaRow({ subs = [], etapa, editavel, onChange, onDelete, deps, onRemo
 
   return (
     <div
-      onDragOver={(e) => { if (e.dataTransfer.types.includes("text/x-reorder-etapa")) { e.preventDefault(); setDragOverRowId(etapa.id); } }}
-      onDragLeave={() => setDragOverRowId((p) => (p === etapa.id ? null : p))}
+      onDragOver={(e) => {
+        if (!editavel || !e.dataTransfer.types.includes("text/x-reorder-etapa")) return;
+        e.preventDefault(); e.stopPropagation();
+        const pos = posicaoDoMouse(e);
+        setDragOverRowId((p) => (p?.id === etapa.id && p.pos === pos ? p : { id: etapa.id, pos }));
+      }}
+      onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) setDragOverRowId((p) => (p?.id === etapa.id ? null : p)); }}
       onDrop={(e) => {
         if (!e.dataTransfer.types.includes("text/x-reorder-etapa")) return;
-        e.preventDefault();
+        e.preventDefault(); e.stopPropagation(); // não deixa o drop "vazar" para a área de sub-etapas
         const origemId = e.dataTransfer.getData("text/x-reorder-etapa");
+        const pos = posicaoDoMouse(e);
         setDragOverRowId(null);
-        if (origemId && origemId !== etapa.id && editavel) onReordenar(origemId, etapa.id);
+        if (origemId && origemId !== etapa.id && editavel) onReordenar(origemId, etapa.id, pos);
       }}
-      className={`flex flex-wrap items-center gap-2 p-2.5 rounded-xl relative border border-l-4 transition-colors ${isDragOverRow ? "bg-cyan/10 outline outline-2 outline-cyan" : "bg-white hover:shadow-sm"} ${etapa.parent_etapa_id ? "border-line/70" : "border-line"}`}
+      className={`flex flex-wrap items-center gap-2 p-2.5 rounded-xl relative border border-l-4 transition-colors ${posDrop === "dentro" ? "bg-cyan/10 outline outline-2 outline-cyan" : "bg-white hover:shadow-sm"} ${etapa.parent_etapa_id ? "border-line/70" : "border-line"}`}
       style={{ borderLeftColor: corStatus }}
     >
+      {/* indicador de onde a etapa vai cair */}
+      {(posDrop === "antes" || posDrop === "depois") && (
+        <div className={`absolute left-0 right-0 h-1 bg-cyan rounded-full pointer-events-none z-10 ${posDrop === "antes" ? "-top-1.5" : "-bottom-1.5"}`}>
+          <span className="absolute -left-1 -top-1 w-3 h-3 rounded-full bg-cyan" />
+        </div>
+      )}
+      {posDrop === "dentro" && (
+        <span className="absolute right-2 -top-2.5 z-10 text-[11px] font-semibold bg-cyan text-white rounded-full px-2 py-0.5 pointer-events-none">virar sub-etapa</span>
+      )}
       {editavel && (
         <div draggable onDragStart={(e) => { e.dataTransfer.setData("text/x-reorder-etapa", etapa.id); e.dataTransfer.effectAllowed = "move"; }}
+          onDragEnd={() => setDragOverRowId(null)}
           title="Arraste para reordenar" className="w-5 h-7 flex items-center justify-center text-muteddim hover:text-textmain cursor-grab text-sm select-none rounded hover:bg-panel">⋮⋮</div>
       )}
       <div
