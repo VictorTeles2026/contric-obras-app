@@ -7,7 +7,7 @@ import { useAuth, pode } from "../../lib/AuthContext";
 import { STATUS_PI, COR_STATUS_PI } from "../../lib/constantes";
 import { formatarData } from "../../lib/datas";
 import PainelShell from "../../components/PainelShell";
-import { CabecalhoPagina, EstadoVazio, Esqueleto } from "../../components/ui";
+import { CabecalhoPagina, EstadoVazio, Esqueleto, BotaoLimpar } from "../../components/ui";
 import Icone from "../../components/Icone";
 import { JanelaPi } from "../../components/Editores";
 
@@ -43,6 +43,7 @@ export default function CadastroPisPage() {
               <button key={v} onClick={() => setFiltroStatus(v)} className={`chip ${filtroStatus === v ? "chip-ativo" : ""}`}>{l} ({qtd(v)})</button>
             ))}
           </div>
+          <BotaoLimpar qtd={(busca ? 1 : 0) + (filtroStatus !== "ativo" ? 1 : 0)} onClick={() => { setBusca(""); setFiltroStatus("ativo"); }} className="self-center" />
         </div>
 
         {carregando && <Esqueleto linhas={5} altura={48} />}

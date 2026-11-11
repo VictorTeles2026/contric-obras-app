@@ -8,7 +8,7 @@ import { BUCKET_DOCUMENTOS, gerarPdfRdo, gerarPdfOcorrencia, linkTemporario, bas
 import { formatarData, formatarDataHora } from "../../lib/datas";
 import { useToast } from "../../lib/Toast";
 import PainelShell from "../../components/PainelShell";
-import { CabecalhoPagina, EstadoVazio, Esqueleto, Aviso, Spinner, Modal, SeletorPi } from "../../components/ui";
+import { CabecalhoPagina, EstadoVazio, Esqueleto, Aviso, Spinner, Modal, SeletorPi, BotaoLimpar } from "../../components/ui";
 import Icone from "../../components/Icone";
 import { ConfirmarExclusao } from "../../components/AcoesMaster";
 import { EditorRdo, EditorOcorrencia } from "../../components/Editores";
@@ -328,6 +328,7 @@ export default function DocumentosPage() {
                 <Icone nome="buscar" className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muteddim" />
                 <input value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Filtrar por nome..." className="input pl-9" />
               </div>
+              <BotaoLimpar qtd={[filtroTipo, filtroPasta, busca].filter(Boolean).length} onClick={() => { setFiltroTipo(""); setFiltroPasta(""); setBusca(""); }} />
             </div>
 
             {/* pastas (classificações) do PI: filtrar, criar nova e liberar a pasta inteira a clientes */}

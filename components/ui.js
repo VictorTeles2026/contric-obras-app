@@ -456,3 +456,15 @@ export function FiltroMulti({ opcoes = [], valor = [], onChange, todos = "Todos"
 export const listaPis = (pis) => [...pis].sort(ordemPi).map((p) => [p.id, `${p.codigo} — ${p.cliente || ""}`, p.projeto]);
 // lista vazia = sem filtro
 export const passa = (lista, v) => !lista.length || lista.includes(v);
+// filtros encadeados: mantém só as opções presentes em `existentes` (Set) — e as já marcadas, para poder desmarcar
+export const disponiveis = (opcoes, existentes, marcados = []) => opcoes.filter(([v]) => existentes.has(v) || marcados.includes(v));
+// botão "Limpar filtros" padrão; some quando não há filtro ativo
+export function BotaoLimpar({ qtd, onClick, className = "" }) {
+  if (!qtd) return null;
+  return (
+    <button type="button" onClick={onClick} className={`btn btn-contorno btn-sm whitespace-nowrap shrink-0 ${className}`}>
+      <svg viewBox="0 0 24 24" className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M18 6 6 18M6 6l12 12" /></svg>
+      Limpar filtros ({qtd})
+    </button>
+  );
+}

@@ -335,7 +335,8 @@ export default function CronogramaVisao({ piFixo = null, acoes = null }) {
             </button>
             <PainelSuspenso ancoraRef={recursosRef} aberto={recursosDropdownAberto} onFechar={() => setRecursosDropdownAberto(false)}>
                 {recursos.length === 0 && <div className="text-sm text-muteddim px-2 py-1.5">Nenhum recurso cadastrado.</div>}
-                {recursos.map((r) => (
+                {/* encadeado: com equipes marcadas, só os recursos dessas equipes (e os já marcados) */}
+                {recursos.filter((r) => !equipesDraft.length || recursosDraft.includes(r.id) || (r.equipes || []).some((a) => equipesDraft.includes(a))).map((r) => (
                   <label key={r.id} className="flex items-center gap-2 px-2 py-1.5 text-sm cursor-pointer rounded-lg hover:bg-panel">
                     <input type="checkbox" className="accent-cyan" checked={recursosDraft.includes(r.id)} onChange={() => toggleRecursoDraft(r.id)} />
                     <span className="truncate">{r.nome}</span>

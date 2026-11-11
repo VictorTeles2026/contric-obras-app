@@ -5,7 +5,7 @@ import { useTabela } from "../../../lib/dados";
 import { hojeISO, addDias, isoLocal, dataLocal, formatarData, horaCurta } from "../../../lib/datas";
 import { horasDoLancamento, fmtH } from "../../../lib/horas";
 import PainelShell from "../../../components/PainelShell";
-import { AbasRelatorios, Segmentado, FiltroMulti, listaPis, passa } from "../../../components/ui";
+import { AbasRelatorios, Segmentado, FiltroMulti, listaPis, passa, disponiveis, BotaoLimpar } from "../../../components/ui";
 import { CabecalhoPagina, EstadoVazio, Esqueleto, Campo } from "../../../components/ui";
 import Icone from "../../../components/Icone";
 import { gerarExcelTabela } from "../../../lib/pdfRdo";
@@ -67,13 +67,19 @@ export default function ControleHorasPage() {
       };
     }), [apontamentos, usuarios, recursos, empresas, pis]);
 
-  const filtradas = linhas.filter((l) =>
-    l.data >= de && l.data <= ate &&
-    passa(piId, l.pi_id) &&
-    passa(cliente, l.pi?.cliente) &&
-    (!empresaId.length || empresaId.some((e) => e === PROPRIA ? !l.empresa && l.nomeEmpresa === "Contric (própria)" : l.empresa?.id === e)) &&
-    passa(recursoId, l.recurso?.id) &&
-    passa(status, l.status))
+  // filtros encadeados: as opções de cada filtro vêm dos lançamentos que passam pelos OUTROS filtros
+  const chaveEmpresa = (l) => (l.empresa ? l.empresa.id : l.nomeEmpresa === "Contric (própria)" ? PROPRIA : null);
+  const testes = {
+    pi: (l) => passa(piId, l.pi_id),
+    cliente: (l) => passa(cliente, l.pi?.cliente),
+    empresa: (l) => passa(empresaId, chaveEmpresa(l)),
+    recurso: (l) => passa(recursoId, l.recurso?.id),
+    status: (l) => passa(status, l.status),
+  };
+  const noPeriodo = linhas.filter((l) => l.data >= de && l.data <= ate);
+  const exceto = (k) => new Set(noPeriodo.filter((l) => Object.entries(testes).every(([n, t]) => n === k || t(l))).map((l) => ({
+    pi: l.pi_id, cliente: l.pi?.cliente, empresa: chaveEmpresa(l), recurso: l.recurso?.id, status: l.status }[k])));
+  const filtradas = noPeriodo.filter((l) => Object.values(testes).every((t) => t(l)))
     .sort((a, b) => a.data.localeCompare(b.data) || (a.pessoa?.nome || "").localeCompare(b.pessoa?.nome || ""));
 
   const chaveGrupo = (l, g = agrupar) => g === "pi" ? l.pi?.codigo || "—" : g === "cliente" ? l.pi?.cliente || "—" : g === "empresa" ? l.nomeEmpresa : g === "pessoa" ? l.pessoa?.nome || "—" : "Todos os lançamentos";
@@ -137,20 +143,20 @@ export default function ControleHorasPage() {
             <Campo rotulo="De"><input type="date" value={de} max={ate} onChange={(e) => setDe(e.target.value)} className="input" /></Campo>
             <Campo rotulo="Até"><input type="date" value={ate} min={de} onChange={(e) => setAte(e.target.value)} className="input" /></Campo>
             <Campo rotulo="PI">
-              <FiltroMulti opcoes={listaPis(pis)} valor={piId} onChange={setPiId} ariaLabel="Filtrar PI" />
+              <FiltroMulti opcoes={disponiveis(listaPis(pis), exceto("pi"), piId)} valor={piId} onChange={setPiId} ariaLabel="Filtrar PI" />
             </Campo>
             <Campo rotulo="Cliente">
-              <FiltroMulti opcoes={clientes.map((c) => [c, c])} valor={cliente} onChange={setCliente} ariaLabel="Filtrar cliente" />
+              <FiltroMulti opcoes={disponiveis(clientes.map((c) => [c, c]), exceto("cliente"), cliente)} valor={cliente} onChange={setCliente} ariaLabel="Filtrar cliente" />
             </Campo>
             <Campo rotulo="Empresa terceira">
               <FiltroMulti todos="Todas" valor={empresaId} onChange={setEmpresaId} ariaLabel="Filtrar empresa"
-                opcoes={[[PROPRIA, "Contric (mão de obra própria)"], ...empresas.map((e) => [e.id, `${e.nome}${e.ativa ? "" : " (inativa)"}`])]} />
+                opcoes={disponiveis([[PROPRIA, "Contric (mão de obra própria)"], ...empresas.map((e) => [e.id, `${e.nome}${e.ativa ? "" : " (inativa)"}`])], exceto("empresa"), empresaId)} />
             </Campo>
             <Campo rotulo="Recurso">
-              <FiltroMulti opcoes={recursosMaoDeObra.map((r) => [r.id, r.nome])} valor={recursoId} onChange={setRecursoId} ariaLabel="Filtrar recurso" />
+              <FiltroMulti opcoes={disponiveis(recursosMaoDeObra.map((r) => [r.id, r.nome]), exceto("recurso"), recursoId)} valor={recursoId} onChange={setRecursoId} ariaLabel="Filtrar recurso" />
             </Campo>
             <Campo rotulo="Situação">
-              <FiltroMulti todos="Aprovadas e pendentes" opcoes={[["aprovado", "Aprovadas"], ["pendente", "Pendentes"]]} valor={status} onChange={setStatus} ariaLabel="Filtrar situação" />
+              <FiltroMulti todos="Aprovadas e pendentes" opcoes={disponiveis([["aprovado", "Aprovadas"], ["pendente", "Pendentes"]], exceto("status"), status)} valor={status} onChange={setStatus} ariaLabel="Filtrar situação" />
             </Campo>
           </div>
           <div className="flex flex-wrap items-center gap-2 mt-3">
@@ -158,7 +164,7 @@ export default function ControleHorasPage() {
             {[["semana", "Esta semana"], ["mes", "Este mês"], ["mes_passado", "Mês passado"], ["30", "Últimos 30 dias"]].map(([v, l]) => (
               <button key={v} onClick={() => { const [a, b] = periodoRapido(v); setDe(a); setAte(b); }} className="chip">{l}</button>
             ))}
-            {filtrosAtivos > 0 && <button onClick={limpar} className="text-sm text-muted hover:underline ml-auto">Limpar filtros ({filtrosAtivos})</button>}
+            <BotaoLimpar qtd={filtrosAtivos} onClick={limpar} className="ml-auto" />
           </div>
         </div>
 
@@ -322,6 +328,12 @@ function HorasOrcadas({ pis }) {
   const tipos = categorias.filter((c) => c.grupo === "moi_horas");
   const clientes = [...new Set(pis.map((p) => p.cliente).filter(Boolean))].sort();
   const pisFiltrados = pis.filter((p) => passa(piId, p.id) && passa(cliente, p.cliente) && passa(statusPi, p.status || "ativo"));
+  // encadeados: opções de cada filtro respeitam os outros dois
+  const existe = (fn, campo) => new Set(pis.filter(fn).map(campo));
+  const opPi = existe((p) => passa(cliente, p.cliente) && passa(statusPi, p.status || "ativo"), (p) => p.id);
+  const opCliente = existe((p) => passa(piId, p.id) && passa(statusPi, p.status || "ativo"), (p) => p.cliente);
+  const opStatus = existe((p) => passa(piId, p.id) && passa(cliente, p.cliente), (p) => p.status || "ativo");
+  const qtdFiltros = [piId, cliente, statusPi].filter((f) => f.length).length;
   // colunas: um PI cada, ou um cliente somando os PIs dele
   const colunas = agrupar === "cliente"
     ? [...new Set(pisFiltrados.map((p) => p.cliente || "—"))].sort().map((c) => ({ chave: c, titulo: c, sub: `${pisFiltrados.filter((p) => (p.cliente || "—") === c).length} PI(s)`, ids: pisFiltrados.filter((p) => (p.cliente || "—") === c).map((p) => p.id) }))
@@ -354,10 +366,11 @@ function HorasOrcadas({ pis }) {
     <>
       <div className="cartao p-4 mb-4">
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-          <Campo rotulo="PI"><FiltroMulti opcoes={listaPis(pis)} valor={piId} onChange={setPiId} ariaLabel="Filtrar PI" /></Campo>
-          <Campo rotulo="Cliente"><FiltroMulti opcoes={clientes.map((c) => [c, c])} valor={cliente} onChange={setCliente} ariaLabel="Filtrar cliente" /></Campo>
-          <Campo rotulo="Status do PI"><FiltroMulti opcoes={STATUS_PI} valor={statusPi} onChange={setStatusPi} ariaLabel="Filtrar status do PI" /></Campo>
+          <Campo rotulo="PI"><FiltroMulti opcoes={disponiveis(listaPis(pis), opPi, piId)} valor={piId} onChange={setPiId} ariaLabel="Filtrar PI" /></Campo>
+          <Campo rotulo="Cliente"><FiltroMulti opcoes={disponiveis(clientes.map((c) => [c, c]), opCliente, cliente)} valor={cliente} onChange={setCliente} ariaLabel="Filtrar cliente" /></Campo>
+          <Campo rotulo="Status do PI"><FiltroMulti opcoes={disponiveis(STATUS_PI, opStatus, statusPi)} valor={statusPi} onChange={setStatusPi} ariaLabel="Filtrar status do PI" /></Campo>
         </div>
+        <div className="flex justify-end mt-3"><BotaoLimpar qtd={qtdFiltros} onClick={() => { setPiId([]); setCliente([]); setStatusPi([]); }} /></div>
       </div>
       <div className="flex flex-wrap items-center gap-2 mb-3">
         <span className="text-sm font-semibold">Colunas por:</span>

@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useTabela } from "../../lib/dados";
 import PainelShell from "../../components/PainelShell";
-import { CabecalhoPagina, EstadoVazio, Esqueleto, FiltroMulti, passa } from "../../components/ui";
+import { CabecalhoPagina, EstadoVazio, Esqueleto, FiltroMulti, passa, BotaoLimpar } from "../../components/ui";
 import Icone from "../../components/Icone";
 
 const POR_PAGINA = 100;
@@ -36,6 +36,7 @@ export default function AuditoriaPage() {
             <FiltroMulti todos="Todos os usuários" opcoes={usuariosComLog.map((u) => [u, u])} valor={filtroUsuario}
               onChange={(v) => { setFiltroUsuario(v); setLimite(POR_PAGINA); }} ariaLabel="Filtrar usuário" />
           </div>
+          <BotaoLimpar qtd={(filtroUsuario.length ? 1 : 0) + (busca ? 1 : 0)} onClick={() => { setFiltroUsuario([]); setBusca(""); setLimite(POR_PAGINA); }} className="self-center" />
         </div>
 
         {carregando && <Esqueleto linhas={6} altura={44} />}

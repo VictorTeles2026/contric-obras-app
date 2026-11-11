@@ -5,7 +5,7 @@ import { useTabela, registrarLog, chamarApi } from "../../lib/dados";
 import { useAuth, podeGerenciarUsuarios, pode } from "../../lib/AuthContext";
 import { useToast } from "../../lib/Toast";
 import PainelShell from "../../components/PainelShell";
-import { CabecalhoPagina, Modal, Campo, Aviso, Esqueleto, EstadoVazio, Spinner, SeletorEquipes, FiltroMulti, passa } from "../../components/ui";
+import { CabecalhoPagina, Modal, Campo, Aviso, Esqueleto, EstadoVazio, Spinner, SeletorEquipes, FiltroMulti, passa, disponiveis, BotaoLimpar } from "../../components/ui";
 import { AREAS, FUNCOES, EQUIPE_CAMPO, ALERTAS, TIPOS_ALERTA } from "../../lib/constantes";
 import { normalizarLogin, erroLogin, ehEmail, sugerirLogin } from "../../lib/login";
 import Icone from "../../components/Icone";
@@ -78,10 +78,21 @@ export default function UsuariosPage() {
   // a aba "Usuários de Campo" lista quem é da equipe Campo; a principal, os demais
   const daAba = usuarios.filter((u) => (aba === "campo" ? ehDeCampo(u) : !ehDeCampo(u)));
   const termo = busca.trim().toLowerCase();
-  const filtrados = daAba.filter((u) =>
-    passa(filtroPerfil, u.perfil) && (!filtroEquipe.length || equipesDe(u).some((x) => filtroEquipe.some((f) => x.trim().toLowerCase() === f.toLowerCase()))) &&
-    (aba !== "campo" || !filtroEmpresa.length || filtroEmpresa.some((f) => f === "__propria" ? u.perfil !== "terceiro" : (u.empresa_terceira || "").trim().toLowerCase() === f)) && (mostrarInativos || u.ativo) &&
-    (!termo || [u.nome, u.email, loginDe(u), u.funcao, u.empresa_terceira].some((c) => (c || "").toLowerCase().includes(termo))));
+  const empresaDe = (u) => (u.perfil !== "terceiro" ? "__propria" : (u.empresa_terceira || "").trim().toLowerCase());
+  const testes = {
+    perfil: (u) => passa(filtroPerfil, u.perfil),
+    equipe: (u) => !filtroEquipe.length || equipesDe(u).some((x) => filtroEquipe.some((f) => x.trim().toLowerCase() === f.toLowerCase())),
+    empresa: (u) => aba !== "campo" || !filtroEmpresa.length || filtroEmpresa.some((f) => f === "__propria" ? u.perfil !== "terceiro" : empresaDe(u) === f),
+    resto: (u) => (mostrarInativos || u.ativo) && (!termo || [u.nome, u.email, loginDe(u), u.funcao, u.empresa_terceira].some((c) => (c || "").toLowerCase().includes(termo))),
+  };
+  const filtrados = daAba.filter((u) => Object.values(testes).every((t) => t(u)));
+  // filtros encadeados: opções de cada filtro vêm de quem passa nos outros
+  const base = (k) => daAba.filter((u) => Object.entries(testes).every(([n, t]) => n === k || t(u)));
+  const opPerfil = new Set(base("perfil").map((u) => u.perfil));
+  const opEquipe = new Set(base("equipe").flatMap((u) => equipesDe(u).map((x) => x.trim().toLowerCase())));
+  const opEmpresa = new Set(base("empresa").map(empresaDe));
+  const qtdFiltros = [filtroPerfil, filtroEquipe, aba === "campo" ? filtroEmpresa : []].filter((f) => f.length).length + (busca ? 1 : 0);
+  const limparFiltros = () => { setFiltroPerfil([]); setFiltroEquipe([]); setFiltroEmpresa([]); setBusca(""); };
   const qtdCampo = usuarios.filter(ehDeCampo).length;
 
   // aba Usuários de Campo: funcionários (Contric) primeiro e depois os terceiros, um grupo por
@@ -134,15 +145,16 @@ export default function UsuariosPage() {
             <Icone nome="buscar" className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muteddim" />
             <input value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Buscar por nome, usuário, e-mail, função ou empresa" className="input pl-9" />
           </div>
-          <div className="sm:w-56 shrink-0"><FiltroMulti todos="Todos os perfis" opcoes={PERFIS} valor={filtroPerfil} onChange={setFiltroPerfil} ariaLabel="Filtrar perfil" /></div>
-          <div className="sm:w-52 shrink-0"><FiltroMulti todos="Todas as equipes" opcoes={AREAS.map((a) => [a, a])} valor={filtroEquipe} onChange={setFiltroEquipe} ariaLabel="Filtrar equipe" /></div>
+          <div className="sm:w-56 shrink-0"><FiltroMulti todos="Todos os perfis" opcoes={disponiveis(PERFIS, opPerfil, filtroPerfil)} valor={filtroPerfil} onChange={setFiltroPerfil} ariaLabel="Filtrar perfil" /></div>
+          <div className="sm:w-52 shrink-0"><FiltroMulti todos="Todas as equipes" opcoes={AREAS.filter((a) => opEquipe.has(a.toLowerCase()) || filtroEquipe.includes(a)).map((a) => [a, a])} valor={filtroEquipe} onChange={setFiltroEquipe} ariaLabel="Filtrar equipe" /></div>
           {aba === "campo" && (
             <div className="sm:w-52 shrink-0">
               <FiltroMulti todos="Todas as empresas" valor={filtroEmpresa} onChange={setFiltroEmpresa} ariaLabel="Filtrar por empresa terceira"
-                opcoes={[["__propria", "Contric (mão de obra própria)"], ...[...new Set([...empresas.map((e) => e.nome), ...daAba.map((u) => u.empresa_terceira).filter(Boolean)].map((n) => n.trim()))]
-                  .sort((a, b) => a.localeCompare(b, "pt-BR")).map((n) => [n.toLowerCase(), n])]} />
+                opcoes={disponiveis([["__propria", "Contric (mão de obra própria)"], ...[...new Set([...empresas.map((e) => e.nome), ...daAba.map((u) => u.empresa_terceira).filter(Boolean)].map((n) => n.trim()))]
+                  .sort((a, b) => a.localeCompare(b, "pt-BR")).map((n) => [n.toLowerCase(), n])], opEmpresa, filtroEmpresa)} />
             </div>
           )}
+          <BotaoLimpar qtd={qtdFiltros} onClick={limparFiltros} className="self-center" />
           <label className="flex items-center gap-2 text-sm text-muted whitespace-nowrap px-1 cursor-pointer">
             <input type="checkbox" className="accent-cyan w-4 h-4" checked={mostrarInativos} onChange={(e) => setMostrarInativos(e.target.checked)} />
             Mostrar desabilitados

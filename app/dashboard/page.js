@@ -10,7 +10,7 @@ import { useAuth } from "../../lib/AuthContext";
 import { diasAte, formatarData, saudacao } from "../../lib/datas";
 import { STATUS_PI, COR_STATUS_PI, PRAZOS } from "../../lib/constantes";
 import PainelShell from "../../components/PainelShell";
-import { CabecalhoPagina, Esqueleto, EstadoVazio } from "../../components/ui";
+import { CabecalhoPagina, Esqueleto, EstadoVazio, BotaoLimpar } from "../../components/ui";
 import Icone from "../../components/Icone";
 import DocumentosNaoAbertos from "../../components/DocumentosNaoAbertos";
 
@@ -154,6 +154,7 @@ export default function DashboardPage() {
           {[["", "Todos"], ...Object.entries(STATUS_PI)].map(([v, l]) => (
             <button key={v} onClick={() => setFiltroStatus(v)} className={`chip ${filtroStatus === v ? "chip-ativo" : ""}`}>{l}</button>
           ))}
+          <BotaoLimpar qtd={(busca ? 1 : 0) + (filtroStatus !== "ativo" ? 1 : 0)} onClick={() => { setBusca(""); setFiltroStatus("ativo"); }} />
         </div>
         {carregandoPis && <Esqueleto linhas={4} altura={56} />}
         {!carregandoPis && pis.length === 0 && (

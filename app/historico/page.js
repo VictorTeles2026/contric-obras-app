@@ -8,7 +8,7 @@ import { STATUS_ETAPA } from "../../lib/constantes";
 import { excluirRdo, excluirHoras, excluirOcorrencia } from "../../lib/exclusoes";
 import { supabase } from "../../lib/supabase";
 import PainelShell from "../../components/PainelShell";
-import { AbasAprovacoes, FiltroMulti, listaPis, passa } from "../../components/ui";
+import { AbasAprovacoes, FiltroMulti, listaPis, passa, disponiveis, BotaoLimpar } from "../../components/ui";
 import AcoesMaster from "../../components/AcoesMaster";
 import { EditorRdo, EditorHoras, EditorOcorrencia } from "../../components/Editores";
 import { ResumoRdoTecnico } from "../../components/RdoTecnico";
@@ -38,11 +38,14 @@ export default function HistoricoPage() {
   const recarregarTudo = () => { rRdos(); rHoras(); rOc(); };
 
   const decididos = (s) => s && s !== "pendente";
-  const registros = [
+  const todosDecididos = [
     ...rdosTodos.filter((r) => decididos(r.status)).map((r) => ({ tipo: "rdo", ...r })),
     ...horasTodas.filter((h) => decididos(h.status)).map((h) => ({ tipo: "horas", ...h })),
     ...ocorrencias.filter((o) => !o.rdo_id && o.status && decididos(o.status)).map((o) => ({ tipo: "ocorrencia", ...o })),
-  ].filter((r) => (!filtro || r.tipo === filtro) && passa(filtroPi, r.pi_id))
+  ];
+  // encadeado: só PIs que têm registros do tipo escolhido
+  const pisComRegistro = new Set(todosDecididos.filter((r) => !filtro || r.tipo === filtro).map((r) => r.pi_id));
+  const registros = todosDecididos.filter((r) => (!filtro || r.tipo === filtro) && passa(filtroPi, r.pi_id))
     .sort((a, b) => new Date(b.decidido_em || b.created_at) - new Date(a.decidido_em || a.created_at));
 
   const abrirEdicao = async (r) => {
@@ -70,7 +73,8 @@ export default function HistoricoPage() {
           {[["", "Todos"], ["rdo", "RDOs"], ["horas", "Horas"], ["ocorrencia", "Ocorrências"]].map(([v, l]) => (
             <button key={v} onClick={() => { setFiltro(v); setLimite(POR_PAGINA); }} className={`chip ${filtro === v ? "chip-ativo" : ""}`}>{l}</button>
           ))}
-          <div className="sm:ml-auto sm:w-72"><FiltroMulti todos="Todos os PIs" opcoes={listaPis(pis)} valor={filtroPi} onChange={(v) => { setFiltroPi(v); setLimite(POR_PAGINA); }} ariaLabel="Filtrar PI" /></div>
+          <div className="sm:ml-auto sm:w-72"><FiltroMulti todos="Todos os PIs" opcoes={disponiveis(listaPis(pis), pisComRegistro, filtroPi)} valor={filtroPi} onChange={(v) => { setFiltroPi(v); setLimite(POR_PAGINA); }} ariaLabel="Filtrar PI" /></div>
+          <BotaoLimpar qtd={(filtro ? 1 : 0) + (filtroPi.length ? 1 : 0)} onClick={() => { setFiltro(""); setFiltroPi([]); setLimite(POR_PAGINA); }} />
         </div>
 
         {(c1 || c2) && <Esqueleto linhas={4} altura={72} />}

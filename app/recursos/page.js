@@ -11,7 +11,7 @@ import { hojeISO, formatarData } from "../../lib/datas";
 import { TIPOS_RECURSO, AREAS, FUNCOES, UNIDADES } from "../../lib/constantes";
 import { useToast } from "../../lib/Toast";
 import PainelShell from "../../components/PainelShell";
-import { Modal, EstadoVazio, Esqueleto, Aviso, Campo, SeletorEquipes, SeletorPi, FiltroMulti, passa } from "../../components/ui";
+import { Modal, EstadoVazio, Esqueleto, Aviso, Campo, SeletorEquipes, SeletorPi, FiltroMulti, passa, disponiveis, BotaoLimpar } from "../../components/ui";
 import Icone from "../../components/Icone";
 import GraficoUtilizacao from "../../components/GraficoUtilizacao";
 import { ConfirmacaoDupla } from "../../components/AcoesMaster";
@@ -366,6 +366,7 @@ export default function RecursosPage({ searchParams }) {
         </div>
         <div className="mb-2"><FiltroMulti todos="Todas as equipes" opcoes={AREAS.map((a) => [a, a])} valor={filtroEquipe} onChange={setFiltroEquipe}
           className={`input !py-2 !text-sm ${filtroEquipe.length ? "!border-cyan/40 !text-cyan" : ""}`} ariaLabel="Filtrar por equipe" /></div>
+        {(filtroEquipe.length > 0 || busca) && <div className="mb-2"><BotaoLimpar qtd={(filtroEquipe.length ? 1 : 0) + (busca ? 1 : 0)} onClick={() => { setFiltroEquipe([]); setBusca(""); setBuscaAplicada(""); }} className="w-full justify-center" /></div>}
         <label className="flex items-center gap-2 text-sm text-muted mb-2 px-1 cursor-pointer">
           <input type="checkbox" className="accent-cyan w-4 h-4" checked={mostrarDesabilitados} onChange={(e) => setMostrarDesabilitados(e.target.checked)} />
           Mostrar desabilitados ({recursos.filter((r) => r.ativo === false).length})
@@ -773,8 +774,11 @@ function AlocacaoEmMassaModal({ pis, recursos, opcoesEtapa, etapas, onAplicar, o
       <div className="border-t border-line pt-4">
         <div className="flex flex-col sm:flex-row gap-2 mb-2">
           <input placeholder="Buscar recurso..." value={busca} onChange={(e) => setBusca(e.target.value)} className="input flex-1" />
-          <div className="sm:w-48 shrink-0"><FiltroMulti todos="Todos os tipos" opcoes={TIPOS_RECURSO} valor={filtroTipo} onChange={setFiltroTipo} ariaLabel="Filtrar tipo" /></div>
-          <div className="sm:w-48 shrink-0"><FiltroMulti todos="Todas as equipes" opcoes={AREAS.map((a) => [a, a])} valor={filtroEquipeM} onChange={setFiltroEquipeM} ariaLabel="Filtrar equipe" /></div>
+          <div className="sm:w-48 shrink-0"><FiltroMulti todos="Todos os tipos" valor={filtroTipo} onChange={setFiltroTipo} ariaLabel="Filtrar tipo"
+            opcoes={disponiveis(TIPOS_RECURSO, new Set(recursos.filter((r) => r.ativo !== false && (!filtroEquipeM.length || (r.equipes || []).some((e) => filtroEquipeM.includes(e)))).map((r) => r.tipo)), filtroTipo)} /></div>
+          <div className="sm:w-48 shrink-0"><FiltroMulti todos="Todas as equipes" valor={filtroEquipeM} onChange={setFiltroEquipeM} ariaLabel="Filtrar equipe"
+            opcoes={disponiveis(AREAS.map((a) => [a, a]), new Set(recursos.filter((r) => r.ativo !== false && passa(filtroTipo, r.tipo)).flatMap((r) => r.equipes || [])), filtroEquipeM)} /></div>
+          <BotaoLimpar qtd={[filtroTipo, filtroEquipeM].filter((f) => f.length).length + (busca ? 1 : 0)} onClick={() => { setFiltroTipo([]); setFiltroEquipeM([]); setBusca(""); }} className="self-center" />
         </div>
         <div className="flex justify-between items-center mb-2">
           <span className="text-xs text-muted">{filtrados.length} resultado(s) · <strong>{selecionados.length}</strong> selecionado(s)</span>
