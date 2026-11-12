@@ -7,7 +7,7 @@ import { useAuth, podeEditar, pode } from "../../lib/AuthContext";
 import { supabase } from "../../lib/supabase";
 import { hojeISO as todayISO, addDias, isoLocal } from "../../lib/datas";
 import { LISTA_STATUS_ETAPA as STATUS, AREAS, STATUS_PI, COR_STATUS_PI, STATUS_ETAPA, FERIADOS_EXTRAS, datasAlertaEtapa, consolidarMacros, dataPlausivel } from "../../lib/constantes";
-import { useToast } from "../../lib/Toast";
+import { useToast, traduzirErro } from "../../lib/Toast";
 import PainelShell from "../../components/PainelShell";
 import { AbasCronograma, SeletorPi } from "../../components/ui";
 import { PainelSuspenso } from "../../components/ui";
@@ -208,7 +208,8 @@ export default function CronogramaPage() {
     }
     const { error } = await supabase.from("etapas").update(patch).eq("id", id);
     if (error) {
-      setErro("alertas" in patch && /alertas/.test(error.message) ? "o banco ainda não tem os alertas de prazo — rode o script cronograma-alertas.sql no Supabase." : error.message);
+      setErro("alertas" in patch && /alertas/.test(error.message) ? "o banco ainda não tem os alertas de prazo — rode o script cronograma-alertas.sql no Supabase." : traduzirErro(error.message));
+      avisar(`Não foi possível salvar: ${error.message}`, "erro", 6000);
       return false;
     }
     // clientes com acesso à linha do tempo deste PI recebem aviso (o servidor limita a 1 por dia)
@@ -611,6 +612,8 @@ export default function CronogramaPage() {
   );
 }
 
+const LIMITE_NOME_ETAPA = 70;
+
 function SubEtapasDropzone({ macroId, editavel, onDropTornarSub, children }) {
   const [emCima, setEmCima] = useState(false);
   // o destaque some ao terminar qualquer arraste (mesmo se o drop foi numa linha dentro da área)
@@ -859,8 +862,16 @@ function EtapaRow({ subs = [], etapa, editavel, onChange, onDelete, deps, onRemo
         style={{ width: isDragOver ? 14 : 10, height: isDragOver ? 14 : 10, transition: "width .1s, height .1s" }}
         className={`rounded-full shrink-0 cursor-grab ${isDragOver ? "bg-green" : "bg-cyan"}`}
       />
-      <input value={nomeLocal} disabled={!editavel} onChange={(e) => setNomeLocal(e.target.value)} {...eventosNome} aria-label="Nome da etapa"
-        className={`input !py-1.5 flex-1 min-w-[160px] font-head font-semibold disabled:!bg-transparent disabled:!border-transparent disabled:!text-textmain ${etapa.parent_etapa_id ? "!font-medium" : ""}`} />
+      {/* nome limitado a 70 caracteres (cabe completo no PDF, no Excel e no Cronograma) */}
+      <div className="relative flex-1 min-w-[160px]">
+        <input value={nomeLocal} maxLength={LIMITE_NOME_ETAPA} disabled={!editavel} onChange={(e) => setNomeLocal(e.target.value.slice(0, LIMITE_NOME_ETAPA))} {...eventosNome} aria-label="Nome da etapa"
+          title={nomeLocal} className={`input !py-1.5 w-full pr-12 font-head font-semibold disabled:!bg-transparent disabled:!border-transparent disabled:!text-textmain ${etapa.parent_etapa_id ? "!font-medium" : ""} ${String(nomeLocal).length > LIMITE_NOME_ETAPA ? "!border-amber" : ""}`} />
+        {editavel && String(nomeLocal).length >= LIMITE_NOME_ETAPA - 15 && (
+          <span className={`absolute right-2 top-1/2 -translate-y-1/2 text-[10px] font-mono pointer-events-none ${String(nomeLocal).length >= LIMITE_NOME_ETAPA ? "text-amber font-bold" : "text-muteddim"}`}>
+            {String(nomeLocal).length}/{LIMITE_NOME_ETAPA}
+          </span>
+        )}
+      </div>
       <input value={respLocal} disabled={!editavel} onChange={(e) => setRespLocal(e.target.value)} {...eventosResp} aria-label="Responsável"
         placeholder="Responsável" title="Responsável pela etapa (texto livre)" list="sugestoes-responsavel"
         className="input !py-1.5 !w-40 !text-xs disabled:!bg-transparent disabled:!border-transparent" />

@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import { supabase } from "../lib/supabase";
 import { registrarLog, gravarTolerante, useTabela } from "../lib/dados";
 import { agruparPorCliente } from "../lib/dados";
-import { hojeISO, addDias, formatarHoras } from "../lib/datas";
+import { hojeISO, addDias, formatarHoras, diaLancavel } from "../lib/datas";
 import { horasComAlmoco, dividirHoras } from "../lib/horas";
 import { JORNADA } from "../lib/constantes";
 import { useToast } from "../lib/Toast";
@@ -41,7 +41,7 @@ export default function FormHoras({ usuario, pis, onEnviado, compacto = false, l
   const somaDivisao = Math.round(divisao.reduce((s, h) => s + h, 0) * 100) / 100;
   const divisaoBate = Math.abs(somaDivisao - Math.round(horasTotais * 4) / 4) < 0.01;
   const longoDemais = brutas > 16;
-  const podeEnviar = pisSelecionados.length > 0 && horasTotais > 0 && !longoDemais && divisaoBate && divisao.every((h) => h > 0) && !enviando && data <= hojeISO();
+  const podeEnviar = pisSelecionados.length > 0 && horasTotais > 0 && !longoDemais && divisaoBate && divisao.every((h) => h > 0) && !enviando && diaLancavel(data);
 
   const enviar = async () => {
     if (!podeEnviar) return;
@@ -203,7 +203,7 @@ export function FormHorasRecursos({ usuario, meusPis, todosPis, onEnviado, largo
   const extras = Math.round((Number(extrasTxt) || 0) * 4) / 4;
   const normais = Math.max(0, Math.round((horas - extras) * 100) / 100);
   const extrasOk = extras >= 0 && extras <= horas;
-  const pode = extrasOk && piId && marcados.length > 0 && horas > 0 && horas <= 24 && data <= hojeISO() && !enviando;
+  const pode = extrasOk && piId && marcados.length > 0 && horas > 0 && horas <= 24 && diaLancavel(data) && !enviando;
   const marcar = (id) => setMarcados((p) => (p.includes(id) ? p.filter((x) => x !== id) : [...p, id]));
 
   const enviar = async () => {

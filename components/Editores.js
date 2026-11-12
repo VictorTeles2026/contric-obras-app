@@ -6,7 +6,7 @@ import { chamarApi, useTabela, gravarTolerante, registrarLog } from "../lib/dado
 import { supabase } from "../lib/supabase";
 import { useToast } from "../lib/Toast";
 import { LISTA_STATUS_ETAPA, CATEGORIAS_OCORRENCIA, STATUS_PI } from "../lib/constantes";
-import { horasEntreHorarios, hojeISO, isoLocal, addDias } from "../lib/datas";
+import { horasEntreHorarios, hojeISO, isoLocal, addDias, diaLancavel } from "../lib/datas";
 import { nomeBaseAnexo } from "../lib/pdfRdo";
 import { salvarEdicaoRdo, salvarEdicaoHoras, salvarEdicaoSolicitacao, salvarEdicaoOcorrencia } from "../lib/edicoes";
 import { Modal, Campo, Aviso, Spinner, SeletorPi } from "./ui";
@@ -62,7 +62,7 @@ export function EditorRdo({ rdo, pi, pis, ocorrenciasOriginais, comoAprovador, o
 
   return (
     <Modal titulo={`Editar RDO — ${pi?.codigo || ""}`} onFechar={onFechar} largura="max-w-2xl"
-      rodape={<Rodape onFechar={onFechar} onSalvar={salvar} salvando={salvando} podeSalvar={!!data} />}>
+      rodape={<Rodape onFechar={onFechar} onSalvar={salvar} salvando={salvando} podeSalvar={diaLancavel(data)} />}>
       <div className="flex flex-col gap-5">
         <Campo rotulo="Data do RDO" className="max-w-xs">
           <input type="date" value={data} max={hojeISO()} onChange={(e) => setData(e.target.value)} className="input" />
@@ -147,7 +147,8 @@ export function EditorHoras({ registro, pis, comoAprovador, onFechar, onSalvo })
   const normaisNum = normais === "" ? 0 : Number(normais);
   const extras = totalFinal !== null ? Math.round((totalFinal - normaisNum) * 100) / 100 : null;
   const divisaoOk = !comoAprovador || totalFinal === null || (normaisNum >= 0 && extras >= 0);
-  const valido = piId && data && divisaoOk && (ehCheckin ? !!entrada : totalFinal > 0 && totalFinal <= 24);
+  const duracaoOk = !ehCheckin || !saida || (calculado.horas > 0 && calculado.horas <= 24);
+  const valido = piId && diaLancavel(data) && divisaoOk && duracaoOk && (ehCheckin ? !!entrada : totalFinal > 0 && totalFinal <= 24);
 
   const paraIso = (dia, hhmm, somarDia = false) => {
     const [h, m] = hhmm.split(":").map(Number);

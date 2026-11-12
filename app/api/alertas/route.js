@@ -69,6 +69,19 @@ const diaSemana = (iso) => new Date(`${iso}T12:00:00`).getDay(); // 0 = domingo
 const somarDias = (iso, n) => new Date(new Date(`${iso}T12:00:00`).getTime() + n * 86400000).toISOString().slice(0, 10);
 const cobre = (a, d) => (!a.periodo_inicio || a.periodo_inicio <= d) && (!a.periodo_fim || a.periodo_fim >= d);
 
+// o Supabase devolve no máximo 1000 linhas por consulta: busca em páginas até acabar
+// (sem isso, com mais de 1000 etapas/alocações os alertas passariam a ignorar parte delas)
+async function todas(montar) {
+  let tudo = [];
+  for (let p = 0; p < 100; p++) {
+    const { data, error } = await montar().range(p * 1000, p * 1000 + 999);
+    if (error) return { data: tudo.length ? tudo : null, error };
+    tudo = tudo.concat(data || []);
+    if (!data || data.length < 1000) break;
+  }
+  return { data: tudo };
+}
+
 async function resumoDiario(admin) {
   const { dia } = agoraSP();
   const desde = somarDias(dia, -30);
@@ -78,13 +91,13 @@ async function resumoDiario(admin) {
     admin.from("permissoes_perfil").select("perfil,codigo,valor"),
     admin.from("permissoes_usuario").select("usuario_id,codigo,valor,valido_ate"),
     admin.from("recursos").select("id,usuario_id"),
-    admin.from("alocacoes_recurso").select("recurso_id,pi_id,etapa_id,periodo_inicio,periodo_fim"),
+    todas(() => admin.from("alocacoes_recurso").select("id,recurso_id,pi_id,etapa_id,periodo_inicio,periodo_fim").order("id")),
     admin.from("pis").select("id,codigo,status"),
-    admin.from("rdos").select("id,pi_id,lider_id,data,status,created_at").gte("data", desde),
-    admin.from("apontamentos_horas").select("id,pi_id,usuario_id,entrada,saida,data,status,created_at").gte("data", desde),
-    admin.from("ocorrencias").select("id,pi_id,rdo_id,status,registrado_por,categoria,created_at").gte("created_at", `${desde}T00:00:00`),
-    admin.from("solicitacoes_alteracao_cronograma").select("id,etapa_id,status"),
-    admin.from("etapas").select("*"),
+    todas(() => admin.from("rdos").select("id,pi_id,lider_id,data,status,created_at").gte("data", desde).order("id")),
+    todas(() => admin.from("apontamentos_horas").select("id,pi_id,usuario_id,entrada,saida,data,status,created_at").gte("data", desde).order("id")),
+    todas(() => admin.from("ocorrencias").select("id,pi_id,rdo_id,status,registrado_por,categoria,created_at").gte("created_at", `${desde}T00:00:00`).order("id")),
+    todas(() => admin.from("solicitacoes_alteracao_cronograma").select("id,etapa_id,status").order("id")),
+    todas(() => admin.from("etapas").select("*").order("id")),
   ]).then((rs) => rs.map((r) => r.data || []));
 
   const codigo = (id) => pis.find((p) => p.id === id)?.codigo || "?";

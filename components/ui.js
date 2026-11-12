@@ -3,6 +3,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import Icone from "./Icone";
+import { traduzirErro } from "../lib/Toast";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
@@ -112,7 +113,7 @@ export function Aviso({ tipo = "info", children, className = "" }) {
   return (
     <div className={`flex items-start gap-2.5 rounded-xl border px-3.5 py-3 text-sm leading-relaxed ${estilos[tipo]} ${className}`} role={tipo === "erro" ? "alert" : undefined}>
       <Icone nome={icones[tipo]} className="w-[18px] h-[18px] shrink-0 mt-0.5" />
-      <div className="min-w-0 flex-1">{children}</div>
+      <div className="min-w-0 flex-1">{tipo === "erro" && typeof children === "string" ? traduzirErro(children) : children}</div>
     </div>
   );
 }

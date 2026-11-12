@@ -211,7 +211,10 @@ export default function RecursosPage({ searchParams }) {
   const usoNoPeriodo = (p) => Number(p.perc || 0)
     + alocsDoSelecionado.filter((a) => a.modo === "periodo_percentual" && sobrepoe(a.periodo_inicio, a.periodo_fim, p.inicio, p.fim)).reduce((s, a) => s + Number(a.percentual || 0), 0)
     + periodosNovos.filter((o) => (o.etapaId !== p.etapaId || o.i !== p.i) && o.inicio && o.fim && sobrepoe(o.inicio, o.fim, p.inicio, p.fim)).reduce((s, o) => s + Number(o.perc || 0), 0);
-  const salvarMultiplas = async () => {
+  // trava contra clique duplo (antes, dois cliques rápidos criavam a alocação em dobro)
+  const gravandoRef = useRef(false);
+  const umaVez = (fn) => async (...a) => { if (gravandoRef.current) return; gravandoRef.current = true; try { await fn(...a); } finally { gravandoRef.current = false; } };
+  const salvarMultiplas = umaVez(async () => {
     if (!selecionadoId || !piEscolhido || multiInvalido) return;
     const linhas = periodosNovos.map((p) => ({
       recurso_id: selecionadoId, pi_id: piEscolhido, etapa_id: p.etapaId, modo: "periodo_percentual",
@@ -225,7 +228,7 @@ export default function RecursosPage({ searchParams }) {
     await registrarLog(usuario, "Criou alocação por etapas", `${selecionado?.nome} — ${pis.find((p) => p.id === piEscolhido)?.codigo} · ${Object.keys(selecaoEtapas).map((id) => nomeEtapa(id)).join("; ")}`);
     setSelecaoEtapas({});
     recarregarAlocacoes();
-  };
+  });
 
   // calculado enquanto preenche (antes o aviso só aparecia DEPOIS de já ter salvo)
   const somaSobreposta = useMemo(() => {
@@ -238,8 +241,9 @@ export default function RecursosPage({ searchParams }) {
   const periodoInvalido = periodoInicio && periodoFim && periodoFim < periodoInicio;
   const percentualInvalido = modo === "periodo_percentual" && (!(Number(percentual) > 0) || Number(percentual) > 100);
 
-  const salvarAlocacao = async () => {
+  const salvarAlocacao = umaVez(async () => {
     if (!selecionadoId || !piEscolhido || periodoInvalido || percentualInvalido || etapaDuplicada) return;
+    if (!periodoInicio || !periodoFim) { avisar("Informe o início e o fim do período.", "erro"); return; }
 
     const payload = {
       recurso_id: selecionadoId, pi_id: piEscolhido, etapa_id: etapaEscolhida || null, modo,
@@ -255,7 +259,7 @@ export default function RecursosPage({ searchParams }) {
     await registrarLog(usuario, editandoAlocId ? "Editou alocação" : "Criou alocação", `${selecionado?.nome} — ${pis.find((p) => p.id === piEscolhido)?.codigo}${etapaEscolhida ? ` · ${nomeEtapa(etapaEscolhida)}` : ""}`);
     setEditandoAlocId(null);
     recarregarAlocacoes();
-  };
+  });
 
   const removerAlocacao = async (a) => {
     if (!window.confirm(`Remover a alocação em ${pis.find((p) => p.id === a.pi_id)?.codigo || "PI"}?`)) return;

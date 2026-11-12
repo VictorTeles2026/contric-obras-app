@@ -520,9 +520,10 @@ export default function CronogramaVisao({ piFixo = null, acoes = null }) {
                       const pessoas = pessoasDaEtapa(e);
                       return (
                         <div key={e.id} className="flex items-stretch border-b border-line/60">
-                          <div className={`shrink-0 sticky left-0 bg-white z-10 grid gap-2 items-center border-r border-line ${e.nivel ? "pl-7 pr-3" : "px-3"}`}
+                          <div className={`shrink-0 sticky left-0 bg-white z-10 grid gap-2 items-center border-r border-line py-1.5 ${e.nivel ? "pl-7 pr-3" : "px-3"}`}
                             style={{ width: LW, gridTemplateColumns: COLUNAS }}>
-                            <span className={`min-w-0 truncate ${e.nivel ? "text-xs text-muted" : "text-sm font-medium"}`} title={e.nome}>
+                            {/* nome completo: quebra em mais linhas e a linha da etapa cresce (antes cortava com "...") */}
+                            <span className={`min-w-0 break-words leading-snug ${e.nivel ? "text-xs text-muted" : "text-sm font-medium"}`} title={e.nome}>
                               {e.nivel ? "· " : ""}{e.nome}
                               {datasAlertaEtapa(e).length > 0 && (
                                 <span className="inline-flex items-center justify-center w-4 h-4 ml-1 -mt-0.5 align-middle rounded-full text-white" style={{ background: COR_SINO }} title="Etapa com alertas de prazo">
@@ -531,7 +532,7 @@ export default function CronogramaVisao({ piFixo = null, acoes = null }) {
                               )}
                             </span>
                             {!compacto && e.responsavel_texto && (
-                              <span className="text-xs text-textmain truncate min-w-0" title={`Responsável: ${e.responsavel_texto}${pessoas.length ? ` · alocados: ${pessoas.map((r) => r.nome).join(", ")}` : ""}`}>{e.responsavel_texto}</span>
+                              <span className="text-xs text-textmain break-words leading-snug min-w-0" title={`Responsável: ${e.responsavel_texto}${pessoas.length ? ` · alocados: ${pessoas.map((r) => r.nome).join(", ")}` : ""}`}>{e.responsavel_texto}</span>
                             )}
                             {!compacto && !e.responsavel_texto && <span className="flex items-center min-w-0" title={pessoas.map((r) => r.nome).join(", ") || "Ninguém alocado"}>
                               {pessoas.slice(0, 2).map((r) => (
@@ -543,7 +544,7 @@ export default function CronogramaVisao({ piFixo = null, acoes = null }) {
                             <span className={`text-right font-mono text-xs tabular-nums ${vencido ? "text-red font-semibold" : ""}`}>{pct}%</span>
                             {!compacto && <span className="font-mono text-[11px] text-muted tabular-nums whitespace-nowrap">{ddmm(e.data_prevista_inicio)}–{ddmm(e.data_prevista_fim)}</span>}
                           </div>
-                          <div className="relative" style={{ width: largura, height: altura }}>
+                          <div className="relative" style={{ width: largura, minHeight: altura }}>
                             <div className="absolute top-0 bottom-0" style={{ left: hojeX, width: 2, background: "#D64545", opacity: 0.45 }} />
                             {temFaixa && <div className="absolute left-0 right-0 border-b border-dashed border-line/80" style={{ top: 20 }} />}
                             {/* barra: fundo claro + % concluído preenchido */}
@@ -613,7 +614,7 @@ export default function CronogramaVisao({ piFixo = null, acoes = null }) {
                 <div key={e.id} className="flex flex-col gap-1 min-w-0">
                   <div className="flex items-center gap-2 min-w-0">
                     <span className="font-mono text-[11px] font-semibold text-cyan shrink-0">{nomePi(e.pi_id)}</span>
-                    <span className="text-sm font-medium truncate flex-1 min-w-0" title={e.nome}>{e.nome}</span>
+                    <span className="text-sm font-medium break-words leading-snug flex-1 min-w-0" title={e.nome}>{e.nome}</span>
                     <span className="text-[11px] font-bold px-2 py-0.5 rounded-full shrink-0" style={{ color: sit[1], background: sit[2] }}>{sit[0]}</span>
                   </div>
                   <div className="relative h-2.5 rounded-full bg-panel mt-1">
