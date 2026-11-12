@@ -6,7 +6,7 @@ import { avisarAlocacao } from "../../lib/notificacoes";
 import { useAuth, podeEditar, pode } from "../../lib/AuthContext";
 import { supabase } from "../../lib/supabase";
 import { hojeISO as todayISO, addDias, isoLocal } from "../../lib/datas";
-import { LISTA_STATUS_ETAPA as STATUS, AREAS, STATUS_PI, COR_STATUS_PI, STATUS_ETAPA, FERIADOS_EXTRAS, datasAlertaEtapa, consolidarMacros } from "../../lib/constantes";
+import { LISTA_STATUS_ETAPA as STATUS, AREAS, STATUS_PI, COR_STATUS_PI, STATUS_ETAPA, FERIADOS_EXTRAS, datasAlertaEtapa, consolidarMacros, dataPlausivel } from "../../lib/constantes";
 import { useToast } from "../../lib/Toast";
 import PainelShell from "../../components/PainelShell";
 import { AbasCronograma, SeletorPi } from "../../components/ui";
@@ -73,6 +73,8 @@ function calcularDiasEFeriados(dataInicioStr, dataFimStr) {
   const di = new Date(dataInicioStr + "T00:00:00");
   const df = new Date(dataFimStr + "T00:00:00");
   if (isNaN(di) || isNaN(df) || df < di) return null;
+  // proteção: ano fora de 2000–2100 ou período > 20 anos não é calculado (antes travava a página)
+  if (!dataPlausivel(dataInicioStr) || !dataPlausivel(dataFimStr) || df - di > 20 * 366 * 86400000) return null;
   const anos = new Set();
   for (let a = di.getFullYear(); a <= df.getFullYear(); a++) anos.add(a);
   const nacMap = new Map(), spMap = new Map();
@@ -792,8 +794,11 @@ function EtapaRow({ subs = [], etapa, editavel, onChange, onDelete, deps, onRemo
   // nome em branco não é salvo (a etapa ficaria "invisível"); data apagada vira null (e não "", que o banco recusa)
   // salva o texto como está (com o espaço do fim) enquanto digita; ao sair do campo, tira os espaços das pontas
   const [nomeLocal, setNomeLocal, eventosNome] = useCampoDebounced(etapa.nome, (v) => v.trim() && onChange(etapa.id, { nome: v }), 500, (v) => v.trim() || v);
-  const [inicioLocal, setInicioLocal] = useCampoDebounced(etapa.data_prevista_inicio || "", (v) => onChange(etapa.id, { data_prevista_inicio: v || null }), 300);
-  const [fimLocal, setFimLocal] = useCampoDebounced(etapa.data_prevista_fim || "", (v) => onChange(etapa.id, { data_prevista_fim: v || null }), 300);
+  // datas: só grava vazio ou data com ano entre 2000 e 2100 (enquanto se digita o ano, o
+  // campo passa por "0002", "0020", "0202"... e gravar isso travava a página)
+  const [inicioLocal, setInicioLocal] = useCampoDebounced(etapa.data_prevista_inicio || "", (v) => (!v || dataPlausivel(v)) && onChange(etapa.id, { data_prevista_inicio: v || null }), 600);
+  const [fimLocal, setFimLocal] = useCampoDebounced(etapa.data_prevista_fim || "", (v) => (!v || dataPlausivel(v)) && onChange(etapa.id, { data_prevista_fim: v || null }), 600);
+  const dataRuim = (v) => v && !dataPlausivel(v);
   const [percLocal, setPercLocal] = useCampoDebounced(etapa.percentual || 0, (v) => onChange(etapa.id, { percentual: Math.max(0, Math.min(100, Number(v) || 0)) }));
   // responsável: texto livre (ex: "Contric", "WESTROCK / Contric", "João")
   const [respLocal, setRespLocal, eventosResp] = useCampoDebounced(etapa.responsavel_texto || "", (v) => onChange(etapa.id, { responsavel_texto: v.trim() ? v : null }), 600, (v) => v.trim());
@@ -862,13 +867,15 @@ function EtapaRow({ subs = [], etapa, editavel, onChange, onDelete, deps, onRemo
 
       <div className="flex flex-col gap-0.5">
         <div className="flex gap-1">
-          <input type="date" value={calculada ? etapa.data_prevista_inicio || "" : inicioLocal} disabled={!editavel || calculada} aria-label="Início previsto" title={calculada ? "Calculado pelas sub-etapas" : undefined}
+          <input type="date" min="2000-01-01" max="2100-12-31" value={calculada ? etapa.data_prevista_inicio || "" : inicioLocal} disabled={!editavel || calculada} aria-label="Início previsto" title={calculada ? "Calculado pelas sub-etapas" : undefined}
             onChange={(e) => setInicioLocal(e.target.value)}
-            className="input !w-auto !py-1.5 !px-2 !text-xs" />
-          <input type="date" value={calculada ? etapa.data_prevista_fim || "" : fimLocal} disabled={!editavel || calculada} aria-label="Término previsto" title={calculada ? "Calculado pelas sub-etapas" : undefined}
+            className={`input !w-auto !py-1.5 !px-2 !text-xs ${dataRuim(inicioLocal) ? "!border-red" : ""}`} />
+          <input type="date" min="2000-01-01" max="2100-12-31" value={calculada ? etapa.data_prevista_fim || "" : fimLocal} disabled={!editavel || calculada} aria-label="Término previsto" title={calculada ? "Calculado pelas sub-etapas" : undefined}
             onChange={(e) => setFimLocal(e.target.value)}
-            className={`input !w-auto !py-1.5 !px-2 !text-xs ${datasInvertidas ? "!border-red" : ""}`} />
+            className={`input !w-auto !py-1.5 !px-2 !text-xs ${datasInvertidas || dataRuim(fimLocal) ? "!border-red" : ""}`} />
         </div>
+        {(dataRuim(inicioLocal) || dataRuim(fimLocal)) && <div className="text-[11px] text-red">⚠ ano inválido — não foi salvo (use 2000 a 2100)</div>}
+        {etapa.datasInvalidas && <div className="text-[11px] text-red" title={Object.values(etapa.datasInvalidas).join(", ")}>⚠ havia uma data inválida salva ({Object.values(etapa.datasInvalidas).join(", ")}) — digite a data de novo</div>}
         {calculada ? <SomaDiasSubs subs={subs} /> : <ResumoDiasPeriodo dataInicio={inicioLocal} dataFim={fimLocal} />}
         {datasInvertidas && <div className="text-[11px] text-red">⚠ término antes do início</div>}
         {depsComSobreposicao.length > 0 && <div className="text-[11px] text-red">⚠ sobreposição de datas com dependência</div>}
