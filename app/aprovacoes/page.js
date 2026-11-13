@@ -174,7 +174,7 @@ export default function AprovacoesPage() {
       const valor = s.valor_proposto.trim();
       const ehData = s.campo_alterado !== "nome";
       if (ehData && !/^\d{4}-\d{2}-\d{2}$/.test(valor)) {
-        avisar("O valor proposto não é uma data válida — ajuste a etapa manualmente no Cronograma.", "erro", 7000);
+        avisar("O valor proposto não é uma data válida — ajuste a etapa manualmente em Configurar Cronograma.", "erro", 7000);
       } else {
         const { error } = await supabase.from("etapas").update({ [s.campo_alterado]: valor }).eq("id", etapa.id);
         if (error) { avisar(`Não foi possível aplicar na etapa: ${error.message}`, "erro", 6000); return; }

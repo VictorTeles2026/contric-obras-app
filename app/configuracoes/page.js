@@ -20,7 +20,7 @@ const SECOES = [
   ["unidades", "Modos de apropriação", "Unidade de custo dos recursos (hora, diária...)."],
   ["classificacoes_doc", "Classificações de documentos", "Opções ao enviar arquivos em Documentos."],
   ["categorias_orcamento", "Categorias de orçamento", "Itens de Compra (R$) e MOI (horas) da abertura do PI."],
-  ["status_etapa", "Status das etapas", "Nomes e cores das barras do cronograma e da Linha do Tempo."],
+  ["status_etapa", "Status das etapas", "Nomes e cores das barras em Configurar Cronograma e Cronograma."],
   ["status_pi", "Status dos PIs", "Nomes exibidos para os status do PI."],
   ["prazos", "Prazos de alerta", "Quando as etapas e medições ficam em destaque."],
   ["jornada", "Jornada", "Intervalo de almoço descontado automaticamente dos lançamentos de horas."],
@@ -416,8 +416,8 @@ function EditorPrazos({ chave, valor, personalizado, onSalvar, onRestaurar }) {
   return (
     <>
       <div className="flex flex-col gap-3">
-        {campo("urgente", "dias — urgente", "Linha do Tempo: contorno vermelho quando faltam até esses dias para o fim da etapa.")}
-        {campo("atencao", "dias — atenção", "Linha do Tempo: contorno laranja (deve ser maior que o urgente).")}
+        {campo("urgente", "dias — urgente", "Cronograma: contorno vermelho quando faltam até esses dias para o fim da etapa.")}
+        {campo("atencao", "dias — atenção", "Cronograma: contorno laranja (deve ser maior que o urgente).")}
         {campo("medicoes", "dias — medições próximas", "Dashboard: indicador e destaque das medições que vencem dentro desse prazo.")}
       </div>
       {invalido && <div className="text-sm text-red mt-2">Confira os valores: atenção precisa ser maior que urgente, e medições maior que zero.</div>}

@@ -127,7 +127,7 @@ export default function RdoPage() {
       <div className="p-4 md:p-8">
         <CabecalhoPagina titulo="RDO" subtitulo="Relatório diário de obra de qualquer PI." />
 
-        {pis.length === 0 ? <EstadoVazio icone="obra" titulo="Nenhum PI" texto="Cadastre um PI no Cronograma primeiro." /> : (
+        {pis.length === 0 ? <EstadoVazio icone="obra" titulo="Nenhum PI" texto="Cadastre um PI em Cadastro de PIs primeiro." /> : (
           <>
             <div className="cartao p-4 mb-4 flex flex-col lg:flex-row lg:items-center gap-3">
               <SeletorPi pis={pis} value={piAtual?.id || ""} onChange={(v) => trocarPi(v)} className="input lg:!w-96 min-w-0" />

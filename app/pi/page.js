@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useTabela, registrarLog, chamarApi, compararPis } from "../../lib/dados";
+import { useTabela, registrarLog, chamarApi, compararPis, useFinanceiroPi, consumo } from "../../lib/dados";
 import { useAuth, pode } from "../../lib/AuthContext";
 import { supabase } from "../../lib/supabase";
 import { BUCKET_DOCUMENTOS, linkTemporario, gerarPdfCronograma, gerarExcelCronograma, baseNomeCronograma } from "../../lib/pdfRdo";
@@ -203,7 +203,8 @@ function DetalhePi({ id, abaInicial }) {
   const router = useRouter();
   const { dados: pis, carregando } = useTabela("pis");
   const pi = pis.find((p) => p.id === id);
-  const abas = ABAS.filter(([, , perm]) => !perm || pode(usuario, perm) || (perm === "relatorio.ver" && pode(usuario, "dashboard.valores")));
+  // Financeiro: completo (relatório/valores) ou só de horas (permissão financeiro.horas — ex: líder de campo)
+  const abas = ABAS.filter(([, , perm]) => !perm || pode(usuario, perm) || (perm === "relatorio.ver" && (pode(usuario, "dashboard.valores") || pode(usuario, "financeiro.horas"))));
   const [aba, setAbaEstado] = useState(abas.some(([k]) => k === abaInicial) ? abaInicial : "resumo");
   const [qr, setQr] = useState(false);
   const setAba = (k) => { setAbaEstado(k); router.replace(`/pi?id=${id}${k !== "resumo" ? `&aba=${k}` : ""}`, { scroll: false }); };
@@ -225,7 +226,7 @@ function DetalhePi({ id, abaInicial }) {
         </div>
         <div className="flex flex-wrap gap-2">
           <button onClick={() => setQr(true)} className="btn btn-contorno"><Icone nome="qr" className="w-4 h-4" /> QR Code</button>
-          <Link href={`/cronograma?pi=${pi.id}`} className="btn btn-primario"><Icone nome="cronograma" className="w-4 h-4" /> Abrir no Cronograma</Link>
+          <Link href={`/cronograma?pi=${pi.id}`} className="btn btn-primario"><Icone nome="cronograma" className="w-4 h-4" /> Configurar Cronograma</Link>
         </div>
       </div>
 
@@ -285,16 +286,16 @@ function IndicadorAvanco({ avanco, macros, material, horas, irPara }) {
     </button>
   );
   return (
-    <div className={`cartao p-4 flex items-start gap-4 ${material !== undefined ? "col-span-2" : ""}`}>
+    <div className={`cartao p-4 flex items-start gap-4 ${material !== undefined || horas !== undefined ? "col-span-2" : ""}`}>
       <button onClick={() => irPara("cronograma")} className="text-left min-w-0 hover:opacity-80">
         <div className="text-xs text-muted">Avanço</div>
         <div className="font-head font-bold text-2xl tabular-nums text-cyan">{avanco}%</div>
         <div className="texto-apoio">{macros} macro-etapa(s)</div>
       </button>
-      {material !== undefined && <>
+      {(material !== undefined || horas !== undefined) && <>
         <div className="w-px self-stretch bg-line" />
-        <Consumo rotulo="Consumo material" v={material} aba="financeiro" />
-        <Consumo rotulo="Consumo horas" v={horas} aba="financeiro" />
+        {material !== undefined && <Consumo rotulo="Consumo material" v={material} aba="financeiro" />}
+        {horas !== undefined && <Consumo rotulo="Consumo horas" v={horas} aba="financeiro" />}
       </>}
     </div>
   );
@@ -308,6 +309,7 @@ function AbaResumo({ pi, usuario, irPara }) {
   const { dados: ocs } = useTabela("ocorrencias", { select: "id,status,rdo_id", filtro: [["pi_id", pi.id]] });
   const { dados: solic } = useTabela("solicitacoes_alteracao_cronograma", { select: "id,etapa_id,status" });
   const verValores = pode(usuario, "dashboard.valores") || pode(usuario, "relatorio.ver");
+  const verHoras = verValores || pode(usuario, "financeiro.horas"); // líder: só o consumo de horas
   const fin = useFinanceiroPi(pi);
 
   const macros = etapas.filter((e) => !e.parent_etapa_id);
@@ -328,8 +330,8 @@ function AbaResumo({ pi, usuario, irPara }) {
 
   return (
     <div className="flex flex-col gap-4">
-      <div className={`grid grid-cols-2 ${verValores ? "lg:grid-cols-5" : "lg:grid-cols-4"} gap-3`}>
-        <IndicadorAvanco avanco={avanco} macros={macros.length} material={verValores ? consumo(fin, "compra_reais") : undefined} horas={verValores ? consumo(fin, "moi_horas") : undefined}
+      <div className={`grid grid-cols-2 ${verHoras ? "lg:grid-cols-5" : "lg:grid-cols-4"} gap-3`}>
+        <IndicadorAvanco avanco={avanco} macros={macros.length} material={verValores ? consumo(fin, "compra_reais") : undefined} horas={verHoras ? consumo(fin, "moi_horas") : undefined}
           irPara={irPara} />
         <Indicador titulo="Etapas atrasadas" valor={atrasadas.length} detalhe={`${abertas.length} em aberto`} cor={atrasadas.length ? "text-red" : "text-green"} onClick={() => irPara("cronograma")} />
         <Indicador titulo={`Medições em ${PRAZOS.medicoes} dias`} valor={medProximas.length}
@@ -519,7 +521,7 @@ function AbaEquipe({ pi, usuario }) {
     <Secao titulo={`Recursos alocados (${porRecurso.length})`}
       acao={pode(usuario, "recurso.alocar") && <Link href="/recursos" className="btn btn-contorno btn-sm"><Icone nome="mais2" className="w-4 h-4" /> Alocar recursos</Link>}>
       {carregando && <Esqueleto linhas={3} altura={48} />}
-      {!carregando && !porRecurso.length && <EstadoVazio icone="recursos" titulo="Ninguém alocado" texto="Aloque pessoas e equipamentos nas etapas pelo Cronograma ou pela página Recursos." />}
+      {!carregando && !porRecurso.length && <EstadoVazio icone="recursos" titulo="Ninguém alocado" texto="Aloque pessoas e equipamentos nas etapas em Configurar Cronograma ou em Alocação de recursos." />}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
         {porRecurso.map(({ recurso, alocs: l }) => (
           <div key={recurso?.id || Math.random()} className="rounded-xl border border-line p-3">
@@ -712,38 +714,12 @@ function AbaDocumentos({ pi }) {
 
 // ---------------- Financeiro ----------------
 // orçado × realizado do PI por grupo ("compra_reais" | "moi_horas"), com as mesmas regras do Relatório
-function useFinanceiroPi(pi) {
-  const { dados: itens, carregando } = useTabela("orcamento_pi_item", { filtro: [["pi_id", pi.id]] });
-  const { dados: categorias } = useTabela("categorias_orcamento", { order: { coluna: "ordem" } });
-  // horas realizadas = ajuste manual (valor_realizado) + horas classificadas nos lançamentos — igual ao Relatório
-  const { dados: apontamentos } = useTabela("apontamentos_horas", { filtro: [["pi_id", pi.id]] });
-  const apontado = useMemo(() => {
-    const a = {};
-    apontamentos.filter((l) => l.status !== "rejeitado").forEach((l) => {
-      const h = horasDoLancamento(l);
-      if (l.categoria_normal_id) a[l.categoria_normal_id] = (a[l.categoria_normal_id] || 0) + h.normais;
-      if (l.categoria_extra_id) a[l.categoria_extra_id] = (a[l.categoria_extra_id] || 0) + h.extras;
-    });
-    return a;
-  }, [apontamentos]);
-  const grupo = (g) => categorias.filter((c) => c.grupo === g).map((c) => {
-    const base = itens.find((i) => i.categoria_id === c.id);
-    const ap = g === "moi_horas" ? apontado[c.id] || 0 : 0;
-    const it = base || ap ? { valor_orcado: base?.valor_orcado, valor_realizado: base?.valor_realizado == null && !ap ? null : (Number(base?.valor_realizado) || 0) + ap } : null;
-    return { c, it };
-  }).filter(({ it }) => it && (Number(it.valor_orcado) || Number(it.valor_realizado)));
-  const soma = (l, campo) => l.reduce((s, { it }) => s + Number(it[campo] || 0), 0);
-  return { grupo, soma, carregando };
-}
-
-// % consumido = realizado ÷ orçado do grupo (null sem orçado)
-function consumo(fin, g) {
-  const l = fin.grupo(g), orc = fin.soma(l, "valor_orcado");
-  return orc ? Math.round((fin.soma(l, "valor_realizado") / orc) * 100) : null;
-}
+// useFinanceiroPi e consumo moram em lib/dados.js (usados também no app do líder)
 
 function AbaFinanceiro({ pi, usuario }) {
   const { grupo, soma, carregando } = useFinanceiroPi(pi);
+  // só horas (ex: líder de campo): sem valores em R$ (compra e medições ficam ocultas)
+  const soHoras = !(pode(usuario, "relatorio.ver") || pode(usuario, "dashboard.valores"));
   const { dados: etapas } = useTabela("etapas", { select: "id,nome,medicao,medicao_valor,medicao_percentual,status,data_prevista_fim", filtro: [["pi_id", pi.id]] });
   const compra = grupo("compra_reais"), moi = grupo("moi_horas");
   const medicoes = etapas.filter((e) => e.medicao);
@@ -757,13 +733,14 @@ function AbaFinanceiro({ pi, usuario }) {
       <td className={`py-1.5 text-right tabular-nums ${perc === null ? "text-muteddim" : cor}`}>{perc === null ? "—" : `${perc > 0 ? "+" : ""}${perc.toLocaleString("pt-BR", { maximumFractionDigits: 1 })}%`}</td>
     </>);
   };
+  const [rReal, rDif] = soHoras ? ["Consumo", "Resultado"] : ["Realizado", "Diferença"];
   const tabela = (titulo, l, fmt) => (
     <Secao titulo={titulo}>
       {!l.length && <div className="text-sm text-muteddim">Sem valores lançados.</div>}
       {l.length > 0 && (
         <div className="overflow-x-auto">
         <table className="w-full text-sm">
-          <thead><tr className="text-left border-b border-line"><th className="py-2 titulo-secao">Categoria</th><th className="py-2 titulo-secao text-right">Orçado</th><th className="py-2 titulo-secao text-right">Realizado</th><th className="py-2 titulo-secao text-right">Diferença</th><th className="py-2 titulo-secao text-right">%</th></tr></thead>
+          <thead><tr className="text-left border-b border-line"><th className="py-2 titulo-secao">{soHoras ? "Classificação" : "Categoria"}</th><th className="py-2 titulo-secao text-right">Orçado</th><th className="py-2 titulo-secao text-right">{rReal}</th><th className="py-2 titulo-secao text-right">{rDif}</th><th className="py-2 titulo-secao text-right">%</th></tr></thead>
           <tbody>
             {l.map(({ c, it }) => (
               <tr key={c.id} className="border-b border-line/60"><td className="py-1.5"><span className="text-muted text-xs mr-1.5">{c.codigo}</span>{c.nome}</td>
@@ -776,9 +753,17 @@ function AbaFinanceiro({ pi, usuario }) {
         </table>
         </div>
       )}
-      {l.length > 0 && <div className="texto-apoio mt-2">Diferença = Orçado − Realizado. Verde: dentro do orçado · vermelho: acima do orçado.</div>}
+      {l.length > 0 && <div className="texto-apoio mt-2">{rDif} = Orçado − {rReal}. Verde: dentro do orçado · vermelho: acima do orçado.</div>}
     </Secao>
   );
+  if (soHoras) {
+    return (
+      <div className="flex flex-col gap-4">
+        {carregando && <Esqueleto linhas={3} />}
+        {tabela("Horas — orçado × consumo × resultado", moi, horas)}
+      </div>
+    );
+  }
   return (
     <div className="flex flex-col gap-4">
       <div className="flex justify-end">
@@ -787,7 +772,7 @@ function AbaFinanceiro({ pi, usuario }) {
       {carregando && <Esqueleto linhas={3} />}
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
         {tabela("Compra — Produto ou Serviço", compra, reais)}
-        {tabela("MOI + Contric (horas)", moi, horas)}
+        {tabela("Relatório de Horas", moi, horas)}
       </div>
       <Secao titulo={`Medições (${medicoes.length})`}>
         {!medicoes.length && <div className="text-sm text-muteddim">Nenhuma etapa com medição marcada.</div>}
@@ -808,7 +793,7 @@ function AbaFinanceiro({ pi, usuario }) {
 }
 
 // ---------------- Cliente ----------------
-const ACESSOS = [["ver_linha_tempo", "Linha do tempo"], ["ver_atas", "Atas"], ["ver_rdos_assinados", "RDOs assinados"], ["ver_ocorrencias_assinadas", "Ocorrências assinadas"]];
+const ACESSOS = [["ver_linha_tempo", "Cronograma"], ["ver_atas", "Atas"], ["ver_rdos_assinados", "RDOs assinados"], ["ver_ocorrencias_assinadas", "Ocorrências assinadas"]];
 function AbaCliente({ pi }) {
   const { dados: acessos, carregando } = useTabela("cliente_acessos", { filtro: [["pi_id", pi.id]] });
   const { dados: clientes } = useTabela("clientes");

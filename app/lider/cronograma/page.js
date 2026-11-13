@@ -2,15 +2,15 @@
 
 import { useState } from "react";
 import { useTabela } from "../../../lib/dados";
-import { useAuth } from "../../../lib/AuthContext";
-import { useMinhasPis, agruparPorCliente } from "../../../lib/dados";
+import { useAuth, pode } from "../../../lib/AuthContext";
+import { useMinhasPis, agruparPorCliente, useFinanceiroPi, consumo } from "../../../lib/dados";
 import { NAV_LIDER } from "../../../lib/nav";
 import { formatarDataCurta, diasAte } from "../../../lib/datas";
 import MobileShell from "../../../components/MobileShell";
 import { Esqueleto, EstadoVazio } from "../../../components/ui";
 import Icone from "../../../components/Icone";
 import { ModalQrPi } from "../../../components/LeitorQR";
-import { STATUS_ETAPA, porOrdem } from "../../../lib/constantes";
+import { STATUS_ETAPA, porOrdem, consolidarMacros } from "../../../lib/constantes";
 
 export default function LiderCronogramaPage() {
   const { usuario } = useAuth();
@@ -52,6 +52,7 @@ export default function LiderCronogramaPage() {
                       <span className="text-[10px] font-semibold">QR Code</span>
                     </button>
                   </div>
+                  <ResumoObra pi={pi} etapas={doPi} usuario={usuario} />
                   {macroEtapas.map((e) => {
                     const subs = doPi.filter((s) => s.parent_etapa_id === e.id).sort(porOrdem);
                     return (
@@ -82,6 +83,69 @@ export default function LiderCronogramaPage() {
       </div>
       {qrPi && <ModalQrPi pi={qrPi} onFechar={() => setQrPi(null)} />}
     </MobileShell>
+  );
+}
+
+// Resumo da obra (o mesmo painel da Página do PI): avanço, atrasos e — com a permissão
+// "financeiro.horas" — horas orçadas × consumo × resultado por classificação (sem R$)
+function ResumoObra({ pi, etapas, usuario }) {
+  const [aberto, setAberto] = useState(false);
+  const verHoras = pode(usuario, "financeiro.horas") || pode(usuario, "relatorio.ver");
+  const fin = useFinanceiroPi(pi);
+  const ets = consolidarMacros(etapas);
+  const macros = ets.filter((e) => !e.parent_etapa_id);
+  const avanco = macros.length ? Math.round(macros.reduce((s, e) => s + (e.status === "concluida" ? 100 : Number(e.percentual) || 0), 0) / macros.length) : 0;
+  const atrasadas = ets.filter((e) => !e.calculada && e.status !== "concluida" && (diasAte(e.data_prevista_fim) ?? 0) < 0).length;
+  const cons = verHoras ? consumo(fin, "moi_horas") : null;
+  const linhas = verHoras ? fin.grupo("moi_horas") : [];
+  const h = (v) => `${(Number(v) || 0).toLocaleString("pt-BR", { maximumFractionDigits: 1 })}h`;
+  const tot = (campo) => fin.soma(linhas, campo);
+  const Celula = ({ rotulo, valor, cor = "" }) => (
+    <div className="min-w-0"><div className="text-[11px] text-muted">{rotulo}</div><div className={`font-head font-bold text-xl tabular-nums ${cor}`}>{valor}</div></div>
+  );
+  return (
+    <div className="cartao p-3.5">
+      <div className={`grid ${verHoras ? "grid-cols-3" : "grid-cols-2"} gap-3`}>
+        <Celula rotulo="Avanço" valor={`${avanco}%`} cor="text-cyan" />
+        <Celula rotulo="Etapas atrasadas" valor={atrasadas} cor={atrasadas ? "text-red" : "text-green"} />
+        {verHoras && <Celula rotulo="Consumo horas" valor={cons === null ? "—" : `${cons}%`} cor={cons === null ? "text-muteddim" : cons <= avanco ? "text-green" : "text-red"} />}
+      </div>
+      {verHoras && (
+        <>
+          <button type="button" onClick={() => setAberto((v) => !v)} aria-expanded={aberto} className="flex items-center gap-1 text-xs text-cyan font-semibold mt-3">
+            <Icone nome="seta" className={`w-3.5 h-3.5 transition-transform ${aberto ? "rotate-90" : ""}`} strokeWidth={2.4} />
+            {aberto ? "Ocultar" : "Ver"} horas por classificação
+          </button>
+          {aberto && (
+            <div className="mt-2 -mx-1 overflow-x-auto animar-fade">
+              {!linhas.length ? <div className="text-sm text-muteddim px-1 py-2">Sem horas orçadas neste PI.</div> : (
+                <table className="w-full text-sm">
+                  <thead><tr className="border-b border-line text-left">
+                    <th className="py-1.5 px-1 titulo-secao">Classificação</th><th className="py-1.5 px-1 titulo-secao text-right">Orçado</th>
+                    <th className="py-1.5 px-1 titulo-secao text-right">Consumo</th><th className="py-1.5 px-1 titulo-secao text-right">Resultado</th>
+                  </tr></thead>
+                  <tbody>
+                    {[...linhas.map(({ c, it }) => ({ k: c.id, rot: <><span className="font-mono text-[11px] text-muted mr-1">{c.codigo}</span>{c.nome}</>, o: Number(it.valor_orcado) || 0, r: Number(it.valor_realizado) || 0 })),
+                      { k: "total", rot: <strong>Total</strong>, o: tot("valor_orcado"), r: tot("valor_realizado"), total: true }].map((l) => {
+                      const res = l.o - l.r;
+                      return (
+                        <tr key={l.k} className={l.total ? "font-semibold" : "border-b border-line/60"}>
+                          <td className="py-1.5 px-1 leading-snug">{l.rot}</td>
+                          <td className="py-1.5 px-1 text-right tabular-nums whitespace-nowrap">{h(l.o)}</td>
+                          <td className="py-1.5 px-1 text-right tabular-nums whitespace-nowrap">{h(l.r)}</td>
+                          <td className={`py-1.5 px-1 text-right tabular-nums whitespace-nowrap ${res >= 0 ? "text-green" : "text-red"}`}>{res > 0 ? "+" : ""}{h(res)}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              )}
+              <div className="text-[11px] text-muteddim mt-1.5 px-1">Resultado = Orçado − Consumo · verde: dentro do orçado · vermelho: acima.</div>
+            </div>
+          )}
+        </>
+      )}
+    </div>
   );
 }
 

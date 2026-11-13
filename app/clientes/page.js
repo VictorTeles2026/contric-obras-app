@@ -12,7 +12,7 @@ import { CabecalhoPagina, EstadoVazio, Esqueleto, Aviso, Modal, Campo, Spinner, 
 import Icone from "../../components/Icone";
 import { FormCliente, Credenciais } from "../../components/Editores";
 
-const ACESSOS = [["ver_atas", "Atas de reuniões"], ["ver_rdos_assinados", "RDOs assinados (PDF)"], ["ver_linha_tempo", "Linha do tempo"], ["ver_ocorrencias_assinadas", "Ocorrências assinadas"]];
+const ACESSOS = [["ver_atas", "Atas de reuniões"], ["ver_rdos_assinados", "RDOs assinados (PDF)"], ["ver_linha_tempo", "Cronograma"], ["ver_ocorrencias_assinadas", "Ocorrências assinadas"]];
 const flagsDe = (a, valor) => Object.fromEntries(ACESSOS.map(([k]) => [k, valor === undefined ? !!a[k] : valor]));
 
 export default function ClientesPage() {

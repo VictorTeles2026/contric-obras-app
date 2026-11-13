@@ -192,7 +192,7 @@ export default function ControleHorasPage() {
             {/* ---------- linha do tempo dia a dia ---------- */}
             <section className="cartao mb-6 overflow-hidden">
               <div className="px-4 py-3 border-b border-line flex flex-wrap items-center justify-between gap-2">
-                <h2 className="titulo-quadro text-cyan">Linha do tempo — horas {SOMAR.find(([v]) => v === somar)[1].toLowerCase()} por dia</h2>
+                <h2 className="titulo-quadro text-cyan">Dia a dia — horas {SOMAR.find(([v]) => v === somar)[1].toLowerCase()} por dia</h2>
                 <span className="text-xs text-muted">{dias.length} dia(s) · passe o mouse numa célula para ver o detalhe</span>
               </div>
               <div className="overflow-auto rolagem-linha-tempo" style={{ maxHeight: "60vh" }}>

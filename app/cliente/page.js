@@ -37,6 +37,16 @@ export default function PortalCliente() {
     setObraId((atual) => atual || j.obras?.[0]?.pi.id || null);
   };
   useEffect(() => { if (usuario?.perfil === "cliente") carregar(); }, [usuario?.perfil]);
+  // acesso liberado com o portal já aberto: antes só aparecia saindo e entrando de novo.
+  // Agora recarrega ao voltar para a aba/app e a cada 2 minutos.
+  useEffect(() => {
+    if (usuario?.perfil !== "cliente") return;
+    const aoVoltar = () => { if (document.visibilityState === "visible") carregar(); };
+    document.addEventListener("visibilitychange", aoVoltar);
+    const t = setInterval(aoVoltar, 120000);
+    return () => { document.removeEventListener("visibilitychange", aoVoltar); clearInterval(t); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [usuario?.perfil]);
 
   const obra = dados?.obras?.find((o) => o.pi.id === obraId);
 
@@ -69,6 +79,7 @@ export default function PortalCliente() {
           <div className="rounded-2xl bg-white border border-zinc-200 p-8 text-center">
             <div className="titulo-destaque">Nenhuma obra liberada ainda</div>
             <p className="text-sm text-zinc-500 mt-1">Quando a Contric liberar o acesso a uma obra, ela aparecerá aqui e você receberá um e-mail.</p>
+            <button onClick={carregar} className="mt-4 rounded-lg border border-zinc-300 px-4 py-2 text-sm font-semibold hover:bg-zinc-50">Atualizar</button>
           </div>
         )}
 
@@ -154,7 +165,7 @@ function LinhaTempoCliente({ etapas }) {
   useEffect(() => { const m = () => setLW(window.innerWidth < 640 ? 128 : 200); m(); window.addEventListener("resize", m); return () => window.removeEventListener("resize", m); }, []);
   const tempos = itens.flatMap((e) => [tsLocal(e.data_prevista_inicio), tsLocal(e.data_prevista_fim)]).filter(Boolean);
   if (!itens.length || !tempos.length) {
-    return <section className="rounded-2xl bg-white border border-zinc-200 p-5 text-sm text-zinc-500">Linha do tempo ainda sem etapas planejadas.</section>;
+    return <section className="rounded-2xl bg-white border border-zinc-200 p-5 text-sm text-zinc-500">Cronograma ainda sem etapas planejadas.</section>;
   }
   const DIA = 86400000;
   const min = Math.min(...tempos) - 2 * DIA, max = Math.max(...tempos) + 3 * DIA;
@@ -170,7 +181,7 @@ function LinhaTempoCliente({ etapas }) {
     <section className="rounded-2xl bg-white border border-zinc-200 overflow-hidden">
       <div className="px-5 py-3.5 border-b border-zinc-200 flex flex-wrap items-center gap-3">
         <Icone nome="linhaTempo" className="w-5 h-5 text-zinc-500" />
-        <h2 className="titulo-quadro">Linha do tempo</h2>
+        <h2 className="titulo-quadro">Cronograma</h2>
         <div className="flex items-center gap-2 text-sm ml-auto">
           <span className="w-28 h-2 rounded-full bg-zinc-200 overflow-hidden inline-block"><span className="block h-full bg-zinc-800" style={{ width: `${progresso}%` }} /></span>
           <strong>{progresso}%</strong>

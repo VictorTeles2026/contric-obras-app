@@ -377,7 +377,7 @@ export default function CronogramaVisao({ piFixo = null, acoes = null }) {
         </div>
 
         {!carregandoPis && pisSelecionados.length === 0 && (
-          <EstadoVazio icone="linhaTempo" titulo="Nenhum PI selecionado" texto="Escolha quais PIs aparecem na linha do tempo."
+          <EstadoVazio icone="linhaTempo" titulo="Nenhum PI selecionado" texto="Escolha quais PIs aparecem no cronograma."
             acao={<button onClick={() => setSelecionarAberto(true)} className="btn btn-primario">Selecionar PIs</button>} />
         )}
         {pisSelecionados.length > 0 && (
@@ -712,7 +712,7 @@ function SelecionarPisModal({ pis, selecionados, onConfirmar, onCancelar }) {
       rodape={<>
         <span className="text-sm text-muted mr-auto self-center">{locais.length} selecionado(s)</span>
         <button onClick={onCancelar} className="btn btn-fantasma">Cancelar</button>
-        <button onClick={() => onConfirmar(locais)} className="btn btn-primario">Mostrar na linha do tempo</button>
+        <button onClick={() => onConfirmar(locais)} className="btn btn-primario">Mostrar no cronograma</button>
       </>}>
       <div className="relative mb-3">
         <Icone nome="buscar" className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muteddim" />

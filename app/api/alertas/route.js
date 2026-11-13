@@ -271,7 +271,7 @@ async function avisarAlocacao(admin, interno, { evento, alocacoes }) {
 // ---------------- clientes do portal ----------------
 const CAMPO = { ata: "ver_atas", rdo: "ver_rdos_assinados", ocorrencia: "ver_ocorrencias_assinadas", linha_tempo: "ver_linha_tempo" };
 const TITULO = { ata: "Nova ata de reunião disponível", rdo: "Novo RDO assinado disponível", ocorrencia: "Nova ocorrência assinada disponível",
-  linha_tempo: "A linha do tempo da obra foi atualizada", documento: "Novo documento disponível" };
+  linha_tempo: "O cronograma da obra foi atualizado", documento: "Novo documento disponível" };
 async function avisarClientes(admin, { piId, tipo, detalhe, clienteId }) {
   if (!piId || !TITULO[tipo] || (tipo === "documento" && !clienteId)) return NextResponse.json({ error: "Dados inválidos." }, { status: 400 });
   if ((await padraoAlertas(admin)).clientes !== true) return NextResponse.json({ avisados: 0, motivo: "e-mails a clientes desligados (Usuários → Alertas)" });

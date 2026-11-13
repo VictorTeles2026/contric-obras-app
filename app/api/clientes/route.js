@@ -11,7 +11,7 @@ const enviarEmail = (dados) => ENVIO_EMAIL_CLIENTES ? enviarEmailReal(dados) : P
 // Gestão de clientes do portal — master, gerente e coordenador (excluir: só master).
 const PERFIS = ["master", "gerente", "coordenador"];
 const esc = (t) => String(t ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
-const ROTULOS = { ver_atas: "Atas de reuniões", ver_rdos_assinados: "RDOs assinados (PDF)", ver_linha_tempo: "Linha do tempo", ver_ocorrencias_assinadas: "Ocorrências assinadas" };
+const ROTULOS = { ver_atas: "Atas de reuniões", ver_rdos_assinados: "RDOs assinados (PDF)", ver_linha_tempo: "Cronograma", ver_ocorrencias_assinadas: "Ocorrências assinadas" };
 
 function mensagemBoasVindas(cliente, senha, origem) {
   const link = `${urlApp() || origem || ""}/acesso-clientes`;

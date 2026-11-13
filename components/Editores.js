@@ -568,7 +568,7 @@ function PiModal({ modo, piInicial, categorias, valoresIniciais, onSalvar, onCan
       <div className="mb-6">{tabela(compraCats, "Valor (R$)", "0.01")}</div>
 
       <div className="flex items-baseline justify-between mb-2">
-        <div className="titulo-quadro text-cyan">MOI + Contric (horas)</div>
+        <div className="titulo-quadro text-cyan">Horas (MOI + Contric)</div>
         <div className="text-xs text-muted">Total: <strong className="text-textmain">{soma(moiCats).toLocaleString("pt-BR")} h</strong></div>
       </div>
       {tabela(moiCats, "Horas", "0.5")}

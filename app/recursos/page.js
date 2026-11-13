@@ -495,7 +495,7 @@ export default function RecursosPage({ searchParams }) {
                     <SeletorPi pis={pis} value={piEscolhido} onChange={(v) => { setPiEscolhido(v); setEtapaEscolhida(""); setSelecaoEtapas({}); }} className="input" />
                   </Campo>
                   {editandoAlocId ? (
-                    <Campo rotulo="Etapa (igual à alocação pelo Cronograma)" className="sm:col-span-2">
+                    <Campo rotulo="Etapa (igual à alocação em Configurar Cronograma)" className="sm:col-span-2">
                       <select value={etapaEscolhida} onChange={(e) => escolherEtapa(e.target.value)} disabled={!piEscolhido} className="input">
                         <option value="">Sem etapa — só período no PI</option>
                         {opcoesEtapa(piEscolhido).map((e) => <option key={e.id} value={e.id}>{e.nivel ? "   " : ""}{e.rotulo}</option>)}
@@ -751,7 +751,7 @@ function AlocacaoEmMassaModal({ pis, recursos, opcoesEtapa, etapas, onAplicar, o
         <Campo rotulo="PI">
           <SeletorPi pis={pis} value={piId} onChange={(v) => { setPiId(v); setEtapaId(""); }} className="input" />
         </Campo>
-        <Campo rotulo="Etapa (igual à alocação pelo Cronograma)">
+        <Campo rotulo="Etapa (igual à alocação em Configurar Cronograma)">
           <select value={etapaId} disabled={!piId} className="input" onChange={(e) => {
             setEtapaId(e.target.value);
             const et = etapas.find((x) => x.id === e.target.value);

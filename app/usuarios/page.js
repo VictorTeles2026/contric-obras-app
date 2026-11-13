@@ -635,7 +635,7 @@ function AbaAlertas({ usuarios, carregando, podeEditar, recarregar }) {
       <div className="cartao p-4 mb-4 flex flex-wrap items-center gap-3">
         <div className="flex-1 min-w-[240px]">
           <div className="font-semibold text-sm">E-mails para clientes do portal</div>
-          <div className="texto-apoio">Ata nova, RDO e ocorrência assinados, documento liberado e atualização da linha do tempo — para os clientes com o acesso correspondente.</div>
+          <div className="texto-apoio">Ata nova, RDO e ocorrência assinados, documento liberado e atualização do cronograma — para os clientes com o acesso correspondente.</div>
         </div>
         <button type="button" disabled={usuario?.perfil !== "master" || salvandoClientes} onClick={() => alternarClientes(!clientes)}
           title={usuario?.perfil !== "master" ? "Somente o Master" : ""}

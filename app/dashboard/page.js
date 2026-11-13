@@ -158,8 +158,8 @@ export default function DashboardPage() {
         </div>
         {carregandoPis && <Esqueleto linhas={4} altura={56} />}
         {!carregandoPis && pis.length === 0 && (
-          <EstadoVazio icone="obra" titulo="Nenhum PI ainda" texto="Crie o primeiro PI no Cronograma."
-            acao={<Link href="/cronograma" className="btn btn-primario btn-sm">Ir para o Cronograma</Link>} />
+          <EstadoVazio icone="obra" titulo="Nenhum PI ainda" texto="Crie o primeiro PI em Cadastro de PIs."
+            acao={<Link href="/pis" className="btn btn-primario btn-sm">Ir para Cadastro de PIs</Link>} />
         )}
         {!carregandoPis && pis.length > 0 && pisFiltrados.length === 0 && <div className="text-sm text-muteddim py-6 text-center">Nenhum PI encontrado.</div>}
         <div className="flex flex-col gap-2 overflow-y-auto rolagem-fina flex-1 min-h-0 -mx-1 px-1">
@@ -191,7 +191,7 @@ export default function DashboardPage() {
       <section className="cartao p-4 md:p-5 h-full flex flex-col min-h-0">
         <h2 className="titulo-quadro mb-3">Medições em aberto</h2>
         {gruposMedicoes.length === 0 && (
-          <EstadoVazio icone="calendario" titulo="Nada a medir" texto="Marque “Medição” em macro ou sub-etapas no Cronograma para acompanhar aqui." />
+          <EstadoVazio icone="calendario" titulo="Nada a medir" texto="Marque “Medição” em macro ou sub-etapas em Configurar Cronograma para acompanhar aqui." />
         )}
         {gruposMedicoes.length > 0 && (
           <div className="overflow-auto rolagem-fina flex-1 min-h-0 -mx-4 md:mx-0">
