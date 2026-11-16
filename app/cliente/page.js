@@ -1,12 +1,12 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "../../lib/AuthContext";
 import { supabase } from "../../lib/supabase";
 import { rotaInicialPara } from "../../lib/nav";
 import { tsLocal, formatarData, formatarDataHora, diasAte } from "../../lib/datas";
-import { STATUS_ETAPA, etapasEmArvore } from "../../lib/constantes";
+import { STATUS_ETAPA, etapasEmArvore, consolidarMacros } from "../../lib/constantes";
 import AlterarSenha from "../../components/AlterarSenha";
 import { Spinner } from "../../components/ui";
 import Icone from "../../components/Icone";
@@ -57,7 +57,7 @@ export default function PortalCliente() {
   return (
     <div className="min-h-[100dvh] bg-zinc-100 text-zinc-900">
       <header className="sticky top-0 z-30 bg-zinc-900 text-zinc-100 shadow-lg" style={{ paddingTop: "env(safe-area-inset-top)" }}>
-        <div className="max-w-5xl mx-auto px-4 h-16 flex items-center justify-between gap-3">
+        <div className="max-w-[1500px] mx-auto px-4 md:px-6 h-16 flex items-center justify-between gap-3">
           <div className="flex items-center gap-3 min-w-0">
             <img src="/logo-claro.png" alt="Contric" className="h-11 w-auto shrink-0" />
             <div className="min-w-0">
@@ -72,7 +72,7 @@ export default function PortalCliente() {
         </div>
       </header>
 
-      <main className="max-w-5xl mx-auto p-4 md:p-6" style={{ paddingBottom: "max(2rem, env(safe-area-inset-bottom))" }}>
+      <main className="max-w-[1500px] mx-auto p-4 md:p-6" style={{ paddingBottom: "max(2rem, env(safe-area-inset-bottom))" }}>
         {erro && <div className="rounded-xl bg-red-50 border border-red-200 text-red-700 p-4 text-sm mb-4">{erro}</div>}
         {!dados && !erro && <div className="flex justify-center py-16"><Spinner className="w-7 h-7 text-zinc-500" /></div>}
         {dados && dados.obras.length === 0 && (
@@ -84,28 +84,34 @@ export default function PortalCliente() {
         )}
 
         {dados && dados.obras.length > 0 && (
-          <>
-            {/* seleção da obra */}
-            <div className="flex gap-2 overflow-x-auto pb-2 mb-4 -mx-4 px-4">
-              {dados.obras.map((o) => (
-                <button key={o.pi.id} onClick={() => setObraId(o.pi.id)}
-                  className={`shrink-0 text-left rounded-xl border px-4 py-3 transition-colors ${o.pi.id === obraId ? "bg-zinc-900 text-white border-zinc-900" : "bg-white border-zinc-200 hover:border-zinc-400"}`}>
-                  <div className="font-mono font-bold text-sm">{o.pi.codigo}</div>
-                  <div className={`text-xs truncate max-w-[220px] ${o.pi.id === obraId ? "text-zinc-300" : "text-zinc-500"}`}>{o.pi.projeto || o.pi.cliente}</div>
-                </button>
-              ))}
-            </div>
+          // computador: obras numa coluna lateral fixa · celular: obras em faixa rolável no topo
+          <div className="lg:grid lg:grid-cols-[260px_minmax(0,1fr)] lg:gap-6 lg:items-start">
+            <aside className="lg:sticky lg:top-[88px]">
+              <div className="hidden lg:block text-[11px] font-semibold uppercase tracking-wider text-zinc-500 mb-2 px-1">Minhas obras ({dados.obras.length})</div>
+              <div className="flex lg:flex-col gap-2 overflow-x-auto lg:overflow-visible pb-2 lg:pb-0 mb-4 lg:mb-0 -mx-4 px-4 lg:mx-0 lg:px-0">
+                {dados.obras.map((o) => {
+                  const sel = o.pi.id === obraId;
+                  return (
+                    <button key={o.pi.id} onClick={() => setObraId(o.pi.id)}
+                      className={`shrink-0 lg:shrink text-left rounded-xl border px-4 py-3 transition-colors w-[230px] lg:w-full ${sel ? "bg-zinc-900 text-white border-zinc-900 shadow-md" : "bg-white border-zinc-200 hover:border-zinc-400"}`}>
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="font-mono font-bold text-sm">{o.pi.codigo}</span>
+                        <span className={`text-[10px] font-semibold uppercase tracking-wide ${sel ? "text-zinc-400" : "text-zinc-400"}`}>{STATUS_PI[o.pi.status] || ""}</span>
+                      </div>
+                      <div className={`text-xs leading-snug mt-0.5 line-clamp-2 ${sel ? "text-zinc-300" : "text-zinc-500"}`}>{o.pi.projeto || o.pi.cliente}</div>
+                    </button>
+                  );
+                })}
+              </div>
+            </aside>
 
             {obra && (
-              <div className="flex flex-col gap-4">
-                <section className="rounded-2xl bg-white border border-zinc-200 p-5">
-                  <div className="text-xs font-mono font-bold text-zinc-500">{obra.pi.codigo}</div>
-                  <h1 className="titulo-destaque">{obra.pi.projeto || obra.pi.cliente}</h1>
-                  <div className="text-sm text-zinc-500">{obra.pi.cliente}{obra.pi.prazo ? ` · prazo ${formatarData(obra.pi.prazo)}` : ""} · {STATUS_PI[obra.pi.status] || obra.pi.status}</div>
-                </section>
+              <div className="flex flex-col gap-4 min-w-0">
+                <CabecalhoObra obra={obra} />
 
                 {obra.acessos.linhaTempo && <LinhaTempoCliente etapas={obra.etapas} pi={obra.pi} />}
 
+                <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 items-start">
                 {obra.acessos.atas && (
                   <ListaArquivos titulo="Atas de reuniões" icone="usuarios" vazio="Nenhuma ata disponível ainda."
                     itens={obra.atas.map((a) => ({ chave: a.nome, nome: a.nome, detalhe: formatarDataHora(a.data), url: a.url }))} />
@@ -122,9 +128,10 @@ export default function PortalCliente() {
                   <ListaArquivos titulo="Documentos" icone="pasta" vazio=""
                     itens={obra.documentos.map((d) => ({ chave: d.nome, nome: d.nome, detalhe: `Disponibilizado em ${formatarDataHora(d.data)}`, url: d.url }))} />
                 )}
+                </div>
               </div>
             )}
-          </>
+          </div>
         )}
       </main>
       {trocandoSenha && <AlterarSenha onFechar={() => setTrocandoSenha(false)} />}
@@ -187,71 +194,169 @@ function BotaoPdfCronograma({ pi, etapas }) {
   );
 }
 
+// ---------- resumo da obra: nome + indicadores ----------
+const MESES_CURTOS = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
+const pctEtapa = (e) => (e.status === "concluida" ? 100 : Math.max(0, Math.min(100, Number(e.percentual) || 0)));
+function CabecalhoObra({ obra }) {
+  const { pi } = obra;
+  const ets = useMemo(() => consolidarMacros(obra.etapas || []), [obra.etapas]);
+  const comCrono = obra.acessos.linhaTempo && ets.length > 0;
+  const macros = ets.filter((e) => !e.parent_etapa_id);
+  const trabalho = ets.filter((e) => !e.calculada); // etapas de trabalho (sem repetir a macro)
+  const avanco = macros.length ? Math.round(macros.reduce((s, e) => s + pctEtapa(e), 0) / macros.length) : 0;
+  const concluidas = trabalho.filter((e) => e.status === "concluida").length;
+  const atrasadas = trabalho.filter((e) => e.status !== "concluida" && (diasAte(e.data_prevista_fim) ?? 0) < 0).length;
+  const termino = ets.map((e) => e.data_prevista_fim).filter(Boolean).sort().pop();
+  const Ind = ({ rotulo, valor, detalhe, cor = "text-zinc-900" }) => (
+    <div className="rounded-xl bg-zinc-50 border border-zinc-200 px-4 py-3 min-w-0">
+      <div className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">{rotulo}</div>
+      <div className={`font-head font-bold text-lg sm:text-2xl tabular-nums leading-tight mt-0.5 truncate ${cor}`}>{valor}</div>
+      {detalhe && <div className="text-xs text-zinc-500 mt-0.5 truncate">{detalhe}</div>}
+    </div>
+  );
+  return (
+    <section className="rounded-2xl bg-white border border-zinc-200 p-5">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="text-xs font-mono font-bold text-zinc-500">PI {pi.codigo}</div>
+          <h1 className="font-head text-xl md:text-2xl font-bold leading-tight mt-0.5">{pi.projeto || pi.cliente}</h1>
+          <div className="text-sm text-zinc-500 mt-1">{pi.cliente}</div>
+        </div>
+        <span className="rounded-full bg-zinc-900 text-white text-xs font-semibold px-3 py-1">{STATUS_PI[pi.status] || pi.status}</span>
+      </div>
+      {comCrono && (
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mt-4">
+          <Ind rotulo="Avanço geral" valor={`${avanco}%`} detalhe={`${macros.length} fase(s)`} />
+          <Ind rotulo="Etapas concluídas" valor={`${concluidas}/${trabalho.length}`} />
+          <Ind rotulo="Em atraso" valor={atrasadas} cor={atrasadas ? "text-red-600" : "text-green-700"} detalhe={atrasadas ? "etapas além do previsto" : "nenhuma etapa atrasada"} />
+          <Ind rotulo="Término previsto" valor={termino ? formatarData(termino) : "—"} detalhe={pi.prazo ? `prazo contratual ${formatarData(pi.prazo)}` : ""} />
+        </div>
+      )}
+      {!comCrono && pi.prazo && <div className="text-sm text-zinc-500 mt-2">Prazo {formatarData(pi.prazo)}</div>}
+    </section>
+  );
+}
+
+// ---------- cronograma (somente leitura) ----------
+// Computador: coluna de etapas larga (nome completo + início, término e %), Gantt ocupando toda a
+// largura disponível, régua de meses e semanas, linha de hoje. Celular: coluna estreita e rolagem.
 function LinhaTempoCliente({ etapas, pi }) {
-  const itens = useMemo(() => etapasEmArvore(etapas), [etapas]);
-  // coluna dos nomes mais estreita no celular (sobra espaço para as barras)
-  const [LW, setLW] = useState(200);
-  useEffect(() => { const m = () => setLW(window.innerWidth < 640 ? 128 : 200); m(); window.addEventListener("resize", m); return () => window.removeEventListener("resize", m); }, []);
+  const itens = useMemo(() => etapasEmArvore(consolidarMacros(etapas || [])), [etapas]);
+  const caixaRef = useRef(null);
+  const [larguraCaixa, setLarguraCaixa] = useState(0);
+  useEffect(() => {
+    const el = caixaRef.current; if (!el) return;
+    const ro = new ResizeObserver(([e]) => setLarguraCaixa(e.contentRect.width));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  const largo = larguraCaixa >= 900;
+  const LW = largo ? 470 : larguraCaixa >= 640 ? 260 : 150; // coluna da esquerda (nome + colunas no computador)
   const tempos = itens.flatMap((e) => [tsLocal(e.data_prevista_inicio), tsLocal(e.data_prevista_fim)]).filter(Boolean);
-  if (!itens.length || !tempos.length) {
-    return <section className="rounded-2xl bg-white border border-zinc-200 p-5 text-sm text-zinc-500">Cronograma ainda sem etapas planejadas.</section>;
-  }
+  const vazio = !itens.length || !tempos.length;
   const DIA = 86400000;
-  const min = Math.min(...tempos) - 2 * DIA, max = Math.max(...tempos) + 3 * DIA;
-  const dias = (max - min) / DIA;
-  const largura = Math.max(560, dias * 18);
+  const min = vazio ? 0 : Math.min(...tempos) - 3 * DIA, max = vazio ? 1 : Math.max(...tempos) + 4 * DIA;
+  const dias = Math.max(1, (max - min) / DIA);
+  // ocupa a largura toda; só rola na horizontal se cada dia ficar com menos de 4px (ou 10px no celular)
+  const disponivel = Math.max(0, larguraCaixa - LW - 2);
+  const largura = Math.max(disponivel, dias * (largo ? 4 : 10), 320);
   const x = (t) => ((t - min) / (max - min)) * largura;
+  // régua: meses (faixa de cima) e marcas a cada 1/2/4 semanas conforme o espaço
+  const meses = [];
+  if (!vazio) {
+    const d = new Date(min); d.setDate(1);
+    while (d.getTime() <= max) { const ini = Math.max(d.getTime(), min); const prox = new Date(d.getFullYear(), d.getMonth() + 1, 1); meses.push({ ini, fim: Math.min(prox.getTime(), max), rot: `${MESES_CURTOS[d.getMonth()]}/${String(d.getFullYear()).slice(2)}` }); d.setTime(prox.getTime()); }
+  }
+  const pxSemana = (largura / dias) * 7;
+  const passoSem = pxSemana >= 60 ? 1 : pxSemana >= 30 ? 2 : 4;
   const marcas = [];
-  for (let t = min; t <= max; t += DIA * (dias > 120 ? 14 : dias > 45 ? 7 : 3)) marcas.push(t);
+  if (!vazio) { const s = new Date(min); s.setDate(s.getDate() + ((8 - s.getDay()) % 7)); for (let t = s.getTime(); t <= max; t += passoSem * 7 * DIA) marcas.push(t); }
+  const hoje = Date.now();
   const macros = itens.filter((e) => !e.nivel);
-  const progresso = macros.length ? Math.round(macros.reduce((s, e) => s + (e.status === "concluida" ? 100 : Number(e.percentual) || 0), 0) / macros.length) : 0;
+  const progresso = macros.length ? Math.round(macros.reduce((s, e) => s + pctEtapa(e), 0) / macros.length) : 0;
+  const colunas = largo ? `minmax(0,1fr) 62px 62px 44px` : "minmax(0,1fr)";
+  const ddmm = (iso) => (iso ? formatarData(iso).slice(0, 5) : "—");
 
   return (
     <section className="rounded-2xl bg-white border border-zinc-200 overflow-hidden">
       <div className="px-5 py-3.5 border-b border-zinc-200 flex flex-wrap items-center gap-3">
         <Icone nome="linhaTempo" className="w-5 h-5 text-zinc-500" />
         <h2 className="titulo-quadro">Cronograma</h2>
-        <div className="flex items-center gap-2 text-sm ml-auto">
-          <span className="w-28 h-2 rounded-full bg-zinc-200 overflow-hidden inline-block"><span className="block h-full bg-zinc-800" style={{ width: `${progresso}%` }} /></span>
-          <strong>{progresso}%</strong>
-        </div>
-        {pi && <BotaoPdfCronograma pi={pi} etapas={etapas} />}
-      </div>
-      <div className="overflow-auto" style={{ maxHeight: "65vh" }}>
-        <div style={{ minWidth: LW + largura }}>
-          <div className="flex sticky top-0 z-20 bg-white border-b border-zinc-200">
-            <div className="shrink-0 sticky left-0 bg-white z-30" style={{ width: LW }} />
-            <div className="relative h-7" style={{ width: largura }}>
-              {marcas.map((t) => (
-                <div key={t} className="absolute top-0 h-full border-l border-zinc-200 pl-1 pt-1.5 text-[11px] font-mono text-zinc-400" style={{ left: x(t) }}>
-                  {new Date(t).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" })}
-                </div>
-              ))}
-            </div>
+        {!vazio && (
+          <div className="flex items-center gap-2 text-sm ml-auto">
+            <span className="text-zinc-500 hidden sm:inline">Avanço</span>
+            <span className="w-28 h-2 rounded-full bg-zinc-200 overflow-hidden inline-block"><span className="block h-full bg-zinc-800" style={{ width: `${progresso}%` }} /></span>
+            <strong className="tabular-nums">{progresso}%</strong>
           </div>
-          {itens.map((e) => {
-            const ini = tsLocal(e.data_prevista_inicio), fim = tsLocal(e.data_prevista_fim);
-            const cor = STATUS_ETAPA[e.status]?.barra || "#a1a1aa";
-            const atrasada = e.status !== "concluida" && diasAte(e.data_prevista_fim) < 0;
-            return (
-              <div key={e.id} className="flex items-center border-b border-zinc-100">
-                <div className={`shrink-0 sticky left-0 z-10 bg-white py-2 border-r border-zinc-200 truncate ${e.nivel ? "pl-5 pr-2 text-xs text-zinc-500" : "px-3 text-sm font-medium"}`} style={{ width: LW }} title={e.nome}>{e.nome}</div>
-                <div className="relative h-8" style={{ width: largura }}>
-                  <div className="absolute top-0 bottom-0 w-px bg-red-500/50" style={{ left: x(Date.now()) }} />
-                  {ini && fim && (
-                    <div className={`absolute rounded ${e.nivel ? "top-3 h-2 opacity-70" : "top-2.5 h-3"}`} style={{ left: x(ini), width: Math.max(4, x(fim + DIA) - x(ini)), background: atrasada ? "#D64545" : cor }}
-                      title={`${e.nome} · ${formatarData(e.data_prevista_inicio)} → ${formatarData(e.data_prevista_fim)} · ${STATUS_ETAPA[e.status]?.rotulo || ""}`} />
-                  )}
+        )}
+        {pi && !vazio && <BotaoPdfCronograma pi={pi} etapas={etapas} />}
+      </div>
+      <div ref={caixaRef}>
+        {vazio ? <div className="p-5 text-sm text-zinc-500">Cronograma ainda sem etapas planejadas.</div> : larguraCaixa > 0 && (
+          <div className="overflow-auto" style={{ maxHeight: "72vh" }}>
+            <div style={{ width: LW + largura }}>
+              {/* régua */}
+              <div className="flex sticky top-0 z-20 bg-white border-b border-zinc-200">
+                <div className="shrink-0 sticky left-0 bg-zinc-50 z-30 border-r border-zinc-200 grid items-end gap-2 px-3 pb-1.5 text-[11px] font-semibold uppercase tracking-wider text-zinc-500" style={{ width: LW, gridTemplateColumns: colunas }}>
+                  <span>Etapa</span>{largo && <><span className="text-center">Início</span><span className="text-center">Término</span><span className="text-right">%</span></>}
+                </div>
+                <div className="relative h-11" style={{ width: largura }}>
+                  {meses.map((m) => (
+                    <div key={m.ini} className="absolute top-0 h-5 border-l border-zinc-300 pl-1.5 pt-0.5 text-[11px] font-semibold text-zinc-600 overflow-hidden whitespace-nowrap" style={{ left: x(m.ini), width: x(m.fim) - x(m.ini) }}>{x(m.fim) - x(m.ini) >= 40 ? m.rot : ""}</div>
+                  ))}
+                  {marcas.map((t) => (
+                    <div key={t} className="absolute top-5 h-6 border-l border-zinc-200 pl-1 pt-1 text-[10px] font-mono text-zinc-400" style={{ left: x(t) }}>
+                      {`${String(new Date(t).getDate()).padStart(2, "0")}/${String(new Date(t).getMonth() + 1).padStart(2, "0")}`}
+                    </div>
+                  ))}
+                  {hoje >= min && hoje <= max && <div className="absolute bottom-0 -translate-x-1/2 rounded bg-red-500 text-white text-[9px] font-bold px-1 leading-[14px]" style={{ left: x(hoje) }}>HOJE</div>}
                 </div>
               </div>
-            );
-          })}
+              {itens.map((e) => {
+                const ini = tsLocal(e.data_prevista_inicio), fim = tsLocal(e.data_prevista_fim);
+                const cor = STATUS_ETAPA[e.status]?.barra || "#a1a1aa";
+                const atrasada = e.status !== "concluida" && (diasAte(e.data_prevista_fim) ?? 0) < 0;
+                const p = pctEtapa(e);
+                const macro = !e.nivel;
+                return (
+                  <div key={e.id} className={`flex items-stretch border-b border-zinc-100 ${macro ? "bg-zinc-50/70" : ""}`}>
+                    <div className={`shrink-0 sticky left-0 z-10 border-r border-zinc-200 grid items-center gap-2 py-2 ${macro ? "bg-zinc-50 px-3" : "bg-white pl-6 pr-3"}`} style={{ width: LW, gridTemplateColumns: colunas }}>
+                      <span className={`min-w-0 leading-snug break-words ${macro ? "text-sm font-semibold text-zinc-900" : "text-[13px] text-zinc-600"}`} title={e.nome}>
+                        {e.nome}
+                        {atrasada && <span className="ml-1.5 align-middle rounded bg-red-50 text-red-600 text-[10px] font-semibold px-1 py-px">atrasada</span>}
+                      </span>
+                      {largo && <>
+                        <span className="text-center text-xs tabular-nums text-zinc-500">{ddmm(e.data_prevista_inicio)}</span>
+                        <span className={`text-center text-xs tabular-nums ${atrasada ? "text-red-600 font-semibold" : "text-zinc-500"}`}>{ddmm(e.data_prevista_fim)}</span>
+                        <span className="text-right text-xs tabular-nums font-semibold">{p}%</span>
+                      </>}
+                    </div>
+                    <div className="relative min-h-[36px]" style={{ width: largura }}>
+                      {marcas.map((t) => <div key={t} className="absolute top-0 bottom-0 border-l border-zinc-100" style={{ left: x(t) }} />)}
+                      {hoje >= min && hoje <= max && <div className="absolute top-0 bottom-0 w-0.5 bg-red-500/60 z-[1]" style={{ left: x(hoje) }} />}
+                      {ini && fim && (
+                        <div className={`absolute top-1/2 -translate-y-1/2 rounded-full overflow-hidden ${macro ? "h-3.5" : "h-2.5"}`}
+                          style={{ left: x(ini), width: Math.max(6, x(fim + DIA) - x(ini)), background: `${atrasada ? "#D64545" : cor}40` }}
+                          title={`${e.nome} · ${formatarData(e.data_prevista_inicio)} → ${formatarData(e.data_prevista_fim)} · ${p}% · ${STATUS_ETAPA[e.status]?.rotulo || ""}`}>
+                          <div className="h-full rounded-full" style={{ width: `${p}%`, background: atrasada ? "#D64545" : cor }} />
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+      </div>
+      {!vazio && (
+        <div className="px-5 py-3 border-t border-zinc-200 flex flex-wrap gap-x-4 gap-y-1.5 text-xs text-zinc-500">
+          {Object.entries(STATUS_ETAPA).map(([k, v]) => <span key={k} className="flex items-center gap-1.5"><span className="w-3 h-2 rounded-sm" style={{ background: v.barra }} />{v.rotulo}</span>)}
+          <span className="flex items-center gap-1.5"><span className="w-3 h-2 rounded-sm bg-[#D64545]" />Atrasada</span>
+          <span className="flex items-center gap-1.5"><span className="w-0.5 h-3 bg-red-500" />Hoje</span>
+          <span className="sm:ml-auto">Parte escura da barra = percentual concluído</span>
         </div>
-      </div>
-      <div className="px-5 py-3 border-t border-zinc-200 flex flex-wrap gap-3 text-xs text-zinc-500">
-        {Object.entries(STATUS_ETAPA).map(([k, v]) => <span key={k} className="flex items-center gap-1.5"><span className="w-3 h-2 rounded-sm" style={{ background: v.barra }} />{v.rotulo}</span>)}
-        <span className="flex items-center gap-1.5"><span className="w-px h-3 bg-red-500" />Hoje</span>
-      </div>
+      )}
     </section>
   );
 }
