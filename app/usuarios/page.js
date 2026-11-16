@@ -481,7 +481,8 @@ function CadastroEmLote({ usuariosExistentes, empresas = [], onFechar, onCriados
           <button onClick={onFechar} className="btn btn-primario">Concluir</button>
         </>}>
         <Aviso tipo="sucesso" className="mb-3">{criados.length} usuário(s) criado(s) na equipe Campo. Copie os usuários e senhas para entregar à equipe — as senhas não aparecem de novo.</Aviso>
-        <table className="w-full text-sm">
+        <div className="overflow-x-auto">
+        <table className="w-full text-sm min-w-[360px]">
           <thead><tr className="text-left border-b border-line"><th className="py-2 titulo-secao">Nome</th><th className="py-2 titulo-secao">Usuário</th><th className="py-2 titulo-secao">Senha</th></tr></thead>
           <tbody>
             {criados.map((c) => (
@@ -491,6 +492,7 @@ function CadastroEmLote({ usuariosExistentes, empresas = [], onFechar, onCriados
             ))}
           </tbody>
         </table>
+        </div>
       </Modal>
     );
   }

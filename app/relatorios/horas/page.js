@@ -128,7 +128,7 @@ export default function ControleHorasPage() {
 
   return (
     <PainelShell>
-      <div className="p-4 md:p-8 max-w-[1400px] mx-auto">
+      <div className="p-4 md:p-8">
         <CabecalhoPagina titulo="Relatórios" subtitulo="Orçado × realizado de cada PI e controle das horas lançadas."
           acoes={visao === "lancadas" && <button onClick={exportar} disabled={!filtradas.length || exportando} className="btn btn-contorno"><Icone nome="download" className="w-4 h-4" /> {exportando ? "Gerando..." : "Exportar Excel"}</button>} />
         <AbasRelatorios />
@@ -390,8 +390,8 @@ function HorasOrcadas({ pis }) {
             <table className="text-sm border-separate border-spacing-0">
               <thead className="sticky top-0 z-20 bg-white">
                 <tr>
-                  <th className="sticky left-0 z-30 bg-white px-3 py-2 text-left titulo-secao border-b border-r border-line w-[240px] min-w-[240px] max-w-[240px]">Tipo de hora</th>
-                  <th className="sticky left-[240px] z-30 bg-cyan/10 px-3 py-2 text-right titulo-secao !text-cyan border-b border-r border-line min-w-[100px]">Total</th>
+                  <th className="sticky left-0 z-30 bg-white px-3 py-2 text-left titulo-secao border-b border-r border-line w-[150px] min-w-[150px] max-w-[150px] md:w-[240px] md:min-w-[240px] md:max-w-[240px]">Tipo de hora</th>
+                  <th className="sticky left-[150px] md:left-[240px] z-30 bg-cyan/10 px-3 py-2 text-right titulo-secao !text-cyan border-b border-r border-line min-w-[100px]">Total</th>
                   {colunas.map((c) => (
                     <th key={c.chave} title={c.dica} className="px-3 py-2 text-right border-b border-line min-w-[110px] align-bottom cursor-help">
                       <div className="font-mono font-bold text-xs text-textmain">{c.titulo}</div>
@@ -403,10 +403,10 @@ function HorasOrcadas({ pis }) {
               <tbody>
                 {tipos.map((c) => (
                   <tr key={c.id} className="hover:bg-cyan/[0.03]">
-                    <td className="sticky left-0 z-10 bg-white px-3 py-2 border-b border-r border-line/70 w-[240px] min-w-[240px] max-w-[240px] truncate" title={c.nome}>
+                    <td className="sticky left-0 z-10 bg-white px-3 py-2 border-b border-r border-line/70 w-[150px] min-w-[150px] max-w-[150px] md:w-[240px] md:min-w-[240px] md:max-w-[240px] truncate" title={c.nome}>
                       <span className="font-mono text-xs text-muted inline-block w-10">{c.codigo}</span>{c.nome}
                     </td>
-                    <td className="sticky left-[240px] z-10 bg-white px-3 py-2 text-right font-mono font-bold border-b border-r border-line/70">{fmt(valor(c.id, todosIds))}</td>
+                    <td className="sticky left-[150px] md:left-[240px] z-10 bg-white px-3 py-2 text-right font-mono font-bold border-b border-r border-line/70">{fmt(valor(c.id, todosIds))}</td>
                     {colunas.map((col) => { const v = valor(c.id, col.ids); return <td key={col.chave} className={`px-3 py-2 text-right font-mono border-b border-line/50 whitespace-nowrap ${v ? "" : "text-muteddim"}`}>{fmt(v)}</td>; })}
                   </tr>
                 ))}
@@ -414,7 +414,7 @@ function HorasOrcadas({ pis }) {
               <tfoot className="sticky bottom-0 z-20 bg-panel">
                 <tr>
                   <td className="sticky left-0 z-30 bg-panel px-3 py-2.5 font-head font-bold border-t-2 border-r border-line">Total</td>
-                  <td className="sticky left-[240px] z-30 bg-panel px-3 py-2.5 text-right font-mono font-bold border-t-2 border-r border-line whitespace-nowrap">{fmt(totalCol(todosIds))}</td>
+                  <td className="sticky left-[150px] md:left-[240px] z-30 bg-panel px-3 py-2.5 text-right font-mono font-bold border-t-2 border-r border-line whitespace-nowrap">{fmt(totalCol(todosIds))}</td>
                   {colunas.map((col) => <td key={col.chave} className="px-3 py-2.5 text-right font-mono font-bold border-t-2 border-line whitespace-nowrap">{fmt(totalCol(col.ids))}</td>)}
                 </tr>
               </tfoot>

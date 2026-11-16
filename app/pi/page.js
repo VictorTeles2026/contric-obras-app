@@ -209,8 +209,8 @@ function DetalhePi({ id, abaInicial }) {
   const [qr, setQr] = useState(false);
   const setAba = (k) => { setAbaEstado(k); router.replace(`/pi?id=${id}${k !== "resumo" ? `&aba=${k}` : ""}`, { scroll: false }); };
 
-  if (carregando) return <div className="p-8"><Esqueleto linhas={4} /></div>;
-  if (!pi) return <div className="p-8"><EstadoVazio icone="obra" titulo="PI não encontrado" texto="Ele pode ter sido excluído ou você não tem acesso a esta obra." acao={<Link href="/pi" className="btn btn-primario">Ver todos os PIs</Link>} /></div>;
+  if (carregando) return <div className="p-4 md:p-8"><Esqueleto linhas={4} /></div>;
+  if (!pi) return <div className="p-4 md:p-8"><EstadoVazio icone="obra" titulo="PI não encontrado" texto="Ele pode ter sido excluído ou você não tem acesso a esta obra." acao={<Link href="/pi" className="btn btn-primario">Ver todos os PIs</Link>} /></div>;
 
   return (
     <div className="p-4 md:p-8">

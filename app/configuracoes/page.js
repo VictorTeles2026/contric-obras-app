@@ -43,7 +43,7 @@ export default function ConfiguracoesPage() {
   useEffect(() => { aplicarConfiguracoes(mapa); }, [mapa]);
 
   if (usuario && usuario.perfil !== "master") {
-    return <PainelShell><div className="p-8"><Aviso tipo="erro">Página disponível somente para o Master.</Aviso></div></PainelShell>;
+    return <PainelShell><div className="p-4 md:p-8"><Aviso tipo="erro">Página disponível somente para o Master.</Aviso></div></PainelShell>;
   }
 
   const salvar = async (chave, novo, resumo) => {
@@ -206,8 +206,9 @@ function EditorPares({ chave, valor, personalizado, onSalvar, onRestaurar, fixos
 
   return (
     <>
-      <table className="w-full text-sm">
-        <thead><tr className="text-left border-b border-line"><th className="py-2 titulo-secao w-56">{rotuloChave}</th><th className="py-2 titulo-secao">Nome exibido</th><th className="w-10" /></tr></thead>
+      <div className="overflow-x-auto">
+      <table className="w-full text-sm min-w-[420px]">
+        <thead><tr className="text-left border-b border-line"><th className="py-2 titulo-secao w-32 md:w-56">{rotuloChave}</th><th className="py-2 titulo-secao">Nome exibido</th><th className="w-10" /></tr></thead>
         <tbody>
           {itens.map((it, i) => {
             const qtd = emUso(it.c);
@@ -231,6 +232,7 @@ function EditorPares({ chave, valor, personalizado, onSalvar, onRestaurar, fixos
           })}
         </tbody>
       </table>
+      </div>
       <button onClick={() => setItens((p) => [...p, { c: "", r: "", existente: false }])} className="btn btn-contorno btn-sm mt-3"><Icone nome="mais2" className="w-4 h-4" /> Adicionar</button>
       {prefixo && <p className="texto-apoio mt-2">O prefixo vai no início do nome do arquivo (ex: CONTRATO_20261007_PI-123.pdf) e não muda depois de criado — só o nome exibido.</p>}
       {invalido && <div className="text-sm text-red mt-2">Preencha o nome de todos os itens e não repita códigos.</div>}
@@ -490,13 +492,14 @@ function CategoriasOrcamento() {
       {GRUPOS.map(([g, l]) => (
         <div key={g} className="mb-5">
           <div className="text-sm font-semibold text-cyan mb-1.5">{l}</div>
+          <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <tbody>
               {categorias.filter((c) => c.grupo === g).map((c) => (
                 <tr key={c.id} className={`border-b border-line/60 ${c.ativo === false ? "opacity-50" : ""}`}>
                   <td className="py-1.5 w-20 font-mono text-xs text-muted">{c.codigo}</td>
                   <td className="py-1.5">{c.nome}{c.ativo === false && <span className="selo bg-panel text-muted ml-2">desativada</span>}</td>
-                  <td className="py-1.5 w-16 text-xs text-muteddim text-right">ordem {c.ordem ?? "—"}</td>
+                  <td className="py-1.5 w-16 text-xs text-muteddim text-right hidden sm:table-cell">ordem {c.ordem ?? "—"}</td>
                   <td className="py-1.5 w-24 text-right whitespace-nowrap">
                     <button onClick={() => setEditando({ ...c })} className="btn btn-fantasma btn-sm">Editar</button>
                     <button onClick={() => excluir(c)} className="p-2 rounded-lg text-muteddim hover:text-red hover:bg-red/5" aria-label="Excluir"><Icone nome="lixo" className="w-4 h-4" /></button>
@@ -505,6 +508,7 @@ function CategoriasOrcamento() {
               ))}
             </tbody>
           </table>
+          </div>
         </div>
       ))}
       {!editando && <button onClick={() => setEditando({ codigo: "", nome: "", grupo: "compra_reais", ordem: "", ativo: true })} className="btn btn-contorno btn-sm"><Icone nome="mais2" className="w-4 h-4" /> Nova categoria</button>}

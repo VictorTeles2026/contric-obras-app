@@ -33,7 +33,7 @@ export default function ClientesPage() {
   const [ocupado, setOcupado] = useState(null);
 
   if (usuario && !podeGerenciar && !podeAcessos) {
-    return <PainelShell><div className="p-8"><Aviso tipo="erro">Página disponível somente para Master, Gerente de Obras e Coordenador de Obras.</Aviso></div></PainelShell>;
+    return <PainelShell><div className="p-4 md:p-8"><Aviso tipo="erro">Página disponível somente para Master, Gerente de Obras e Coordenador de Obras.</Aviso></div></PainelShell>;
   }
 
   const termo = busca.trim().toLowerCase();
