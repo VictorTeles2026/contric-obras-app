@@ -104,7 +104,7 @@ export default function PortalCliente() {
                   <div className="text-sm text-zinc-500">{obra.pi.cliente}{obra.pi.prazo ? ` · prazo ${formatarData(obra.pi.prazo)}` : ""} · {STATUS_PI[obra.pi.status] || obra.pi.status}</div>
                 </section>
 
-                {obra.acessos.linhaTempo && <LinhaTempoCliente etapas={obra.etapas} />}
+                {obra.acessos.linhaTempo && <LinhaTempoCliente etapas={obra.etapas} pi={obra.pi} />}
 
                 {obra.acessos.atas && (
                   <ListaArquivos titulo="Atas de reuniões" icone="usuarios" vazio="Nenhuma ata disponível ainda."
@@ -158,7 +158,36 @@ function ListaArquivos({ titulo, icone, itens, vazio }) {
 }
 
 // Linha do tempo somente leitura (etapas e sub-etapas), com rolagem horizontal no celular
-function LinhaTempoCliente({ etapas }) {
+// mesmo PDF do cronograma que a equipe Contric gera (A3 paisagem, Gantt, EAP, status) — gerado no
+// próprio navegador com os dados que o servidor já liberou para este cliente
+function BotaoPdfCronograma({ pi, etapas }) {
+  const [gerando, setGerando] = useState(false);
+  const [erro, setErro] = useState("");
+  const baixar = async () => {
+    setGerando(true); setErro("");
+    try {
+      const { gerarPdfCronograma, baseNomeCronograma } = await import("../../lib/pdfRdo");
+      const blob = await gerarPdfCronograma({ pi, etapas });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a"); a.href = url; a.download = `${baseNomeCronograma(pi)}.pdf`;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 5000);
+    } catch (e) { setErro("Não foi possível gerar o PDF. Tente de novo."); }
+    setGerando(false);
+  };
+  return (
+    <div className="flex items-center gap-2">
+      {erro && <span className="text-xs text-red-600">{erro}</span>}
+      <button onClick={baixar} disabled={gerando || !etapas.length}
+        className="inline-flex items-center gap-1.5 rounded-lg bg-zinc-900 text-white px-3.5 py-2 text-sm font-semibold hover:bg-zinc-700 disabled:opacity-50">
+        {gerando ? <Spinner className="w-4 h-4" /> : <Icone nome="pdf" className="w-4 h-4" />}
+        {gerando ? "Gerando..." : "Baixar PDF"}
+      </button>
+    </div>
+  );
+}
+
+function LinhaTempoCliente({ etapas, pi }) {
   const itens = useMemo(() => etapasEmArvore(etapas), [etapas]);
   // coluna dos nomes mais estreita no celular (sobra espaço para as barras)
   const [LW, setLW] = useState(200);
@@ -186,6 +215,7 @@ function LinhaTempoCliente({ etapas }) {
           <span className="w-28 h-2 rounded-full bg-zinc-200 overflow-hidden inline-block"><span className="block h-full bg-zinc-800" style={{ width: `${progresso}%` }} /></span>
           <strong>{progresso}%</strong>
         </div>
+        {pi && <BotaoPdfCronograma pi={pi} etapas={etapas} />}
       </div>
       <div className="overflow-auto" style={{ maxHeight: "65vh" }}>
         <div style={{ minWidth: LW + largura }}>

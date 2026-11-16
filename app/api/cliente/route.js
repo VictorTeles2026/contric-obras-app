@@ -65,7 +65,8 @@ export const GET = rotaSegura(async (req) => {
     }
     if (a.ver_linha_tempo) {
       const { data: etapas } = await admin.from("etapas")
-        .select("id,nome,parent_etapa_id,ordem,status,percentual,data_prevista_inicio,data_prevista_fim").eq("pi_id", pi.id);
+        // mesmos campos usados no PDF/Excel do cronograma da Contric (responsável e ordem de criação inclusos)
+        .select("id,nome,parent_etapa_id,ordem,created_at,status,percentual,data_prevista_inicio,data_prevista_fim,responsavel_texto").eq("pi_id", pi.id);
       obra.etapas = etapas || [];
     }
     obras.push(obra);
