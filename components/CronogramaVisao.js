@@ -2,11 +2,13 @@
 
 import { useState, useMemo, useEffect, useLayoutEffect, useRef } from "react";
 import Link from "next/link";
-import { useTabela } from "../lib/dados";
+import { useTabela, chamarApi } from "../lib/dados";
+import { useAuth } from "../lib/AuthContext";
+import { useToast } from "../lib/Toast";
 import { tsLocal, diasAte as diffDias, formatarData as formatarDataIso } from "../lib/datas";
-import { AREAS, STATUS_ETAPA, PRAZOS, datasAlertaEtapa, consolidarMacros } from "../lib/constantes";
+import { AREAS, STATUS_ETAPA, PRAZOS, datasAlertaEtapa, consolidarMacros, LISTA_STATUS_ETAPA } from "../lib/constantes";
 
-import { CabecalhoPagina, EstadoVazio, Modal } from "./ui";
+import { CabecalhoPagina, EstadoVazio, Modal, Aviso } from "./ui";
 import Icone from "./Icone";
 import { ModalQrPi } from "./LeitorQR";
 import { PainelSuspenso } from "./ui";
@@ -36,6 +38,92 @@ function proximaMeiaNoite(ts) {
   return d.getTime();
 }
 
+// Janela "Atualizar avanço": etapas do PI em que o usuário está alocado; altera status e %.
+// Grava pelo servidor (/api/avanco-etapa), que confere a alocação e registra na Auditoria.
+function ModalAtualizarAvanco({ pi, etapas, todas, porOrdem, onFechar, onSalvo }) {
+  const { avisar } = useToast();
+  const lista = useMemo(() => {
+    // ordem do cronograma: pela macro e depois pela própria etapa
+    const macroDe = (e) => (e.parent_etapa_id ? todas.find((m) => m.id === e.parent_etapa_id) : e);
+    return [...etapas].sort((a, b) => porOrdem(macroDe(a) || a, macroDe(b) || b) || (a.parent_etapa_id ? 1 : 0) - (b.parent_etapa_id ? 1 : 0) || porOrdem(a, b))
+      .map((e) => ({ e, macro: e.parent_etapa_id ? todas.find((m) => m.id === e.parent_etapa_id)?.nome : null }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [etapas]);
+  const [valores, setValores] = useState(() => Object.fromEntries(etapas.map((e) => [e.id, { status: e.status || "nao_iniciada", percentual: e.status === "concluida" ? 100 : Number(e.percentual) || 0 }])));
+  const [salvando, setSalvando] = useState(false);
+  const [erro, setErro] = useState("");
+  const mudar = (id, patch) => setValores((p) => {
+    const v = { ...p[id], ...patch };
+    if (patch.status === "concluida") v.percentual = 100;
+    if (patch.status === "nao_iniciada") v.percentual = 0;
+    if (patch.percentual !== undefined) {
+      const n = Math.max(0, Math.min(100, Math.round(Number(patch.percentual) || 0)));
+      v.percentual = patch.percentual === "" ? "" : n;
+      if (n === 100 && v.status !== "concluida") v.status = "concluida";
+      else if (n > 0 && n < 100 && (v.status === "nao_iniciada" || v.status === "concluida")) v.status = "em_andamento";
+    }
+    return { ...p, [id]: v };
+  });
+  const alteradas = etapas.filter((e) => {
+    const v = valores[e.id];
+    return v.status !== (e.status || "nao_iniciada") || Number(v.percentual) !== (e.status === "concluida" ? 100 : Number(e.percentual) || 0);
+  });
+  const salvar = async () => {
+    setSalvando(true); setErro("");
+    for (const e of alteradas) {
+      const v = valores[e.id];
+      const { ok, json } = await chamarApi("/api/avanco-etapa", { etapaId: e.id, status: v.status, percentual: Number(v.percentual) || 0 });
+      if (!ok) { setErro(`"${e.nome}": ${json.error || "não foi possível salvar"}`); setSalvando(false); onSalvo?.(); return; }
+    }
+    setSalvando(false);
+    avisar(`${alteradas.length} etapa(s) atualizada(s) — registrado na Auditoria.`);
+    onSalvo?.();
+    onFechar();
+  };
+  return (
+    <Modal titulo={`Atualizar avanço — ${pi.codigo}`} onFechar={onFechar} largura="max-w-2xl"
+      rodape={<>
+        <button onClick={onFechar} className="btn btn-fantasma">Cancelar</button>
+        <button onClick={salvar} disabled={!alteradas.length || salvando} className="btn btn-primario">
+          {salvando ? "Salvando..." : alteradas.length ? `Salvar ${alteradas.length} alteração(ões)` : "Salvar"}
+        </button>
+      </>}>
+      <div className="flex flex-col gap-3">
+        <div className="text-sm text-muted">{pi.cliente}{pi.projeto ? ` · ${pi.projeto}` : ""}</div>
+        <Aviso tipo="info">Aparecem só as etapas em que você está alocado. A alteração fica registrada na Auditoria com o seu nome.</Aviso>
+        {!lista.length && <div className="text-sm text-muteddim">Nenhuma etapa para atualizar.</div>}
+        <div className="flex flex-col divide-y divide-line border border-line rounded-xl">
+          {lista.map(({ e, macro }) => {
+            const v = valores[e.id];
+            const mudou = alteradas.includes(e);
+            return (
+              <div key={e.id} className={`p-3 flex flex-col sm:flex-row sm:items-center gap-2.5 ${mudou ? "bg-cyan/5" : ""}`}>
+                <div className="flex-1 min-w-0">
+                  {macro && <div className="text-[11px] text-muteddim">{macro} ›</div>}
+                  <div className="text-sm font-semibold leading-snug">{e.nome}</div>
+                  <div className="text-xs text-muted">{formatarDataIso(e.data_prevista_inicio)} → {formatarDataIso(e.data_prevista_fim)}</div>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <select value={v.status} onChange={(ev) => mudar(e.id, { status: ev.target.value })} className="input !w-auto !py-1.5" aria-label={`Status de ${e.nome}`}>
+                    {LISTA_STATUS_ETAPA.map(([s, r]) => <option key={s} value={s}>{r}</option>)}
+                  </select>
+                  <div className="relative w-24">
+                    <input type="number" inputMode="numeric" min="0" max="100" step="5" value={v.percentual}
+                      onChange={(ev) => mudar(e.id, { percentual: ev.target.value })} disabled={v.status === "concluida"}
+                      className="input !py-1.5 text-right pr-7" aria-label={`Percentual de ${e.nome}`} />
+                    <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-muted">%</span>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+        {erro && <Aviso tipo="erro">{erro}</Aviso>}
+      </div>
+    </Modal>
+  );
+}
+
 function useFecharAoClicarFora(aberto, fechar) {
   const ref = useRef(null);
   useEffect(() => {
@@ -52,7 +140,7 @@ function useFecharAoClicarFora(aberto, fechar) {
 // piFixo: mostra só aquele PI (sem escolha de PIs nem cabeçalho); acoes: botões extras no topo.
 export default function CronogramaVisao({ piFixo = null, acoes = null }) {
   const { dados: pis, carregando: carregandoPis } = useTabela("pis", { order: { coluna: "codigo" } });
-  const { dados: etapasBrutas } = useTabela("etapas", { order: { coluna: "created_at" } }); // mesma ordem de inserção do Cronograma
+  const { dados: etapasBrutas, recarregar: recarregarEtapas } = useTabela("etapas", { order: { coluna: "created_at" } }); // mesma ordem de inserção do Cronograma
   // macro-etapa = resultado das sub-etapas (datas, %, status)
   const etapas = useMemo(() => consolidarMacros(etapasBrutas), [etapasBrutas]);
   const { dados: recursos } = useTabela("recursos");
@@ -131,7 +219,23 @@ export default function CronogramaVisao({ piFixo = null, acoes = null }) {
   const itemBateNaEtapa = (it, etapa) => it.tipo === "equipe" ? equipeBateNaEtapa(it.valor, etapa) : recursoBateNaEtapa(it.valor, etapa);
   const itensQueBatemNaEtapa = (etapa) => itensFiltro.filter((it) => itemBateNaEtapa(it, etapa));
 
-  const pisSelecionados = pis.filter((p) => piIds.includes(p.id) && (clientesAtivos.length === 0 || clientesAtivos.includes(chaveCliente(p.cliente))));
+  // ---- Meus PIs: obras em que o recurso do usuário está alocado em ao menos uma etapa ----
+  const { usuario } = useAuth();
+  const meusRecursos = useMemo(() => recursos.filter((r) => usuario?.id && r.usuario_id === usuario.id).map((r) => r.id), [recursos, usuario?.id]);
+  // etapas em que estou alocado e que posso atualizar (macro com sub-etapas é calculada: ficam as subs).
+  // Alocação na macro vale para as sub-etapas dela.
+  const minhasEtapas = useMemo(() => {
+    if (!meusRecursos.length) return [];
+    const temSubs = new Set(etapas.filter((e) => e.parent_etapa_id).map((e) => e.parent_etapa_id));
+    const bate = (e) => meusRecursos.some((rid) => recursoBateNaEtapa(rid, e) || (e.parent_etapa_id && alocacoesRecurso.some((al) => al.recurso_id === rid && al.etapa_id === e.parent_etapa_id)));
+    return etapas.filter((e) => !temSubs.has(e.id) && bate(e));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [etapas, meusRecursos, alocacoesRecurso]);
+  const meusPis = useMemo(() => new Set(minhasEtapas.map((e) => e.pi_id)), [minhasEtapas]);
+  const [soMeus, setSoMeus] = useState(false);
+  const [atualizandoPi, setAtualizandoPi] = useState(null); // PI com a janela "Atualizar avanço" aberta
+
+  const pisSelecionados = pis.filter((p) => (soMeus ? meusPis.has(p.id) : piIds.includes(p.id)) && (clientesAtivos.length === 0 || clientesAtivos.includes(chaveCliente(p.cliente))));
   const idsVisiveis = pisSelecionados.map((p) => p.id);
   const etapasDosPis = etapas.filter((e) => idsVisiveis.includes(e.pi_id));
   // monta a lista na mesma ordem de criação do Cronograma: cada macro-etapa
@@ -277,8 +381,14 @@ export default function CronogramaVisao({ piFixo = null, acoes = null }) {
           titulo="Cronograma"
           subtitulo="Visão multi-PI, para acompanhamento e apresentação."
           acoes={<>
-            <button onClick={() => setSelecionarAberto(true)} className="btn btn-contorno !border-cyan !text-cyan hover:!bg-cyan/5">
-              <Icone nome="buscar" className="w-4 h-4" /> PIs ({piIds.length} de {pis.length})
+            {meusRecursos.length > 0 && (
+              <button onClick={() => setSoMeus((v) => !v)} aria-pressed={soMeus}
+                className={`btn ${soMeus ? "btn-primario" : "btn-contorno"}`} title="Só os PIs em que você está alocado em ao menos uma etapa">
+                <Icone nome="usuarios" className="w-4 h-4" /> Meus PIs ({meusPis.size})
+              </button>
+            )}
+            <button onClick={() => { setSoMeus(false); setSelecionarAberto(true); }} className={`btn btn-contorno ${soMeus ? "" : "!border-cyan !text-cyan hover:!bg-cyan/5"}`}>
+              <Icone nome="buscar" className="w-4 h-4" /> PIs ({soMeus ? meusPis.size : piIds.length} de {pis.length})
             </button>
           </>}
         />}
@@ -468,6 +578,12 @@ export default function CronogramaVisao({ piFixo = null, acoes = null }) {
                           </span>
                         )}
                       </button>
+                      {meusPis.has(pi.id) && (
+                        <button onClick={() => setAtualizandoPi(pi)} title="Atualizar status e % das etapas em que você está alocado"
+                          className="shrink-0 ml-2 btn btn-primario btn-sm !py-1.5 whitespace-nowrap">
+                          <Icone nome="editar" className="w-3.5 h-3.5" /> <span className="hidden sm:inline">Atualizar avanço</span>
+                        </button>
+                      )}
                       <Link href={`/pi?id=${pi.id}`} title="Abrir a Página do PI" aria-label={`Abrir a Página do PI ${pi.codigo}`}
                         className="shrink-0 ml-2 p-1.5 rounded-lg text-cyan hover:bg-cyan/10"><Icone nome="obra" className="w-4 h-4" /></Link>
                       <button onClick={() => setQrPi(pi)} title="QR Code do PI (ver, gerar PDF e imprimir)" aria-label={`QR Code do PI ${pi.codigo}`}
@@ -685,6 +801,10 @@ export default function CronogramaVisao({ piFixo = null, acoes = null }) {
       </div>
 
       {qrPi && <ModalQrPi pi={qrPi} comPdf onFechar={() => setQrPi(null)} />}
+      {atualizandoPi && (
+        <ModalAtualizarAvanco pi={atualizandoPi} onFechar={() => setAtualizandoPi(null)} onSalvo={recarregarEtapas}
+          etapas={minhasEtapas.filter((e) => e.pi_id === atualizandoPi.id)} todas={etapas} porOrdem={porOrdem} />
+      )}
       {selecionarAberto && (
         <SelecionarPisModal pis={pis} selecionados={piIds} onConfirmar={(ids) => { setPiIds(ids); setSelecionarAberto(false); }} onCancelar={() => setSelecionarAberto(false)} />
       )}
