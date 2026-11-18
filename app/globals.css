@@ -92,7 +92,9 @@ input[type="date"], input[type="time"] {
    2) Nenhuma página rola na horizontal: o que for largo (tabela, Gantt) rola dentro do próprio quadro.
    3) Imagens e mídias nunca passam da largura do quadro. */
 /* (botões, chips e selos ficam de fora: mantêm o texto inteiro numa linha) */
-.grid > *, .flex > :not(svg):not(img):not(.btn):not(.chip):not(.selo) { min-width: 0; }
+/* botões, links, abas e itens marcados como "não encolher" ficam de fora (senão o texto se sobrepõe) */
+/* :where() = prioridade zero: qualquer min-w-* da própria tela continua valendo */
+:where(.grid > *, .flex > :not(svg, img, button, a, label, .btn, .chip, .selo, .shrink-0, .whitespace-nowrap)) { min-width: 0; }
 html, body { overflow-x: clip; }
 img, video, canvas { max-width: 100%; }
 select.input, input.input { max-width: 100%; text-overflow: ellipsis; }

@@ -73,7 +73,8 @@ function ListaLateral({ idAtual }) {
   };
   const atrasado = (piId) => etapas.some((e) => e.pi_id === piId && e.status !== "concluida" && (diasAte(e.data_prevista_fim) ?? 0) < 0);
   return (
-    <div ref={painelRef} className="relative shrink-0 z-40">
+    // no celular a aba lateral roubava espaço e cobria o logo: lá a troca de obra é por "Todos os PIs"
+    <div ref={painelRef} className="relative shrink-0 z-40 hidden md:block">
       {/* aba recolhida */}
       <button onClick={() => setAberta((v) => !v)} aria-expanded={aberta} title={aberta ? "Recolher a lista de PIs" : "Trocar de PI"}
         className={`sticky top-0 h-screen w-9 flex flex-col items-center gap-3 pt-4 border-r border-line transition-colors ${aberta ? "bg-cyan/10 text-cyan" : "bg-superficie text-muted hover:text-cyan hover:bg-cyan/5"}`}>
@@ -215,7 +216,8 @@ function DetalhePi({ id, abaInicial }) {
   return (
     <div className="p-4 md:p-8">
       <Link href="/pi" className="text-sm text-muted hover:text-cyan inline-flex items-center gap-1 mb-2"><Icone nome="voltar" className="w-4 h-4" /> Todos os PIs</Link>
-      <div className="flex flex-wrap items-start gap-3 mb-4">
+      {/* celular: nome em cima (largura toda) e botões embaixo — antes os botões espremiam o nome */}
+      <div className="flex flex-col sm:flex-row sm:items-start gap-3 mb-4">
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
             <span className="titulo-pagina text-cyan">PI {pi.codigo}</span>
@@ -233,7 +235,7 @@ function DetalhePi({ id, abaInicial }) {
       <div className="flex gap-1 border-b border-line mb-5 overflow-x-auto" role="tablist">
         {abas.map(([k, l]) => (
           <button key={k} role="tab" aria-selected={aba === k} onClick={() => setAba(k)}
-            className={`relative px-4 py-2.5 text-sm font-semibold whitespace-nowrap transition-colors ${aba === k ? "text-cyan" : "text-muted hover:text-textmain"}`}>
+            className={`relative shrink-0 px-3 sm:px-4 py-2.5 text-sm font-semibold whitespace-nowrap transition-colors ${aba === k ? "text-cyan" : "text-muted hover:text-textmain"}`}>
             {l}{aba === k && <span className="absolute left-0 right-0 -bottom-px h-0.5 bg-cyan rounded-full" />}
           </button>
         ))}

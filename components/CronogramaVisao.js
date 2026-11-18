@@ -573,7 +573,7 @@ export default function CronogramaVisao({ piFixo = null, acoes = null }) {
                           )}
                         </span>
                         {periodo && (
-                          <span className="ml-auto shrink-0 text-xs text-muteddim font-mono pl-3">
+                          <span className="ml-auto shrink-0 text-xs text-muteddim font-mono pl-3 hidden sm:inline">
                             {new Date(periodo.inicio).toLocaleDateString("pt-BR")} → {new Date(periodo.fim - 86400000).toLocaleDateString("pt-BR")}
                           </span>
                         )}

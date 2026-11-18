@@ -91,7 +91,6 @@ export default function PainelShell({ children }) {
         <div className="text-[13px] font-medium text-textmain truncate">{usuario.nome}</div>
         <div className="text-[11px] text-muteddim">{ROTULO_PERFIL[usuario.perfil] || usuario.perfil}</div>
       </div>
-      <BotaoManual usuario={usuario} />
       <BotaoTema />
       <button onClick={() => setTrocandoSenha(true)} title="Alterar minha senha" aria-label="Alterar minha senha" className="p-2 rounded-lg text-muted hover:bg-panel hover:text-textmain">
         <Icone nome="chave" className="w-[17px] h-[17px]" />
@@ -136,7 +135,8 @@ export default function PainelShell({ children }) {
         <nav className="flex flex-col overflow-y-auto rolagem-fina -mx-1 px-1">
           {menuAgrupado(false)}
         </nav>
-        <div className="mt-auto">{menuRodape(false)}{rodapeUsuario}</div>
+        {/* Manual: item fixo logo abaixo de Configurações (instância principal: desenha o painel) */}
+        <div className="mt-auto">{menuRodape(false)}<div className="mt-px"><BotaoManual usuario={usuario} /></div>{rodapeUsuario}</div>
       </aside>
 
       {/* Topbar — mobile */}
@@ -145,7 +145,7 @@ export default function PainelShell({ children }) {
           <Logo tamanho="sm" adaptavel />
           <div className="flex items-center gap-1 min-w-0">
             <div className="text-xs text-muted truncate max-w-[120px]">{usuario.nome}</div>
-            <BotaoManual usuario={usuario} variante="claro" />
+            <BotaoManual usuario={usuario} variante="claro" principal={false} />
             <BotaoTema />
             <SinoNotificacoes usuario={usuario} escuro={false} />
           </div>

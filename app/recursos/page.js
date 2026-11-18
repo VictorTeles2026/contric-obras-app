@@ -27,8 +27,9 @@ function etapasEmOrdem(etapas, piId) {
     ...doPi.filter((s) => s.parent_etapa_id === m.id).sort(porOrdem).map((s) => ({ ...s, rotulo: `${m.nome} › ${s.nome}`, nivel: 1 })),
   ]);
 }
-function rotuloUnidade(u) { return UNIDADES.find((x) => x[0] === u)?.[1] || u; }
-function rotuloTipo(t) { return TIPOS_RECURSO.find((x) => x[0] === t)?.[1] || t; }
+// sempre texto: recurso sem unidade (ou unidade removida em Configurações) derrubava a página inteira
+function rotuloUnidade(u) { return String(UNIDADES.find((x) => x[0] === u)?.[1] || u || "—"); }
+function rotuloTipo(t) { return String(TIPOS_RECURSO.find((x) => x[0] === t)?.[1] || t || "—"); }
 function tipoParaPerfil(perfil) {
   if (perfil === "terceiro") return "mao_obra_terceira";
   return "mao_obra_propria";
@@ -112,7 +113,7 @@ export default function RecursosPage({ searchParams }) {
   const recursosFiltrados = useMemo(() => {
     const termo = buscaAplicada.trim().toLowerCase();
     return recursos.filter((r) => (mostrarDesabilitados || r.ativo !== false) && (!filtroEquipe.length || (r.equipes || []).some((e) => filtroEquipe.includes(e))) && (!termo ||
-      r.nome.toLowerCase().includes(termo) ||
+      (r.nome || "").toLowerCase().includes(termo) ||
       rotuloTipo(r.tipo).toLowerCase().includes(termo) ||
       (r.atributos?.funcao || "").toLowerCase().includes(termo) ||
       (usuarios.find((u) => u.id === r.usuario_id)?.nome || "").toLowerCase().includes(termo) ||
@@ -724,7 +725,7 @@ function AlocacaoEmMassaModal({ pis, recursos, opcoesEtapa, etapas, onAplicar, o
 
   const filtrados = recursos.filter((r) => r.ativo !== false &&
     passa(filtroTipo, r.tipo) && (!filtroEquipeM.length || (r.equipes || []).some((e) => filtroEquipeM.includes(e))) &&
-    (!busca.trim() || r.nome.toLowerCase().includes(busca.trim().toLowerCase()))
+    (!busca.trim() || (r.nome || "").toLowerCase().includes(busca.trim().toLowerCase()))
   );
   const toggle = (id) => setSelecionados((p) => p.includes(id) ? p.filter((x) => x !== id) : [...p, id]);
   const marcarTodos = () => setSelecionados((p) => [...new Set([...p, ...filtrados.map((r) => r.id)])]);

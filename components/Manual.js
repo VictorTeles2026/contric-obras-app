@@ -744,26 +744,47 @@ const lerProgresso = (uid) => { try { return JSON.parse(localStorage.getItem(`ma
 const gravarProgresso = (uid, l) => { try { localStorage.setItem(`manual:vistos:${uid}`, JSON.stringify(l)); } catch { /* sem armazenamento */ } };
 
 // ---------------------------------------------------------------------------- janela do manual
-function JanelaManual({ usuario, onFechar }) {
+// estado do manual guardado na sessão: ao trocar de página o painel continua aberto no mesmo tema
+const CHAVE_SESSAO = "manual:estado";
+const lerSessao = () => { try { return JSON.parse(sessionStorage.getItem(CHAVE_SESSAO) || "null"); } catch { return null; } };
+const gravarSessao = (v) => { try { v ? sessionStorage.setItem(CHAVE_SESSAO, JSON.stringify(v)) : sessionStorage.removeItem(CHAVE_SESSAO); } catch { /* sem armazenamento */ } };
+const LARGURA = { normal: 460, amplo: 760 };
+
+// Painel NÃO bloqueante: fica ao lado do sistema (computador: à direita, empurrando a página;
+// celular: metade de baixo da tela). Dá para ler e aplicar na hora, sem fechar o manual.
+function JanelaManual({ usuario, onFechar, inicial }) {
   const pathname = usePathname() || "";
   const master = usuario?.perfil === "master";
   const temas = useMemo(() => TEMAS.filter((t) => !t.master || master), [master]);
   const daRota = TEMA_DA_ROTA.find(([r]) => pathname === r || pathname.startsWith(`${r}/`))?.[1];
-  const [temaId, setTemaId] = useState(() => (temas.some((t) => t.id === daRota) ? daRota : null));
-  const [curso, setCurso] = useState(null); // id do curso em andamento
+  const [temaId, setTemaId] = useState(() => (inicial?.temaId !== undefined ? inicial.temaId : temas.some((t) => t.id === daRota) ? daRota : null));
+  const [curso, setCurso] = useState(inicial?.curso || null); // id do curso em andamento
   const [busca, setBusca] = useState("");
-  const [menuAberto, setMenuAberto] = useState(false); // celular: lista de temas
+  const [menuAberto, setMenuAberto] = useState(false); // lista de temas (gaveta)
+  const [tamanho, setTamanho] = useState(inicial?.tamanho || "normal");
+  const [minimizado, setMinimizado] = useState(!!inicial?.minimizado);
   const [vistos, setVistos] = useState(() => lerProgresso(usuario?.id));
+  const [celular, setCelular] = useState(false);
   const conteudoRef = useRef(null);
 
+  useEffect(() => { gravarSessao({ temaId, curso, tamanho, minimizado }); }, [temaId, curso, tamanho, minimizado]);
   useEffect(() => {
-    const esc = (e) => e.key === "Escape" && onFechar();
-    window.addEventListener("keydown", esc);
-    const antes = document.body.style.overflow; document.body.style.overflow = "hidden";
-    return () => { window.removeEventListener("keydown", esc); document.body.style.overflow = antes; };
-  }, [onFechar]);
+    const medir = () => setCelular(window.innerWidth < 768);
+    medir(); window.addEventListener("resize", medir);
+    return () => window.removeEventListener("resize", medir);
+  }, []);
+  // abre espaço para o painel: a página encolhe (computador) ou ganha folga embaixo (celular)
+  useEffect(() => {
+    const b = document.body.style;
+    const antes = { mr: b.marginRight, pb: b.paddingBottom, tr: b.transition };
+    b.transition = "margin-right .2s";
+    if (minimizado) { b.marginRight = ""; b.paddingBottom = ""; }
+    else if (celular) { b.marginRight = ""; b.paddingBottom = "52dvh"; }
+    else b.marginRight = `${LARGURA[tamanho]}px`;
+    return () => { b.marginRight = antes.mr; b.paddingBottom = antes.pb; b.transition = antes.tr; };
+  }, [celular, tamanho, minimizado]);
   const abrir = (id, cursoId = curso) => {
-    setTemaId(id); setCurso(cursoId); setMenuAberto(false); setBusca("");
+    setTemaId(id); setCurso(cursoId); setMenuAberto(false); setBusca(""); setMinimizado(false);
     if (id && !vistos.includes(id)) { const n = [...vistos, id]; setVistos(n); gravarProgresso(usuario?.id, n); }
     setTimeout(() => conteudoRef.current?.scrollTo({ top: 0 }), 0);
   };
@@ -817,30 +838,47 @@ function JanelaManual({ usuario, onFechar }) {
     </div>
   );
 
+  const largo = !celular && tamanho === "amplo"; // painel largo no computador: lista de temas fixa ao lado
+
+  // minimizado: só uma etiqueta no canto, o sistema fica livre por inteiro
+  if (minimizado) {
+    return createPortal(
+      <button onClick={() => setMinimizado(false)} className="fixed z-[90] right-4 bottom-[calc(5rem+env(safe-area-inset-bottom))] md:bottom-4 rounded-full bg-[#0B2E44] text-white shadow-xl px-4 py-2.5 text-sm font-semibold flex items-center gap-2 hover:opacity-90">
+        📘 Manual{tema ? <span className="font-normal text-white/70 max-w-[180px] truncate">· {tema.titulo}</span> : null}
+      </button>, document.body);
+  }
+
   return createPortal(
-    <div className="fixed inset-0 z-[90] bg-black/50 flex items-stretch md:items-center justify-center md:p-4" role="dialog" aria-modal="true" aria-label="Manual do sistema">
-      <div className="bg-superficie w-full md:max-w-[1180px] h-[100dvh] md:h-[92vh] md:rounded-2xl shadow-2xl flex flex-col overflow-hidden">
-        {/* topo: título, busca e fechar */}
-        <div className="flex items-center gap-2 px-3 md:px-4 py-2.5 border-b border-line bg-[#0B2E44] text-white" style={{ paddingTop: "max(0.625rem, env(safe-area-inset-top))" }}>
-          <button onClick={() => setMenuAberto((v) => !v)} className="md:hidden p-2 rounded-lg hover:bg-white/10" aria-label="Temas do manual">☰</button>
-          <button onClick={() => { setTemaId(null); setCurso(null); setBusca(""); }} className="font-head font-bold text-[15px] whitespace-nowrap hover:opacity-80">📘 Manual <span className="hidden sm:inline">do SGO Contric</span></button>
-          <div className="relative flex-1 max-w-xl ml-1">
-            <input value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Buscar tema (ex.: horas extras, IA por voz, liberar cliente...)"
-              className="w-full rounded-lg bg-white/10 border border-white/20 px-3 py-2 text-sm text-white placeholder:text-white/50 focus:outline-none focus:bg-white focus:text-[#24324A] focus:placeholder:text-[#9AA6B8]" aria-label="Buscar no manual" />
+    <div className={`fixed z-[90] bg-superficie shadow-[0_0_40px_rgba(11,46,68,0.25)] flex flex-col overflow-hidden border-line
+      ${celular ? "left-0 right-0 bottom-0 h-[52dvh] rounded-t-2xl border-t" : "top-0 right-0 bottom-0 border-l"}`}
+      style={celular ? undefined : { width: LARGURA[tamanho] }} role="complementary" aria-label="Manual do sistema">
+        {/* topo: título e ações (Fechar no canto superior direito) + busca */}
+        <div className="bg-[#0B2E44] text-white px-3 pt-2.5 pb-2.5 flex flex-col gap-2" style={celular ? undefined : { paddingTop: "max(0.625rem, env(safe-area-inset-top))" }}>
+          <div className="flex items-center gap-1.5">
+            {!largo && <button onClick={() => setMenuAberto((v) => !v)} className={`px-2 py-1.5 rounded-lg text-sm font-semibold ${menuAberto ? "bg-white/20" : "hover:bg-white/10"}`} aria-label="Temas do manual">☰ Temas</button>}
+            <button onClick={() => { setTemaId(null); setCurso(null); setBusca(""); setMenuAberto(false); }} className="font-head font-bold text-[15px] whitespace-nowrap hover:opacity-80 ml-1 mr-auto">📘 Manual</button>
+            {!celular && (
+              <button onClick={() => setTamanho((t) => (t === "normal" ? "amplo" : "normal"))} className="px-2 py-1.5 rounded-lg text-xs hover:bg-white/10" title={tamanho === "normal" ? "Ampliar o painel" : "Reduzir o painel"}>
+                {tamanho === "normal" ? "⇤ Ampliar" : "⇥ Reduzir"}
+              </button>
+            )}
+            <button onClick={() => setMinimizado(true)} className="px-2 py-1.5 rounded-lg text-xs hover:bg-white/10" title="Minimizar (o manual continua no mesmo ponto)">▁ Minimizar</button>
+            <button onClick={() => { gravarSessao(null); onFechar(); }} className="px-3 py-1.5 rounded-lg text-sm font-semibold bg-white/15 hover:bg-white/25" aria-label="Fechar manual">Fechar</button>
           </div>
-          <button onClick={onFechar} className="p-2 rounded-lg hover:bg-white/10 text-lg leading-none" aria-label="Fechar manual">✕</button>
+          <input value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Buscar tema (ex.: horas extras, IA por voz, liberar cliente...)"
+            className="w-full rounded-lg bg-white/10 border border-white/20 px-3 py-2 text-sm text-white placeholder:text-white/50 focus:outline-none focus:bg-white focus:text-[#24324A] focus:placeholder:text-[#9AA6B8]" aria-label="Buscar no manual" />
         </div>
 
         <div className="flex-1 min-h-0 flex relative">
-          {/* temas: lateral no computador, gaveta no celular */}
-          <aside className={`${menuAberto ? "absolute inset-0 z-20 bg-superficie" : "hidden"} md:static md:block w-full md:w-[300px] shrink-0 border-r border-line overflow-y-auto rolagem-fina p-3`}>{Lateral}</aside>
+          {/* temas: fixos ao lado no painel amplo; gaveta (☰ Temas) no painel normal e no celular */}
+          <aside className={`${largo ? "block w-[260px] border-r" : menuAberto ? "absolute inset-0 z-20 block w-full" : "hidden"} bg-superficie shrink-0 border-line overflow-y-auto rolagem-fina p-3`}>{Lateral}</aside>
 
           <div ref={conteudoRef} className="flex-1 min-w-0 overflow-y-auto rolagem-fina">
             {termo ? (
               <div className="p-4 md:p-6">
                 <div className="text-sm text-muted mb-3">{resultados.length} tema(s) para "<strong className="text-textmain">{busca}</strong>"</div>
                 {!resultados.length && <div className="text-sm text-muteddim">Nada encontrado. Tente outra palavra (ex.: "aprovar", "QR Code", "orçamento").</div>}
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-2">
+                <div className={`grid gap-2 ${largo ? "grid-cols-2" : "grid-cols-1"}`}>
                   {resultados.map((t) => (
                     <button key={t.id} onClick={() => abrir(t.id, null)} className="text-left cartao cartao-interativo p-3">
                       <div className="text-[11px] text-muteddim">{t.grupo}</div>
@@ -863,7 +901,8 @@ function JanelaManual({ usuario, onFechar }) {
                 <div className="text-xs text-muteddim">{tema.grupo}{tema.master && <span className="ml-2 selo bg-[#8E5CD9]/10 text-[#8E5CD9]">Somente Master</span>}</div>
                 <h2 className="font-head text-xl md:text-2xl font-bold leading-tight mt-0.5">{tema.titulo}</h2>
                 <p className="text-[15px] text-muted mt-2 leading-relaxed">{tema.resumo}</p>
-                {tema.rota && <a href={tema.rota} onClick={onFechar} className="btn btn-contorno btn-sm mt-3">Ir para a página →</a>}
+                {tema.rota && pathname !== tema.rota.split("?")[0] && <a href={tema.rota} className="btn btn-contorno btn-sm mt-3" title="Abre a página — o manual continua aberto ao lado">Ir para a página →</a>}
+                {tema.rota && pathname === tema.rota.split("?")[0] && <div className="selo bg-green/10 text-green mt-3">✓ Você está nesta página — siga os passos ao lado</div>}
 
                 {tema.tela && (
                   <section className="mt-5">
@@ -923,7 +962,7 @@ function JanelaManual({ usuario, onFechar }) {
               <div className="p-4 md:p-6 max-w-[900px]">
                 <h2 className="font-head text-xl md:text-2xl font-bold">Bem-vindo ao manual, {String(usuario?.nome || "").split(" ")[0]}!</h2>
                 <p className="text-muted mt-1">Escolha um curso guiado ou um tema. Use a busca no topo para ir direto ao assunto. Cada tema mostra a tela, onde clicar (números laranja) e o que preencher.</p>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-4">
+                <div className={`grid gap-3 mt-4 ${largo ? "grid-cols-2" : "grid-cols-1"}`}>
                   {CURSOS.map((c) => {
                     const ids = c.temas.filter((id) => temas.some((t) => t.id === id));
                     const feitos = ids.filter((id) => vistos.includes(id)).length;
@@ -938,7 +977,7 @@ function JanelaManual({ usuario, onFechar }) {
                   })}
                 </div>
                 <div className="manual-rotulo mt-6">Temas</div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                <div className={`grid gap-2 ${largo ? "grid-cols-2" : "grid-cols-1"}`}>
                   {GRUPOS.map((g) => {
                     const doGrupo = temas.filter((t) => t.grupo === g);
                     if (!doGrupo.length) return null;
@@ -954,7 +993,6 @@ function JanelaManual({ usuario, onFechar }) {
             )}
           </div>
         </div>
-      </div>
       <style>{`.manual-rotulo{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:rgb(var(--cor-muteddim,148 160 178));margin-bottom:.4rem}
         @keyframes manualPulso{0%,100%{box-shadow:0 0 0 0 rgba(232,89,12,.55)}60%{box-shadow:0 0 0 6px rgba(232,89,12,0)}}.manual-pulso{animation:manualPulso 1.8s infinite}`}</style>
     </div>,
@@ -964,19 +1002,32 @@ function JanelaManual({ usuario, onFechar }) {
 
 // ---------------------------------------------------------------------------- botão
 // variante: "painel" (rodapé do menu) · "topo" (barra escura do app/celular) · "claro" (barra clara)
-export default function BotaoManual({ usuario, variante = "painel" }) {
-  const [aberto, setAberto] = useState(false);
-  const estilos = {
-    painel: "p-2 rounded-lg text-muted hover:bg-panel hover:text-textmain",
-    topo: "p-2.5 rounded-lg text-slate-200 hover:bg-white/10",
-    claro: "p-2 rounded-lg text-muted hover:bg-panel",
-  };
+// variante: "menu" (item fixo do menu lateral, com o texto Manual) · "topo" (barra escura do app) · "claro" (barra clara do celular)
+// Só UMA instância deve existir por tela (o painel reabre sozinho ao trocar de página, no mesmo tema).
+// principal: a instância que desenha o painel (as outras só pedem para abrir, via evento)
+export default function BotaoManual({ usuario, variante = "menu", principal = true }) {
+  const [estado, setEstado] = useState(null); // null = fechado; objeto = aberto (estado inicial)
+  useEffect(() => {
+    if (!principal) return;
+    const s = lerSessao(); if (s) setEstado(s);
+    const pedir = () => setEstado({ ...(lerSessao() || {}), minimizado: false, _t: Date.now() });
+    window.addEventListener("abrir-manual", pedir);
+    return () => window.removeEventListener("abrir-manual", pedir);
+  }, [principal]);
+  const icone = <svg viewBox="0 0 24 24" className="w-[18px] h-[18px] shrink-0" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 5a2 2 0 0 1 2-2h13v16H6a2 2 0 0 0-2 2V5Z" /><path d="M4 19a2 2 0 0 1 2-2h13" /><path d="M10 8.5a2 2 0 1 1 2.5 1.9c-.4.2-.5.5-.5.9v.4M12 14.2v.01" /></svg>;
+  const abrir = () => window.dispatchEvent(new Event("abrir-manual"));
   return (
     <>
-      <button onClick={() => setAberto(true)} title="Manual do sistema" aria-label="Abrir o manual do sistema" className={estilos[variante]}>
-        <svg viewBox="0 0 24 24" className="w-[18px] h-[18px]" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 5a2 2 0 0 1 2-2h13v16H6a2 2 0 0 0-2 2V5Z" /><path d="M4 19a2 2 0 0 1 2-2h13" /><path d="M10 8.5a2 2 0 1 1 2.5 1.9c-.4.2-.5.5-.5.9v.4M12 14.2v.01" /></svg>
-      </button>
-      {aberto && <JanelaManual usuario={usuario} onFechar={() => setAberto(false)} />}
+      {variante === "menu" ? (
+        <button onClick={abrir} title="Manual do sistema: cursos, passo a passo e busca" aria-label="Abrir o manual do sistema"
+          className={`w-full flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-[13.5px] font-medium transition-colors ${estado ? "bg-cyan/10 text-cyan" : "text-textmain hover:bg-superficie"}`}>
+          {icone}<span>Manual</span>
+        </button>
+      ) : (
+        <button onClick={abrir} title="Manual do sistema" aria-label="Abrir o manual do sistema"
+          className={variante === "topo" ? "p-2.5 rounded-lg text-slate-200 hover:bg-white/10" : "p-2 rounded-lg text-muted hover:bg-panel"}>{icone}</button>
+      )}
+      {principal && estado && <JanelaManual key={estado._t || 0} usuario={usuario} inicial={estado} onFechar={() => setEstado(null)} />}
     </>
   );
 }
