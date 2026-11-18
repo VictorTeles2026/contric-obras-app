@@ -10,6 +10,7 @@ import { TelaCarregando, TelaAcessoNegado, BotaoTema } from "./ui";
 import Icone from "./Icone";
 import SinoNotificacoes from "./SinoNotificacoes";
 import AlterarSenha from "./AlterarSenha";
+import BotaoManual from "./Manual";
 
 function iniciais(nome) {
   return (nome || "?").split(" ").filter(Boolean).slice(0, 2).map((p) => p[0]).join("").toUpperCase();
@@ -55,6 +56,7 @@ export default function MobileShell({ children, nav, perfis, titulo }) {
             </div>
           </div>
           <div className="flex items-center gap-1 shrink-0">
+            <BotaoManual usuario={usuario} variante="topo" />
             <BotaoTema className="!text-slate-200 hover:!bg-white/10 !p-2.5" />
             <SinoNotificacoes usuario={usuario} />
             <button onClick={() => setTrocandoSenha(true)} className="p-2.5 rounded-lg text-slate-200 hover:bg-white/10" aria-label="Alterar minha senha" title="Alterar minha senha">

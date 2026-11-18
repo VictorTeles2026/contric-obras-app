@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { exigirPermissao, PERFIS_VALIDOS, gerarPinUnico } from "../../../lib/authServidor";
-import { normalizarLogin, erroLogin, emailAuthDe, ehEmail } from "../../../lib/login";
+import { normalizarLogin, erroLogin, emailAuthDe, ehEmail } from "../../../lib/constantes";
 
 const equipesValidas = (v) => Array.isArray(v) ? [...new Set(v.map((x) => String(x).trim()).filter(Boolean))] : undefined;
 

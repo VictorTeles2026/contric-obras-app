@@ -7,7 +7,7 @@ import { useToast } from "../../lib/Toast";
 import PainelShell from "../../components/PainelShell";
 import { CabecalhoPagina, Modal, Campo, Aviso, Esqueleto, EstadoVazio, Spinner, SeletorEquipes, FiltroMulti, passa, disponiveis, BotaoLimpar } from "../../components/ui";
 import { AREAS, FUNCOES, EQUIPE_CAMPO, ALERTAS, TIPOS_ALERTA } from "../../lib/constantes";
-import { normalizarLogin, erroLogin, ehEmail, sugerirLogin } from "../../lib/login";
+import { normalizarLogin, erroLogin, ehEmail, sugerirLogin } from "../../lib/constantes";
 import Icone from "../../components/Icone";
 import { ConfirmacaoDupla } from "../../components/AcoesMaster";
 

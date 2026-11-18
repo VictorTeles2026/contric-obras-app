@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { exigirPermissao, PERFIS_VALIDOS, gerarPinUnico } from "../../../lib/authServidor";
-import { normalizarLogin, erroLogin, emailAuthDe } from "../../../lib/login";
+import { normalizarLogin, erroLogin, emailAuthDe } from "../../../lib/constantes";
 
 const BANIDO = "876000h"; // ~100 anos = efetivamente desabilitado
 const equipesValidas = (v) => Array.isArray(v) ? [...new Set(v.map((x) => String(x).trim()).filter(Boolean))] : undefined;
