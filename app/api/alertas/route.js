@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { identificar, permissoesDe, supabaseAdmin, enviarEmail, emailCliente, urlApp, rotaSegura } from "../../../lib/authServidor";
-import { resolverPermissoes } from "../../../lib/permissoes";
+import { resolverPermissoes, PERFIS_GERENCIA } from "../../../lib/permissoes";
 import { ALERTAS, PRAZOS, TIPOS_ALERTA, MODELO_EMAIL, montarEmailEquipe, datasAlertaEtapa } from "../../../lib/constantes";
 
 // Alertas automáticos por e-mail.
@@ -233,7 +233,7 @@ async function avisarAlocacao(admin, interno, { evento, alocacoes }) {
     admin.from("recursos").select("id,nome,usuario_id").in("id", recIds),
     admin.from("pis").select("id,codigo,cliente").in("id", piIds),
     admin.from("etapas").select("id,nome,pi_id,responsavel_id").in("pi_id", piIds),
-    admin.from("usuarios").select("id,perfil,ativo").in("perfil", ["coordenador", "gerente"]),
+    admin.from("usuarios").select("id,perfil,ativo").in("perfil", ["coordenador", ...PERFIS_GERENCIA]),
     admin.from("recursos").select("id,usuario_id"),
     admin.from("alocacoes_recurso").select("recurso_id,pi_id").in("pi_id", piIds),
   ]);

@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useTabela, registrarLog } from "../../lib/dados";
 import { useAuth, pode } from "../../lib/AuthContext";
+import { ehGerencia } from "../../lib/permissoes";
 import { supabase } from "../../lib/supabase";
 import { formatarData, formatarDataHora, horaCurta, formatarHoras } from "../../lib/datas";
 import { STATUS_ETAPA, STATUS_SOLICITACAO } from "../../lib/constantes";
@@ -154,9 +155,10 @@ export default function AprovacoesPage() {
   // fluxo em duas fases (Coordenador → Gerente); quem tem a permissão e não é
   // coordenador/gerente (ex: Master ou exceção por usuário) decide qualquer fase
   const podeDecidirSolicitacao = (s) => podeSolicitacao && (
-    usuario?.perfil === "master" || !["coordenador", "gerente"].includes(usuario?.perfil) ||
+    usuario?.perfil === "master" || !(usuario?.perfil === "coordenador" || ehGerencia(usuario?.perfil)) ||
     (s.status === "pendente_coordenador" && usuario?.perfil === "coordenador") ||
-    (s.status === "pendente_gerente" && usuario?.perfil === "gerente"));
+    // Diretor, Gerente de Obras, de Equipes e de Processo decidem a fase do Gerente
+    (s.status === "pendente_gerente" && ehGerencia(usuario?.perfil)));
 
   const decidirSolicitacao = async (s, aprovar, motivo) => {
     const etapa = etapas.find((e) => e.id === s.etapa_id);

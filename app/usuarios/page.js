@@ -10,19 +10,13 @@ import { AREAS, FUNCOES, EQUIPE_CAMPO, ALERTAS, TIPOS_ALERTA } from "../../lib/c
 import { normalizarLogin, erroLogin, ehEmail, sugerirLogin } from "../../lib/constantes";
 import Icone from "../../components/Icone";
 import { ConfirmacaoDupla } from "../../components/AcoesMaster";
+import { PERFIS_INTERNOS, PERFIS_GERENCIA, NOME_PERFIL } from "../../lib/permissoes";
 
-const PERFIS = [
-  ["master", "Master (acesso total)"],
-  ["gerente", "Gerente de Obras"],
-  ["coordenador", "Coordenador de Equipes"],
-  ["lider", "Líder Local"],
-  ["funcionario", "Funcionário (mão de obra própria)"],
-  ["terceiro", "Terceiro (mão de obra)"],
-  ["visualizador", "Visualizador"],
-];
-const PERFIS_COM_FUNCAO = ["lider", "funcionario", "terceiro", "gerente", "coordenador"];
+// ordem e nomes centralizados em lib/permissoes.js (Diretor e Gerentes têm os acessos do Gerente de Obras)
+const PERFIS = PERFIS_INTERNOS.map((p) => [p, NOME_PERFIL[p] || p]);
+const PERFIS_COM_FUNCAO = ["lider", "funcionario", "terceiro", ...PERFIS_GERENCIA, "coordenador"];
 const COR_PERFIL = {
-  master: "bg-navy text-white", gerente: "bg-cyan/10 text-cyan", coordenador: "bg-cyan/10 text-cyan",
+  master: "bg-navy text-white", diretor: "bg-navy/10 text-navy", gerente: "bg-cyan/10 text-cyan", gerente_equipes: "bg-cyan/10 text-cyan", gerente_processo: "bg-cyan/10 text-cyan", coordenador: "bg-cyan/10 text-cyan",
   lider: "bg-green/10 text-green", funcionario: "bg-panel text-muted", terceiro: "bg-amber/10 text-amber", visualizador: "bg-panel text-muted",
 };
 // equipes do usuário como lista, venha do banco como vier (lista, texto "{A,B}" ou JSON)

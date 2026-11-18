@@ -1,10 +1,10 @@
 import { NextResponse } from "next/server";
 import { exigirPermissao, rotaSegura } from "../../../lib/authServidor";
-import { CATALOGO_PERMISSOES } from "../../../lib/permissoes";
+import { CATALOGO_PERMISSOES, PERFIS_INTERNOS } from "../../../lib/permissoes";
 
 // Grava a matriz de permissões (por perfil) e as exceções por usuário.
 // Só quem tem "permissao.gerenciar"; tudo vai para a Auditoria.
-const PERFIS = ["master", "gerente", "coordenador", "visualizador", "lider", "funcionario", "terceiro"];
+const PERFIS = PERFIS_INTERNOS;
 const VALORES = ["S", "N", "P"];
 const codigoValido = (c) => CATALOGO_PERMISSOES.some((x) => x.codigo === c);
 const acaoDe = (c) => CATALOGO_PERMISSOES.find((x) => x.codigo === c)?.acao || c;

@@ -551,7 +551,7 @@ const TEMAS = [
       </Tela>
     ),
     passos: [[1, "+ Novo usuário."], [2, "Login: e-mail ou nome de usuário (letras, números, ponto) — sugestão automática nome.sobrenome. A senha é gerada e mostrada uma única vez."], [3, "Perfil define o que a pessoa acessa (ajustável em Permissões)."], [4, "Usuários de Campo: cadastro de várias pessoas de uma vez; copie usuários e senhas para entregar."], [5, "Alertas: liga/desliga, por usuário, os e-mails automáticos (aprovações, prazos, alocação...)."]],
-    campos: [["Nome", "Nome completo", true], ["Login", "Usuário ou e-mail", true], ["Perfil", "Master, Gerente, Coordenador, Líder, Funcionário, Terceiro, Visualizador", true]],
+    campos: [["Nome", "Nome completo", true], ["Login", "Usuário ou e-mail", true], ["Perfil", "Master, Diretor, Gerente de Obras, Gerente de Equipes, Gerente de Processo, Coordenador, Líder, Funcionário, Terceiro, Visualizador (Diretor e Gerentes têm os mesmos acessos do Gerente de Obras)", true]],
     dicas: ["Só o Master cria/altera usuários Master. Desabilitar bloqueia o acesso sem apagar o histórico."],
   },
 

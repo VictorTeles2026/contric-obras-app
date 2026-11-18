@@ -3,13 +3,13 @@
 import { Fragment, useMemo, useState } from "react";
 import { useTabela, chamarApi } from "../../lib/dados";
 import { useAuth, ROTULO_PERFIL } from "../../lib/AuthContext";
-import { CATALOGO_PERMISSOES, PADRAO_PERMISSOES, ROTULO_VALOR, resolverPermissoes } from "../../lib/permissoes";
+import { CATALOGO_PERMISSOES, PADRAO_PERMISSOES, ROTULO_VALOR, resolverPermissoes, PERFIS_INTERNOS } from "../../lib/permissoes";
 import { useToast } from "../../lib/Toast";
 import PainelShell from "../../components/PainelShell";
 import { CabecalhoPagina, Aviso, Spinner } from "../../components/ui";
 import Icone from "../../components/Icone";
 
-const PERFIS = ["master", "gerente", "coordenador", "visualizador", "lider", "funcionario", "terceiro"];
+const PERFIS = PERFIS_INTERNOS;
 const COR_VALOR = { S: "bg-green/10 text-green border-green/30", P: "bg-amber/10 text-amber border-amber/30", N: "bg-red/5 text-red border-red/20" };
 const MODULOS = [...new Set(CATALOGO_PERMISSOES.map((c) => c.modulo))];
 
@@ -69,7 +69,7 @@ function MatrizPerfis() {
         <input value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Buscar ação..." className="input pl-9" />
       </div>
       <div className="cartao overflow-auto" style={{ maxHeight: "calc(100dvh - 260px)" }}>
-        <table className="w-full text-sm min-w-[860px]">
+        <table className="w-full text-sm min-w-[1120px]">
           <thead className="sticky top-0 bg-white z-10">
             <tr className="border-b border-line text-left">
               <th className="px-3 py-2.5 titulo-secao">Ação</th>

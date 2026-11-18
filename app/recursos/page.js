@@ -605,7 +605,7 @@ export default function RecursosPage({ searchParams }) {
     </PainelShell>
   );
 }
-const ROTULO_PERFIL_CURTO = { master: "Master", gerente: "Gerente", coordenador: "Coordenador", lider: "Líder", funcionario: "Funcionário", terceiro: "Terceiro", visualizador: "Visualizador" };
+const ROTULO_PERFIL_CURTO = { master: "Master", diretor: "Diretor", gerente: "Gerente", gerente_equipes: "Ger. Equipes", gerente_processo: "Ger. Processo", coordenador: "Coordenador", lider: "Líder", funcionario: "Funcionário", terceiro: "Terceiro", visualizador: "Visualizador" };
 function RecursoForm({ usuarios, recursoDoUsuario = () => null, recursoAtualId, empresas = [], onIrParaEmpresas, onSalvar, rotuloBotao, onCancelar, valoresIniciais }) {
   const [nome, setNome] = useState(valoresIniciais?.nome || "");
   const [tipo, setTipo] = useState(valoresIniciais?.tipo || "mao_obra_propria");

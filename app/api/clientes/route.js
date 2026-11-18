@@ -1,4 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
+import { PERFIS_GERENCIA } from "../../../lib/permissoes";
 import { NextResponse } from "next/server";
 import { exigirPermissao, gerarSenha, enviarEmail as enviarEmailReal, emailCliente, urlApp, rotaSegura } from "../../../lib/authServidor";
 
@@ -9,7 +10,7 @@ const ENVIO_EMAIL_CLIENTES = false;
 const enviarEmail = (dados) => ENVIO_EMAIL_CLIENTES ? enviarEmailReal(dados) : Promise.resolve({ enviado: false, motivo: "envio automático desativado" });
 
 // Gestão de clientes do portal — master, gerente e coordenador (excluir: só master).
-const PERFIS = ["master", "gerente", "coordenador"];
+const PERFIS = ["master", ...PERFIS_GERENCIA, "coordenador"];
 const esc = (t) => String(t ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const ROTULOS = { ver_atas: "Atas de reuniões", ver_rdos_assinados: "RDOs assinados (PDF)", ver_linha_tempo: "Cronograma", ver_ocorrencias_assinadas: "Ocorrências assinadas" };
 
