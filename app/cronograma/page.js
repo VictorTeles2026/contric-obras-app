@@ -13,7 +13,7 @@ import { AbasCronograma, SeletorPi } from "../../components/ui";
 import { PainelSuspenso } from "../../components/ui";
 import { Modal, Campo, EstadoVazio, Spinner, Aviso } from "../../components/ui";
 import Icone from "../../components/Icone";
-import { JanelaPi } from "../../components/Editores";
+import { JanelaPi, ModalAplicarModelo, GerenciarModelos } from "../../components/Editores";
 
 // fecha um menu suspenso ao clicar fora dele ou apertar Esc
 function useFecharAoClicarFora(aberto, fechar) {
@@ -156,6 +156,7 @@ export default function CronogramaPage() {
   const [pisModalAberto, setPisModalAberto] = useState(false);
   const [excluindoPi, setExcluindoPi] = useState(null);
   const [iaAberta, setIaAberta] = useState(false);
+  const [modeloAberto, setModeloAberto] = useState(null); // "aplicar" | "gerenciar"
   const [pisModalModo, setPisModalModo] = useState("create");
   const [erro, setErro] = useState("");
 
@@ -447,6 +448,14 @@ export default function CronogramaPage() {
             </button>
           )}
           {editavel && piAtual && (
+            <button onClick={() => setModeloAberto("aplicar")} className="btn btn-contorno btn-sm !py-2" title="Criar as etapas a partir de um modelo pronto">
+              <Icone nome="cronograma" className="w-4 h-4" /> Aplicar modelo
+            </button>
+          )}
+          {editavel && (
+            <button onClick={() => setModeloAberto("gerenciar")} className="btn btn-contorno btn-sm !py-2" title="Criar e editar modelos de cronograma para toda a equipe">Modelos</button>
+          )}
+          {editavel && piAtual && (
             <button onClick={() => setIaAberta(true)} className="btn btn-sm !py-2 bg-navy text-white hover:opacity-90" title="Montar ou alterar o cronograma falando ou escrevendo">
               <svg viewBox="0 0 24 24" className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3" /><path d="M5 11a7 7 0 0 0 14 0M12 18v3" /></svg> Assistente IA
             </button>
@@ -498,6 +507,12 @@ export default function CronogramaPage() {
       <datalist id="sugestoes-responsavel">
         {[...new Set(["Contric", piAtual?.cliente, piAtual?.cliente && `${piAtual.cliente} / Contric`, ...etapasDoPi.map((e) => e.responsavel_texto)].filter(Boolean))].map((s) => <option key={s} value={s} />)}
       </datalist>
+      {modeloAberto === "aplicar" && piAtual && (
+        <ModalAplicarModelo alvos={[piAtual]} onFechar={() => setModeloAberto(null)} onAplicado={() => { recarregarEtapas(); recarregarDependencias(); }} />
+      )}
+      {modeloAberto === "gerenciar" && (
+        <GerenciarModelos onFechar={() => setModeloAberto(null)} etapasPi={piAtual ? etapasBrutas.filter((e) => e.pi_id === piAtual.id) : null} piCodigo={piAtual?.codigo} />
+      )}
       {iaAberta && piAtual && (
         <AssistenteIA pi={piAtual} etapas={etapasDoPi} usuario={usuario} recursos={recursos} alocacoes={alocacoesRecurso.filter((x) => x.pi_id === piAtual.id)} onFechar={() => setIaAberta(false)}
           onAplicado={() => { recarregarEtapas(); recarregarDependencias(); recarregarAlocacoesRecurso(); }} />

@@ -144,6 +144,8 @@ function CheckInOut({ usuario, todosPis, meusPis, onMudou, largo }) {
     if (processando) return;
     const pi = typeof piOuTexto === "object" ? piOuTexto : encontrarPiPorCodigo(todosPis, piOuTexto ?? codigoPi);
     if (!pi) { setErro("Nenhuma obra encontrada com esse número. Confira e tente de novo."); return; }
+    // contrato: o PI Pai só consolida — o ponto é sempre na obra (ex: 227500-03)
+    if (todosPis.some((p) => p.pi_pai_id === pi.id)) { setErro(`O ${pi.codigo} é o contrato (PI Pai). Registre o ponto na obra: ${todosPis.filter((p) => p.pi_pai_id === pi.id).map((p) => p.codigo).slice(0, 3).join(", ")}...`); return; }
     setErro("");
     if (navigator.vibrate) navigator.vibrate(40);
     setConfirmar({ tipo: "checkin", pi });
@@ -175,6 +177,25 @@ function CheckInOut({ usuario, todosPis, meusPis, onMudou, largo }) {
     avisar(`Check-out registrado: ${formatarHoras(horasTotais)}.`);
     setConfirmar(null);
     recarregar(); onMudou?.();
+  };
+
+  // trocar de obra no meio do dia (ex: líder que conduz equipes em várias obras): fecha a obra
+  // atual e abre a próxima no MESMO instante — cada obra fica com as suas horas
+  const [trocando, setTrocando] = useState(false);
+  const trocarDeObra = async (pi) => {
+    if (!sessaoAberta || processando || pi.id === sessaoAberta.pi_id) return;
+    if (todosPis.some((p) => p.pi_pai_id === pi.id)) { avisar(`O ${pi.codigo} é o contrato (PI Pai). Escolha a obra.`, "erro"); return; }
+    setProcessando(true);
+    const agora = new Date().toISOString();
+    const horasTotais = Math.round(horasEntre(sessaoAberta.entrada, agora) * 100) / 100;
+    const { error: e1 } = await supabase.from("apontamentos_horas").update({ saida: agora, horas_totais: horasTotais }).eq("id", sessaoAberta.id);
+    if (e1) { setProcessando(false); avisar(`Não foi possível fechar ${piDaSessao?.codigo}: ${e1.message}`, "erro", 6000); return; }
+    const { error: e2 } = await supabase.from("apontamentos_horas").insert({ usuario_id: usuario.id, pi_id: pi.id, data: hojeISO(), entrada: agora, status: "pendente" });
+    setProcessando(false);
+    if (e2) { avisar(`${piDaSessao?.codigo} fechada, mas o check-in em ${pi.codigo} falhou: ${e2.message}`, "erro", 8000); recarregar(); return; }
+    await registrarLog(usuario, "Trocou de obra (ponto)", `${piDaSessao?.codigo} (${horasTotais.toFixed(2)}h) → ${pi.codigo}`);
+    avisar(`${piDaSessao?.codigo}: ${formatarHoras(horasTotais)} registradas. Agora em ${pi.codigo}.`);
+    setTrocando(false); recarregar(); onMudou?.();
   };
 
   if (carregando) return <Esqueleto linhas={1} altura={200} />;
@@ -209,10 +230,33 @@ function CheckInOut({ usuario, todosPis, meusPis, onMudou, largo }) {
             Este check-in ficou aberto desde outro dia. Faça o check-out e avise seu líder para corrigir as horas.
           </Aviso>
         )}
-        <button onClick={() => setConfirmar({ tipo: "checkout" })} disabled={processando} className="btn btn-perigo btn-lg w-full mt-5">
+        <button onClick={() => setTrocando((v) => !v)} disabled={processando} className="btn btn-lg w-full mt-5 bg-white/15 text-white hover:bg-white/25">
+          ⇄ Trocar de obra
+        </button>
+        {trocando && (
+          <div className="w-full mt-2 rounded-xl bg-white text-textmain p-3 text-left animar-fade">
+            <div className="text-xs text-muted mb-2">Fecha <strong>{piDaSessao?.codigo}</strong> agora e começa na obra escolhida:</div>
+            <div className="flex flex-col gap-1.5 max-h-[260px] overflow-y-auto rolagem-fina">
+              {meusPis.filter((p) => p.id !== sessaoAberta.pi_id).map((p) => (
+                <button key={p.id} onClick={() => trocarDeObra(p)} disabled={processando}
+                  className="flex items-center justify-between gap-3 rounded-lg border border-line px-3 py-2.5 hover:border-cyan active:bg-cyan/5 disabled:opacity-50">
+                  <span className="min-w-0"><span className="font-semibold block">{p.codigo}</span><span className="text-xs text-muted truncate block">{p.projeto || p.cliente}</span></span>
+                  <span className="text-sm font-semibold text-cyan shrink-0">{processando ? "..." : "Ir para →"}</span>
+                </button>
+              ))}
+              {meusPis.filter((p) => p.id !== sessaoAberta.pi_id).length === 0 && <div className="text-sm text-muteddim">Você não está alocado em outras obras. Use o QR Code da obra.</div>}
+            </div>
+            <button onClick={() => setScannerAberto(true)} className="btn btn-contorno btn-sm w-full mt-2"><Icone nome="qr" className="w-4 h-4" /> Ler QR Code da outra obra</button>
+          </div>
+        )}
+        <button onClick={() => setConfirmar({ tipo: "checkout" })} disabled={processando} className="btn btn-perigo btn-lg w-full mt-2">
           Fazer check-out
         </button>
         {telaConfirmacao}
+        {scannerAberto && (
+          <LeitorQR onLido={(texto) => { setScannerAberto(false); const pi = encontrarPiPorCodigo(todosPis, texto); if (pi) trocarDeObra(pi); else avisar("Obra não encontrada no QR Code.", "erro"); }}
+            onFechar={() => setScannerAberto(false)} />
+        )}
       </div>
     );
   }

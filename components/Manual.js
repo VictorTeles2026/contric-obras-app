@@ -308,6 +308,52 @@ const TEMAS = [
     ],
   },
   {
+    id: "contratos", grupo: "Planejamento", titulo: "Contratos com várias obras (PI Pai e obras)", rota: "/pis",
+    palavras: "contrato pi pai filho obras sub pi consolidado consolidacao varias obras 227500-01 valor da obra ponderado",
+    resumo: "Um contrato com várias obras independentes: o PI Pai (ex.: 227500) só consolida; cada obra é um PI completo (227500-01 a 227500-10) com cronograma, horas, alocações, orçamento, RDO e documentos próprios.",
+    tela: (
+      <Tela url="pis">
+        <Card><Linha className="justify-between"><span className="text-[10px]"><b className="text-[#0E89B0]">227500</b> <span className="ml-1 rounded bg-[#0B2E44]/10 px-1">PI Pai · 10 obras</span></span><Bt n={1} v="c">+ Obras</Bt></Linha>
+          {["227500-01 · OBRA 01", "227500-02 · OBRA 02", "227500-03 · OBRA 03"].map((t) => <Txt key={t} c="pl-4">↳ {t}</Txt>)}</Card>
+        <Card><Grade c={3}><Cp n={2} r="Quantidade" v="10" /><Cp r="Começar no nº" v="1" /><Cp r="Nome do projeto" v="OBRA" /></Grade><Txt c="mt-1">☑ Em seguida, aplicar um modelo de cronograma em todas as obras</Txt></Card>
+        <Card n={3}><Grade c={4}><Kpi r="Avanço do contrato" v="34%" cor="#0E89B0" /><Kpi r="Obras" v="10" /><Kpi r="Atrasadas" v="2" cor="#D64545" /><Kpi r="Consumo horas" v="29%" cor="#2E9E44" /></Grade></Card>
+      </Tela>
+    ),
+    passos: [
+      [null, "Crie o PI Pai normalmente em Cadastro de PIs (ex.: 227500) com cliente, prazo e responsável."],
+      [1, "Na linha do PI Pai, clique em + Obras."],
+      [2, "Informe quantas obras e o nome; os códigos são gerados (227500-01…). Marque para aplicar um modelo de cronograma em todas."],
+      [null, "Em Editar de cada obra, informe o Valor da obra (R$) — é o peso no avanço do contrato — e o orçamento da obra."],
+      [3, "Página do PI Pai → aba Obras do contrato: avanço ponderado, atrasos, término previsto e horas orçado × consumo × resultado de cada obra e do total. A aba Cronograma mostra as obras juntas."],
+    ],
+    dicas: [
+      "Alocar um recurso no PI Pai o disponibiliza em todas as obras (para ver as obras, lançar horas e atualizar avanço). Também dá para alocar direto em cada obra.",
+      "Horas e RDO são sempre lançados nas obras — o PI Pai não recebe lançamentos.",
+      "Cliente com acesso ao PI Pai vê todas as obras e o consolidado no portal.",
+      "Filtro Contrato: no Cronograma (Execução) e no Controle de Horas (lançadas e orçadas).",
+    ],
+  },
+  {
+    id: "modelos", grupo: "Planejamento", titulo: "Modelos de cronograma (estruturas prontas)", rota: "/cronograma",
+    palavras: "modelo modelos cronograma padrao estrutura pronta template aplicar etapas automaticas salvar como modelo",
+    resumo: "Monte cronogramas sem digitar tudo: escolha um modelo (do sistema ou criado pela equipe) e a data de início — macro e sub-etapas são criadas com as datas encadeadas.",
+    tela: (
+      <Tela url="cronograma · Aplicar modelo">
+        <Grade c={2}><Card n={1}><Txt c="font-semibold !text-[#24324A]">Dispositivo / automação — completo</Txt><Txt>6 macro · 22 sub · ≈ 163 dias</Txt></Card><Card><Txt c="font-semibold !text-[#24324A]">Montagem / instalação em campo</Txt><Txt>5 macro · 13 sub · ≈ 70 dias</Txt></Card></Grade>
+        <Grade c={2}><Cp n={2} r="Início da primeira etapa" v="01/12/2026" /><Txt c="self-end">☑ Criar dependências em sequência</Txt></Grade>
+        <Linha className="justify-end"><Bt n={3}>Aplicar</Bt></Linha>
+      </Tela>
+    ),
+    passos: [
+      [null, "Configurar Cronograma → escolha o PI → Aplicar modelo (ou, ao criar as obras de um contrato, marque para aplicar)."],
+      [1, "Escolha o modelo: os do sistema e os da equipe (selo roxo)."],
+      [2, "Data de início: cada etapa começa no dia seguinte ao fim da anterior. A prévia mostra as datas."],
+      [3, "Aplicar: as etapas entram depois das que já existirem. Ajuste depois o que precisar."],
+      [null, "Botão Modelos (Configurar Cronograma) ou Configurações → Modelos de cronograma: crie, edite e exclua modelos, use um do sistema como base ou salve o cronograma de um PI como modelo."],
+    ],
+    dicas: ["Durações em dias corridos. Quem pode editar etapas pode criar modelos, que ficam disponíveis para todos."],
+  },
+  {
     id: "ia-voz", grupo: "Planejamento", titulo: "Assistente de IA por voz (no Configurar Cronograma)", rota: "/cronograma",
     palavras: "ia inteligencia artificial voz falar microfone ditar assistente interpretar aplicar pedido criar etapas automatico",
     resumo: "Fale ou escreva o que quer no cronograma; a IA transforma o pedido em ações (criar, alterar, excluir etapas, dependências, equipes, alocações, alertas, medições). Você revisa e aplica.",

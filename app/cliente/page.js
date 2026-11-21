@@ -93,9 +93,9 @@ export default function PortalCliente() {
                   const sel = o.pi.id === obraId;
                   return (
                     <button key={o.pi.id} onClick={() => setObraId(o.pi.id)}
-                      className={`shrink-0 lg:shrink text-left rounded-xl border px-4 py-3 transition-colors w-[230px] lg:w-full ${sel ? "bg-zinc-900 text-white border-zinc-900 shadow-md" : "bg-white border-zinc-200 hover:border-zinc-400"}`}>
+                      className={`shrink-0 lg:shrink text-left rounded-xl border px-4 py-3 transition-colors w-[230px] lg:w-full ${o.pi.pi_pai_id ? "lg:ml-4 lg:w-[calc(100%-1rem)]" : ""} ${sel ? "bg-zinc-900 text-white border-zinc-900 shadow-md" : "bg-white border-zinc-200 hover:border-zinc-400"}`}>
                       <div className="flex items-center justify-between gap-2">
-                        <span className="font-mono font-bold text-sm">{o.pi.codigo}</span>
+                        <span className="font-mono font-bold text-sm">{o.pi.pi_pai_id ? "↳ " : ""}{o.pi.codigo}{o.filhos?.length ? <span className={`ml-1.5 text-[10px] font-sans font-semibold ${sel ? "text-zinc-300" : "text-zinc-500"}`}>CONTRATO</span> : null}</span>
                         <span className={`text-[10px] font-semibold uppercase tracking-wide ${sel ? "text-zinc-400" : "text-zinc-400"}`}>{STATUS_PI[o.pi.status] || ""}</span>
                       </div>
                       <div className={`text-xs leading-snug mt-0.5 line-clamp-2 ${sel ? "text-zinc-300" : "text-zinc-500"}`}>{o.pi.projeto || o.pi.cliente}</div>
@@ -108,6 +108,7 @@ export default function PortalCliente() {
             {obra && (
               <div className="flex flex-col gap-4 min-w-0">
                 <CabecalhoObra obra={obra} />
+                {obra.consolidado && <ContratoConsolidado obra={obra} onAbrir={setObraId} />}
 
                 {obra.acessos.linhaTempo && <LinhaTempoCliente etapas={obra.etapas} pi={obra.pi} />}
 
@@ -126,7 +127,14 @@ export default function PortalCliente() {
                 )}
                 {(obra.documentos || []).length > 0 && (
                   <ListaArquivos titulo="Documentos" icone="pasta" vazio=""
-                    itens={obra.documentos.map((d) => ({ chave: d.nome, nome: d.nome, detalhe: `Disponibilizado em ${formatarDataHora(d.data)}`, url: d.url }))} />
+                    itens={obra.documentos.map((d) => {
+                      // Contric Transfer: arquivo temporário, apagado 10 dias corridos após o envio
+                      const transfer = String(d.nome).startsWith("TRANSFER_");
+                      const exp = transfer ? new Date(new Date(d.data).setHours(0, 0, 0, 0) + 10 * 86400000) : null;
+                      const faltam = exp ? Math.round((exp - new Date().setHours(0, 0, 0, 0)) / 86400000) : null;
+                      return { chave: d.nome, nome: d.nome, url: d.url,
+                        detalhe: transfer ? `⏳ Contric Transfer · disponível até ${exp.toLocaleDateString("pt-BR")}${faltam <= 0 ? " (apaga hoje)" : ` (${faltam} dia${faltam > 1 ? "s" : ""})`} — baixe uma cópia` : `Disponibilizado em ${formatarDataHora(d.data)}` };
+                    })} />
                 )}
                 </div>
               </div>
@@ -191,6 +199,35 @@ function BotaoPdfCronograma({ pi, etapas }) {
         {gerando ? "Gerando..." : "Baixar PDF"}
       </button>
     </div>
+  );
+}
+
+// ---------- contrato (PI Pai): avanço consolidado e as obras ----------
+function ContratoConsolidado({ obra, onAbrir }) {
+  const c = obra.consolidado;
+  return (
+    <section className="rounded-2xl bg-white border border-zinc-200 overflow-hidden">
+      <div className="px-5 py-3.5 border-b border-zinc-200 flex flex-wrap items-center gap-3">
+        <h2 className="titulo-quadro">Consolidado do contrato</h2>
+        <div className="flex items-center gap-2 text-sm ml-auto">
+          <span className="text-zinc-500">Avanço do contrato</span>
+          <span className="w-28 h-2 rounded-full bg-zinc-200 overflow-hidden inline-block"><span className="block h-full bg-zinc-800" style={{ width: `${c.avanco}%` }} /></span>
+          <strong className="tabular-nums">{c.avanco}%</strong>
+        </div>
+        {c.termino && <span className="text-sm text-zinc-500">Término previsto: <strong className="text-zinc-900">{formatarData(c.termino)}</strong></span>}
+      </div>
+      <div className="divide-y divide-zinc-100">
+        {c.obras.map((o) => (
+          <button key={o.id} onClick={() => onAbrir(o.id)} className="w-full text-left flex flex-wrap items-center gap-3 px-5 py-3 hover:bg-zinc-50">
+            <span className="font-mono font-bold text-sm w-28">{o.codigo}</span>
+            <span className="flex-1 min-w-[140px] text-sm text-zinc-600">{o.projeto}{!o.comCronograma ? " · cronograma em elaboração" : ""}</span>
+            <span className="flex items-center gap-2"><span className="w-24 h-1.5 rounded-full bg-zinc-200 overflow-hidden"><span className="block h-full bg-zinc-800" style={{ width: `${o.avanco}%` }} /></span><span className="text-sm tabular-nums font-semibold w-10 text-right">{o.avanco}%</span></span>
+            <span className="text-xs text-zinc-500 w-28 text-right">{o.termino ? `até ${formatarData(o.termino)}` : "—"}</span>
+            <span className="text-sm font-semibold text-zinc-700">Abrir →</span>
+          </button>
+        ))}
+      </div>
+    </section>
   );
 }
 

@@ -271,12 +271,13 @@ async function avisarAlocacao(admin, interno, { evento, alocacoes }) {
 // ---------------- clientes do portal ----------------
 const CAMPO = { ata: "ver_atas", rdo: "ver_rdos_assinados", ocorrencia: "ver_ocorrencias_assinadas", linha_tempo: "ver_linha_tempo" };
 const TITULO = { ata: "Nova ata de reunião disponível", rdo: "Novo RDO assinado disponível", ocorrencia: "Nova ocorrência assinada disponível",
-  linha_tempo: "O cronograma da obra foi atualizado", documento: "Novo documento disponível" };
+  linha_tempo: "O cronograma da obra foi atualizado", documento: "Novo documento disponível", transfer: "Novo arquivo no Contric Transfer" };
+const PORCLIENTE = ["documento", "transfer"]; // avisos dirigidos a um cliente específico
 async function avisarClientes(admin, { piId, tipo, detalhe, clienteId }) {
-  if (!piId || !TITULO[tipo] || (tipo === "documento" && !clienteId)) return NextResponse.json({ error: "Dados inválidos." }, { status: 400 });
+  if (!piId || !TITULO[tipo] || (PORCLIENTE.includes(tipo) && !clienteId)) return NextResponse.json({ error: "Dados inválidos." }, { status: 400 });
   if ((await padraoAlertas(admin)).clientes !== true) return NextResponse.json({ avisados: 0, motivo: "e-mails a clientes desligados (Usuários → Alertas)" });
   let q = admin.from("cliente_acessos").select("*, clientes(*)").eq("pi_id", piId);
-  q = tipo === "documento" ? q.eq("cliente_id", clienteId) : q.eq(CAMPO[tipo], true);
+  q = PORCLIENTE.includes(tipo) ? q.eq("cliente_id", clienteId) : q.eq(CAMPO[tipo], true);
   const { data: acessos, error } = await q;
   if (error) return NextResponse.json({ avisados: 0, motivo: error.message });
   const { data: pi } = await admin.from("pis").select("codigo,cliente,projeto").eq("id", piId).maybeSingle();
@@ -366,6 +367,54 @@ export const POST = rotaSegura(async (req) => {
   return NextResponse.json({ error: "Ação inválida." }, { status: 400 });
 });
 
+// ---------------- Contric Transfer: avisos de expiração e exclusão automática ----------------
+// Arquivo "PI/TRANSFER_..." expira 10 dias corridos após o envio (data em São Paulo).
+// manhã (cron das 7h): avisa os clientes que receberam o arquivo quando faltam 5, 2 e 0 dias.
+// noite (cron das 23h, ?transfer=apagar): apaga o que já chegou ao dia de expiração.
+const DIAS_TRANSFER = 10;
+const diaSP = (d) => new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo" }).format(new Date(d));
+const difDias = (a, b) => Math.round((new Date(`${a}T12:00:00`) - new Date(`${b}T12:00:00`)) / 86400000);
+async function rotinaTransfer(admin, { apagar }) {
+  const hoje = agoraSP().dia;
+  const cfg = await padraoAlertas(admin);
+  const { data: pis } = await admin.from("pis").select("id,codigo,cliente,projeto");
+  let avisos = 0, apagados = 0;
+  for (const pi of pis || []) {
+    const { data: arquivos } = await admin.storage.from("documentos").list(pi.id, { limit: 1000, search: "TRANSFER_" });
+    for (const f of (arquivos || []).filter((x) => x.id && x.name.startsWith("TRANSFER_"))) {
+      const caminho = `${pi.id}/${f.name}`;
+      const expira = somarDias(diaSP(f.created_at || Date.now()), DIAS_TRANSFER);
+      const faltam = difDias(expira, hoje);
+      if (apagar) {
+        if (faltam > 0) continue;
+        const { error } = await admin.storage.from("documentos").remove([caminho]);
+        if (error) continue;
+        await admin.from("cliente_documentos").delete().eq("caminho", caminho);
+        await admin.from("logs_auditoria").insert({ usuario_id: null, usuario_nome: "Sistema (rotina automática)", acao: "Contric Transfer: arquivo apagado (expirou)", detalhe: `${pi.codigo} — ${f.name} · enviado em ${dataBR(diaSP(f.created_at))}` });
+        apagados++;
+        continue;
+      }
+      if (![5, 2, 0].includes(faltam) || cfg.clientes !== true) continue;
+      const { data: libs } = await admin.from("cliente_documentos").select("cliente_id, clientes(nome,email,ativo)").eq("caminho", caminho);
+      const nomePi = `${pi.codigo} — ${pi.cliente || ""}${pi.projeto ? ` — ${pi.projeto}` : ""}`;
+      const quando = faltam === 0 ? "será apagado HOJE" : `será apagado em ${faltam} dias (${dataBR(expira)})`;
+      for (const l of libs || []) {
+        const c = l.clientes;
+        if (!c || c.ativo === false || !emailReal(c.email)) continue;
+        const titulo = faltam === 0 ? "Contric Transfer: arquivo expira hoje" : `Contric Transfer: arquivo expira em ${faltam} dias`;
+        const r = await enviarEmail({
+          para: c.email, assunto: `${titulo} — ${pi.codigo}`,
+          texto: `Olá, ${c.nome}!\n\nO arquivo ${f.name} (${nomePi}) ${quando}.\nBaixe e guarde uma cópia, se precisar.\n\nAcesse: ${urlApp()}/acesso-clientes`,
+          html: emailCliente(titulo, [`Olá, <strong>${esc(c.nome)}</strong>!`, `O arquivo <strong>${esc(f.name)}</strong> da obra <strong>${esc(nomePi)}</strong> ${esc(quando)}.`, "Baixe e guarde uma cópia, se precisar."],
+            { url: `${urlApp()}/acesso-clientes`, texto: "Baixar agora" }),
+        });
+        if (r.enviado) avisos++;
+      }
+    }
+  }
+  return { transfer: { avisos, apagados } };
+}
+
 // cron diário — a Vercel envia "Authorization: Bearer <CRON_SECRET>"
 export const GET = rotaSegura(async (req) => {
   const segredo = process.env.CRON_SECRET;
@@ -373,7 +422,10 @@ export const GET = rotaSegura(async (req) => {
     return NextResponse.json({ error: "Acesso não autorizado." }, { status: 401 });
   }
   const admin = supabaseAdmin();
-  const resumo = await resumoDiario(admin);
+  // cron da noite: só a exclusão do Contric Transfer
+  if (new URL(req.url).searchParams.get("transfer") === "apagar") return NextResponse.json(await rotinaTransfer(admin, { apagar: true }));
+  const transfer = await rotinaTransfer(admin, { apagar: false }).catch((e) => ({ transfer: { erro: e.message } }));
+  const resumo = { ...(await resumoDiario(admin)), ...transfer };
   const fila = await despachar(admin, { ignorarSilencio: true });
   return NextResponse.json({ ...resumo, ...fila });
 });

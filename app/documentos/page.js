@@ -25,6 +25,19 @@ const COR_TIPO = { rdo: "bg-red/10 text-red", ocorrencia: "bg-amber/10 text-ambe
 // A lista é editável em Configurações (lib/constantes → CLASSIFICACOES_DOC).
 // Cada PI pode ter pastas próprias (tabela pi_pastas), somadas às classificações gerais.
 const CLASSIFICACOES = CLASSIFICACOES_DOC;
+// Contric Transfer: pasta fixa de troca de arquivos com o cliente. Tudo o que entra nela é apagado
+// automaticamente 10 dias corridos depois do envio (rotina diária em /api/alertas), com avisos ao
+// cliente no envio e quando faltam 5 dias, 2 dias e no dia da exclusão.
+const TRANSFER = ["TRANSFER", "Contric Transfer"];
+const DIAS_TRANSFER = 10;
+const diaLocal = (d) => { const x = new Date(d); return new Date(x.getFullYear(), x.getMonth(), x.getDate()); };
+const expiraEm = (data) => { const d = diaLocal(data || Date.now()); d.setDate(d.getDate() + DIAS_TRANSFER); return d; };
+const diasRestantes = (data) => Math.round((expiraEm(data) - diaLocal(Date.now())) / 86400000);
+function SeloExpira({ data }) {
+  const r = diasRestantes(data);
+  const cor = r <= 0 ? "bg-red text-white" : r <= 2 ? "bg-red/10 text-red" : r <= 5 ? "bg-amber/10 text-amber" : "bg-cyan/10 text-cyan";
+  return <span className={`selo ${cor}`} title={`Contric Transfer: apagado automaticamente em ${expiraEm(data).toLocaleDateString("pt-BR")}`}>⏳ {r <= 0 ? "apaga hoje" : `apaga em ${r} dia${r > 1 ? "s" : ""} (${expiraEm(data).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" })})`}</span>;
+}
 // prefixo mais longo primeiro: "PASTA_X-Y" não pode ser confundido com uma pasta "PASTA_X"
 const pastaDoArquivo = (nome, lista) => [...lista].sort((a, b) => b[0].length - a[0].length).find(([p]) => nome.startsWith(`${p}_`));
 const prefixoDaPasta = (nome) => `PASTA_${String(nome).normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^A-Za-z0-9]+/g, "-").replace(/^-+|-+$/g, "").toUpperCase().slice(0, 40)}`;
@@ -72,14 +85,17 @@ export default function DocumentosPage() {
   const [filtroPasta, setFiltroPasta] = useState("");
   const [novaPasta, setNovaPasta] = useState(null);       // nome digitado (modal aberto)
   const [liberandoPasta, setLiberandoPasta] = useState(null); // [prefixo, nome]
-  const classificacoes = [...CLASSIFICACOES, ...pastasPi.map((p) => [p.prefixo, p.nome])];
+  const classificacoes = [TRANSFER, ...CLASSIFICACOES, ...pastasPi.map((p) => [p.prefixo, p.nome])];
+  const [avisarTransfer, setAvisarTransfer] = useState([]); // clientes que recebem os arquivos do Transfer neste envio
 
   // aberto pela Página do PI (?pi=...): já busca os arquivos daquele PI (assim que a lista de PIs carregar)
   const abriuDoLinkRef = useRef(false);
   useEffect(() => {
     if (abriuDoLinkRef.current || !pis.length) return;
     abriuDoLinkRef.current = true;
-    const doLink = new URLSearchParams(window.location.search).get("pi");
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("pasta")) setFiltroPasta(params.get("pasta")); // ex: menu "Contric Transfer" → ?pasta=TRANSFER
+    const doLink = params.get("pi");
     if (doLink && pis.some((p) => p.id === doLink)) { setPiId(doLink); buscar(doLink); }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pis]);
@@ -97,7 +113,7 @@ export default function DocumentosPage() {
     ]);
     setPastasPi(pastas || []);
     setPastasCliente(pastasLib || []);
-    const todas = [...CLASSIFICACOES, ...(pastas || []).map((p) => [p.prefixo, p.nome])];
+    const todas = [TRANSFER, ...CLASSIFICACOES, ...(pastas || []).map((p) => [p.prefixo, p.nome])];
     // PDF que existe na pasta mas perdeu o vínculo com o RDO/ocorrência: religa pelo nome do arquivo
     const nomes = (lista.data || []).filter((f) => f.id).map((f) => f.name);
     const usados = new Set([...(rdos || []), ...(ocorrencias || [])].map((x) => x.pdf_path).filter(Boolean));
@@ -178,6 +194,7 @@ export default function DocumentosPage() {
     });
     if (!validos.length) return;
     const prefixo = filtroPasta || "DOC"; // com uma pasta aberta, os arquivos já vão para ela
+    setAvisarTransfer(clientesPi.filter((c) => c.ativo !== false).map((c) => c.id)); // padrão: todos os clientes do PI
     setPendentes(validos.map((arquivo) => ({ arquivo, prefixo, base: sugerirNome(prefixo, resultado.pi), editado: false })));
   };
   const alterarPendente = (i, patch) => setPendentes((p) => p.map((x, k) => (k === i ? { ...x, ...patch } : x)));
@@ -188,6 +205,7 @@ export default function DocumentosPage() {
     setEnviando(true);
     const existentes = new Set(resultado.itens.filter((i) => i.caminho).map((i) => i.nome));
     let ok = 0, atas = 0;
+    const transferEnviados = [];
     for (const { arquivo: arq, prefixo, base } of lista) {
       // mantém o prefixo da classificação mesmo que o nome tenha sido editado
       let semExt = nomeSeguro(`${base || sugerirNome(prefixo, resultado.pi)}.x`).replace(/\.x$/, "");
@@ -199,11 +217,26 @@ export default function DocumentosPage() {
       if (error) { avisar(`Falha ao enviar "${arq.name}": ${error.message}`, "erro", 6000); continue; }
       existentes.add(nome); ok++;
       if (prefixo === "ATA_REUNIAO") atas++;
+      if (prefixo === TRANSFER[0]) transferEnviados.push(nome);
       await registrarLog(usuario, "Enviou documento", `${resultado.pi.codigo} — ${nome} (${classificacoes.find(([p]) => p === prefixo)?.[1]})`);
     }
     setEnviando(false);
     setPendentes(null);
     if (atas) chamarApi("/api/alertas", { acao: "cliente", piId: resultado.pi.id, tipo: "ata", detalhe: `${atas} nova(s) ata(s) de reunião.` });
+    // Contric Transfer: libera os arquivos aos clientes escolhidos e avisa (com a data de exclusão)
+    if (transferEnviados.length && avisarTransfer.length) {
+      const linhas = avisarTransfer.flatMap((cid) => transferEnviados.map((n) => ({ cliente_id: cid, pi_id: resultado.pi.id, caminho: `${resultado.pi.id}/${n}`, liberado_por_nome: usuario?.nome })));
+      const { error } = await supabase.from("cliente_documentos").insert(linhas);
+      if (error) avisar(`Arquivos salvos, mas não foi possível liberar aos clientes: ${error.message}`, "erro", 7000);
+      else {
+        const ate = expiraEm(Date.now()).toLocaleDateString("pt-BR");
+        for (const cid of avisarTransfer) {
+          chamarApi("/api/alertas", { acao: "cliente", tipo: "transfer", piId: resultado.pi.id, clienteId: cid,
+            detalhe: `${transferEnviados.length} arquivo(s): ${transferEnviados.join(", ")}. Disponível(is) até ${ate} — depois disso será(ão) apagado(s) automaticamente. Baixe e guarde uma cópia.` }).catch(() => {});
+        }
+        await registrarLog(usuario, "Contric Transfer: enviou arquivo(s)", `${resultado.pi.codigo} — ${transferEnviados.join(", ")} · ${avisarTransfer.length} cliente(s) · expira em ${ate}`);
+      }
+    }
     if (ok) { avisar(`${ok} arquivo(s) enviado(s).`); buscar(resultado.pi.id); }
   };
 
@@ -341,11 +374,12 @@ export default function DocumentosPage() {
                 <button onClick={() => setFiltroPasta("")} className={`chip ${!filtroPasta ? "chip-ativo" : ""}`}>Todas</button>
                 {classificacoes.map(([p, l]) => {
                   const lib = clientesDaPasta(p).length, propria = pastasPi.some((x) => x.prefixo === p);
+                  const ehTransfer = p === TRANSFER[0];
                   return (
-                    <span key={p} className={`inline-flex items-center rounded-full border ${filtroPasta === p ? "border-cyan bg-cyan/10" : "border-line"}`}>
+                    <span key={p} className={`inline-flex items-center rounded-full border ${filtroPasta === p ? "border-cyan bg-cyan/10" : ehTransfer ? "border-amber/50 bg-amber/5" : "border-line"}`}>
                       <button onClick={() => setFiltroPasta(filtroPasta === p ? "" : p)} className={`pl-3 pr-2 py-1 text-xs font-semibold ${filtroPasta === p ? "text-cyan" : "text-textmain"}`}
-                        title={propria ? `Pasta própria do ${resultado.pi?.codigo}` : "Classificação geral (Configurações)"}>
-                        <Icone nome="pasta" className="w-3.5 h-3.5 inline -mt-0.5 mr-1" />{l} <span className="text-muted font-normal">({qtdNaPasta(p)})</span>
+                        title={ehTransfer ? `Arquivos temporários: apagados ${DIAS_TRANSFER} dias após o envio` : propria ? `Pasta própria do ${resultado.pi?.codigo}` : "Classificação geral (Configurações)"}>
+                        {ehTransfer ? <span className="mr-1">⏳</span> : <Icone nome="pasta" className="w-3.5 h-3.5 inline -mt-0.5 mr-1" />}{l} <span className="text-muted font-normal">({qtdNaPasta(p)})</span>
                       </button>
                       {podeLiberarCliente && (
                         <button onClick={() => setLiberandoPasta([p, l])} title="Liberar a pasta inteira para clientes deste PI"
@@ -359,6 +393,12 @@ export default function DocumentosPage() {
               </div>
             </div>
 
+            {filtroPasta === TRANSFER[0] && (
+              <Aviso tipo="alerta" className="mb-3">
+                <strong>Contric Transfer</strong> — área temporária de troca de arquivos com o cliente. Cada arquivo é <strong>apagado automaticamente {DIAS_TRANSFER} dias corridos após o envio</strong>.
+                Os clientes escolhidos no envio recebem aviso ao salvar e quando faltam 5 dias, 2 dias e no dia da exclusão. Guarde uma cópia do que precisar manter.
+              </Aviso>
+            )}
             {itensFiltrados.length === 0 ? (
               <EstadoVazio icone="pasta" titulo="Nenhum arquivo" texto={resultado.itens.length ? "Nada encontrado com esses filtros." : "Este PI ainda não tem arquivos."} />
             ) : (
@@ -377,6 +417,7 @@ export default function DocumentosPage() {
                         {i.classificacao && i.tipo === "arquivo" ? ` · ${i.classificacao}` : ""}
                         {i.detalhe ? ` · ${i.detalhe}` : ""}
                       </div>
+                      {i.prefixo === TRANSFER[0] && <div className="mt-1"><SeloExpira data={i.data} /></div>}
                     </div>
                     <div className="flex items-center gap-1 ml-auto">
                       <button onClick={() => abrir(i)} className="btn btn-fantasma btn-sm">Abrir</button>
@@ -430,6 +471,7 @@ export default function DocumentosPage() {
                     <span className="rotulo">Classificação</span>
                     <select value={p.prefixo} className="input"
                       onChange={(e) => alterarPendente(i, { prefixo: e.target.value, ...(p.editado ? {} : { base: sugerirNome(e.target.value, resultado.pi) }) })}>
+                      <option value={TRANSFER[0]}>⏳ {TRANSFER[1]} (apaga em {DIAS_TRANSFER} dias)</option>
                       {CLASSIFICACOES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
                       {pastasPi.length > 0 && <optgroup label={`Pastas do ${resultado?.pi?.codigo}`}>
                         {pastasPi.map((p) => <option key={p.prefixo} value={p.prefixo}>{p.nome}</option>)}
@@ -447,6 +489,21 @@ export default function DocumentosPage() {
                 {p.editado && <button onClick={() => alterarPendente(i, { base: sugerirNome(p.prefixo, resultado.pi), editado: false })} className="self-start text-xs text-cyan hover:underline">Voltar à sugestão</button>}
               </div>
             ))}
+            {pendentes.some((p) => p.prefixo === TRANSFER[0]) && (
+              <div className="rounded-xl border border-amber/40 bg-amber/5 p-3 flex flex-col gap-2">
+                <div className="text-sm font-semibold">⏳ Contric Transfer — disponível até {expiraEm(Date.now()).toLocaleDateString("pt-BR")} e depois apagado automaticamente</div>
+                <div className="text-xs text-muted">Clientes que recebem o(s) arquivo(s) e os avisos (agora, com 5 dias, 2 dias e no dia da exclusão):</div>
+                {clientesPi.length === 0 ? (
+                  <Aviso tipo="info">Nenhum cliente associado ao {resultado?.pi?.codigo}. Os arquivos ficam só para a equipe (associe clientes em Clientes → Acessos).</Aviso>
+                ) : clientesPi.map((c) => (
+                  <label key={c.id} className={`flex items-center gap-2.5 text-sm cursor-pointer ${c.ativo === false ? "opacity-60" : ""}`}>
+                    <input type="checkbox" className="accent-cyan w-4 h-4" checked={avisarTransfer.includes(c.id)}
+                      onChange={() => setAvisarTransfer((p) => (p.includes(c.id) ? p.filter((x) => x !== c.id) : [...p, c.id]))} />
+                    <span>{c.nome}{c.empresa ? <span className="text-muted"> · {c.empresa}</span> : ""}</span>
+                  </label>
+                ))}
+              </div>
+            )}
             <div className="text-xs text-muteddim">A data do nome é a de hoje (dia do envio). Atas de reunião ficam visíveis aos clientes com acesso a este PI, que recebem um aviso por e-mail.</div>
           </div>
         </Modal>

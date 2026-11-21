@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { identificar, rotaSegura } from "../../../lib/authServidor";
+import { consolidarMacros } from "../../../lib/constantes";
 
 export const dynamic = "force-dynamic";
 
@@ -12,12 +13,25 @@ export const GET = rotaSegura(async (req) => {
   const perfil = { id: cliente.id, nome: cliente.nome, email: cliente.email, empresa: cliente.empresa, funcao: cliente.funcao, perfil: "cliente" };
   if (new URL(req.url).searchParams.get("resumo")) return NextResponse.json({ cliente: perfil });
 
-  const { data: acessos } = await admin.from("cliente_acessos").select("*").eq("cliente_id", cliente.id);
+  const { data: acessosDiretos } = await admin.from("cliente_acessos").select("*").eq("cliente_id", cliente.id);
+  // contrato: acesso ao PI Pai vale para todas as obras (filhos) dele, com os mesmos itens liberados
+  const acessos = [...(acessosDiretos || [])];
+  const paisComAcesso = acessos.map((a) => a.pi_id);
+  const { data: filhosLib, error: eFilhos } = paisComAcesso.length ? await admin.from("pis").select("id,pi_pai_id").in("pi_pai_id", paisComAcesso) : { data: [] };
+  for (const f of eFilhos ? [] : filhosLib || []) {
+    if (acessos.some((a) => a.pi_id === f.id)) continue;
+    const doPai = acessos.find((a) => a.pi_id === f.pi_pai_id);
+    acessos.push({ ...doPai, id: `herdado-${f.id}`, pi_id: f.id, herdado: true });
+  }
+  const filhosPorPai = {};
+  (eFilhos ? [] : filhosLib || []).forEach((f) => { (filhosPorPai[f.pi_pai_id] = filhosPorPai[f.pi_pai_id] || []).push(f.id); });
   const obras = [];
-  for (const a of acessos || []) {
-    const { data: pi } = await admin.from("pis").select("id,codigo,cliente,projeto,status,prazo").eq("id", a.pi_id).maybeSingle();
+  for (const a of acessos) {
+    const { data: pi } = await admin.from("pis").select("*").eq("id", a.pi_id).maybeSingle();
     if (!pi) continue;
-    const obra = { pi, acessos: { atas: a.ver_atas, rdos: a.ver_rdos_assinados, linhaTempo: a.ver_linha_tempo, ocorrencias: !!a.ver_ocorrencias_assinadas }, atas: [], rdos: [], etapas: [], ocorrencias: [], documentos: [] };
+    // só o necessário do PI para o portal (nada de valores internos)
+    const piPortal = { id: pi.id, codigo: pi.codigo, cliente: pi.cliente, projeto: pi.projeto, status: pi.status, prazo: pi.prazo, pi_pai_id: pi.pi_pai_id || null };
+    const obra = { pi: piPortal, filhos: filhosPorPai[pi.id] || [], acessos: { atas: a.ver_atas, rdos: a.ver_rdos_assinados, linhaTempo: a.ver_linha_tempo, ocorrencias: !!a.ver_ocorrencias_assinadas }, atas: [], rdos: [], etapas: [], ocorrencias: [], documentos: [] };
 
     if (a.ver_ocorrencias_assinadas) {
       const { data: ocs } = await admin.from("ocorrencias").select("id,categoria,descricao,created_at,status,pdf_path,assinatura_cliente,assinatura_cliente_nome")
@@ -69,8 +83,28 @@ export const GET = rotaSegura(async (req) => {
         .select("id,nome,parent_etapa_id,ordem,created_at,status,percentual,data_prevista_inicio,data_prevista_fim,responsavel_texto").eq("pi_id", pi.id);
       obra.etapas = etapas || [];
     }
+    obra._peso = Number(pi.valor_contrato) || 0; // uso interno (ponderação); não vai para o portal
     obras.push(obra);
   }
-  obras.sort((x, y) => (x.pi.codigo || "").localeCompare(y.pi.codigo || ""));
+  // consolidado do contrato: avanço de cada obra e do conjunto (ponderado pelo valor de cada obra)
+  const avancoDe = (o) => {
+    const macros = consolidarMacros(o.etapas || []).filter((e) => !e.parent_etapa_id);
+    return macros.length ? macros.reduce((s, e) => s + (e.status === "concluida" ? 100 : Math.min(100, Number(e.percentual) || 0)), 0) / macros.length : 0;
+  };
+  for (const pai of obras.filter((o) => o.filhos.length)) {
+    const lista = obras.filter((o) => pai.filhos.includes(o.pi.id));
+    const peso = (o) => (lista.some((x) => x._peso > 0) ? o._peso : 1);
+    const total = lista.reduce((s, o) => s + peso(o), 0) || 1;
+    pai.consolidado = {
+      avanco: Math.round(lista.reduce((s, o) => s + avancoDe(o) * peso(o), 0) / total),
+      termino: lista.flatMap((o) => (o.etapas || []).map((e) => e.data_prevista_fim)).filter(Boolean).sort().pop() || null,
+      obras: lista.map((o) => ({ id: o.pi.id, codigo: o.pi.codigo, projeto: o.pi.projeto, avanco: Math.round(avancoDe(o)),
+        termino: (o.etapas || []).map((e) => e.data_prevista_fim).filter(Boolean).sort().pop() || null, comCronograma: !!(o.etapas || []).length })),
+    };
+  }
+  obras.forEach((o) => { delete o._peso; });
+  // ordem: contrato (PI Pai) seguido das suas obras
+  obras.sort((x, y) => String(x.pi.pi_pai_id ? `${obras.find((o) => o.pi.id === x.pi.pi_pai_id)?.pi.codigo || ""}~${x.pi.codigo}` : x.pi.codigo)
+    .localeCompare(String(y.pi.pi_pai_id ? `${obras.find((o) => o.pi.id === y.pi.pi_pai_id)?.pi.codigo || ""}~${y.pi.codigo}` : y.pi.codigo), "pt-BR", { numeric: true }));
   return NextResponse.json({ cliente: perfil, obras });
 });

@@ -10,6 +10,7 @@ import { EQUIPE_CAMPO, TIPOS_ALERTA, montarEmailEquipe } from "../../lib/constan
 import PainelShell from "../../components/PainelShell";
 import { CabecalhoPagina, Aviso, Spinner, EstadoVazio } from "../../components/ui";
 import Icone from "../../components/Icone";
+import { GerenciarModelos } from "../../components/Editores";
 
 // seções da página (menu à esquerda)
 const SECOES = [
@@ -27,6 +28,7 @@ const SECOES = [
   ["alertas", "Alertas por e-mail", "Padrão dos alertas automáticos e horário de silêncio."],
   ["modelo_email", "Modelo de e-mail (equipe)", "Assunto, saudação, textos por tipo de alerta, assinatura e rodapé."],
   ["feriados_extras", "Feriados adicionais", "Feriados municipais / da empresa no cálculo de dias úteis."],
+  ["modelos_cronograma", "Modelos de cronograma", "Estruturas prontas de macro e sub-etapas para montar cronogramas sem digitar tudo."],
   ["atalhos", "Outras configurações", "Permissões, empresas terceiras, usuários."],
 ];
 // listas em que renomear um item também atualiza os registros que já usam o nome antigo
@@ -94,6 +96,7 @@ export default function ConfiguracoesPage() {
             {secao === "alertas" && <EditorAlertas {...props("alertas")} />}
             {secao === "modelo_email" && <EditorModeloEmail {...props("modelo_email")} />}
             {secao === "feriados_extras" && <EditorFeriados {...props("feriados_extras")} />}
+            {secao === "modelos_cronograma" && <SecaoModelos />}
             {secao === "atalhos" && <Atalhos />}
           </section>
         </div>
@@ -528,6 +531,19 @@ function CategoriasOrcamento() {
         </div>
       )}
     </>
+  );
+}
+
+// Modelos de cronograma: mesma janela usada em Configurar Cronograma (quem edita cronogramas também gerencia)
+function SecaoModelos() {
+  const [aberto, setAberto] = useState(false);
+  return (
+    <div className="flex flex-col gap-3">
+      <p className="text-sm text-muted">Modelos prontos (do sistema) e criados pela equipe. Ao montar um cronograma — ou criar as obras de um contrato — basta escolher o modelo e a data de início: macro e sub-etapas são criadas com as datas encadeadas.</p>
+      <p className="text-sm text-muted">Quem tem permissão de editar etapas também cria e edita modelos em <strong>Configurar Cronograma → Modelos</strong>, inclusive salvando um cronograma existente como modelo.</p>
+      <button onClick={() => setAberto(true)} className="btn btn-primario self-start">Abrir modelos de cronograma</button>
+      {aberto && <GerenciarModelos onFechar={() => setAberto(false)} />}
+    </div>
   );
 }
 

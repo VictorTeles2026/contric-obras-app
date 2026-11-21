@@ -138,7 +138,9 @@ function useFecharAoClicarFora(aberto, fechar) {
 
 // Visão do cronograma (página Cronograma e aba Cronograma da Página do PI).
 // piFixo: mostra só aquele PI (sem escolha de PIs nem cabeçalho); acoes: botões extras no topo.
-export default function CronogramaVisao({ piFixo = null, acoes = null }) {
+// pisFixos: vários PIs fixos (ex: as obras de um contrato, na Página do PI Pai)
+export default function CronogramaVisao({ piFixo = null, pisFixos = null, acoes = null }) {
+  const embutido = !!(piFixo || pisFixos);
   const { dados: pis, carregando: carregandoPis } = useTabela("pis", { order: { coluna: "codigo" } });
   const { dados: etapasBrutas, recarregar: recarregarEtapas } = useTabela("etapas", { order: { coluna: "created_at" } }); // mesma ordem de inserção do Cronograma
   // macro-etapa = resultado das sub-etapas (datas, %, status)
@@ -153,7 +155,7 @@ export default function CronogramaVisao({ piFixo = null, acoes = null }) {
   useEffect(() => {
     if (iniciouRef.current || carregandoPis) return;
     iniciouRef.current = true;
-    setPiIds(piFixo ? [piFixo] : pis.filter((p) => p.status === "ativo").map((p) => p.id));
+    setPiIds(pisFixos ? pisFixos : piFixo ? [piFixo] : pis.filter((p) => p.status === "ativo").map((p) => p.id));
   }, [pis, carregandoPis]);
   // período visível (em dias) — a barra de rolagem desloca essa "janela" ao longo do cronograma
   const [janelaDias, setJanelaDias] = useState(60);
@@ -209,7 +211,10 @@ export default function CronogramaVisao({ piFixo = null, acoes = null }) {
     if (al.recurso_id !== recursoId) return false;
     if (al.etapa_id) return al.etapa_id === etapa.id; // alocação feita direto na etapa (Cronograma)
     // alocação feita por PI + período (tela Recursos, sem etapa específica) — vale se o período cruza com a etapa
-    return al.pi_id === etapa.pi_id && sobrepoePeriodo(al.periodo_inicio, al.periodo_fim, etapa.data_prevista_inicio, etapa.data_prevista_fim);
+    // contrato: alocação no PI Pai vale para as etapas de todas as obras (filhos) no mesmo período
+    const piDaEtapa = pis.find((p) => p.id === etapa.pi_id);
+    return (al.pi_id === etapa.pi_id || (piDaEtapa?.pi_pai_id && al.pi_id === piDaEtapa.pi_pai_id)) &&
+      sobrepoePeriodo(al.periodo_inicio, al.periodo_fim, etapa.data_prevista_inicio, etapa.data_prevista_fim);
   });
 
   // equipe "bate" na etapa se a etapa é da área OU se tem alocado um recurso daquela equipe
@@ -375,12 +380,20 @@ export default function CronogramaVisao({ piFixo = null, acoes = null }) {
 
   return (
     <>
-      <div className={piFixo ? "" : "p-4 md:p-8"}>
-        {piFixo && acoes && <div className="flex flex-wrap justify-end gap-2 mb-3">{acoes}</div>}
-        {!piFixo && <CabecalhoPagina
+      <div className={embutido ? "" : "p-4 md:p-8"}>
+        {embutido && acoes && <div className="flex flex-wrap justify-end gap-2 mb-3">{acoes}</div>}
+        {!embutido && <CabecalhoPagina
           titulo="Cronograma"
           subtitulo="Visão multi-PI, para acompanhamento e apresentação."
           acoes={<>
+            {/* contrato: mostra só as obras (PIs filhos) de um PI Pai */}
+            {pis.some((p) => p.pi_pai_id) && (
+              <select value="" onChange={(e) => { const id = e.target.value; if (!id) return; setSoMeus(false); setPiIds(pis.filter((p) => p.pi_pai_id === id).map((p) => p.id)); }}
+                className="input !w-auto !py-2 !text-sm" aria-label="Mostrar as obras de um contrato">
+                <option value="">Contrato…</option>
+                {pis.filter((p) => pis.some((f) => f.pi_pai_id === p.id)).map((p) => <option key={p.id} value={p.id}>{p.codigo} — {pis.filter((f) => f.pi_pai_id === p.id).length} obras</option>)}
+              </select>
+            )}
             {meusRecursos.length > 0 && (
               <button onClick={() => setSoMeus((v) => !v)} aria-pressed={soMeus}
                 className={`btn ${soMeus ? "btn-primario" : "btn-contorno"}`} title="Só os PIs em que você está alocado em ao menos uma etapa">

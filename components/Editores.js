@@ -2,10 +2,10 @@
 
 import { useState, useRef } from "react";
 import { useAuth, pode } from "../lib/AuthContext";
-import { chamarApi, useTabela, gravarTolerante, registrarLog } from "../lib/dados";
+import { chamarApi, useTabela, gravarTolerante, registrarLog, useModelosCronograma, aplicarModeloNoPi } from "../lib/dados";
 import { supabase } from "../lib/supabase";
 import { useToast } from "../lib/Toast";
-import { LISTA_STATUS_ETAPA, CATEGORIAS_OCORRENCIA, STATUS_PI } from "../lib/constantes";
+import { LISTA_STATUS_ETAPA, CATEGORIAS_OCORRENCIA, STATUS_PI, duracaoModelo, etapasDoModelo } from "../lib/constantes";
 import { horasEntreHorarios, hojeISO, isoLocal, addDias, diaLancavel } from "../lib/datas";
 import { nomeBaseAnexo } from "../lib/pdfRdo";
 import { salvarEdicaoRdo, salvarEdicaoHoras, salvarEdicaoSolicitacao, salvarEdicaoOcorrencia } from "../lib/edicoes";
@@ -416,7 +416,7 @@ const todayISO = hojeISO;
 export function JanelaPi({ modo, pi, onFechar, onSalvo }) {
   const { usuario } = useAuth();
   const { avisar } = useToast();
-  const { dados: pis } = useTabela("pis", { select: "id,codigo" });
+  const { dados: pis } = useTabela("pis", { select: "*" });
   const { dados: categorias } = useTabela("categorias_orcamento", { order: { coluna: "ordem" } });
   const { dados: orcamentos, carregando } = useTabela("orcamento_pi_item", { filtro: [["pi_id", pi?.id]] });
   const valoresAtuais = modo === "edit" ? Object.fromEntries(orcamentos.map((o) => [o.categoria_id, o.valor_orcado])) : {};
@@ -433,13 +433,15 @@ export function JanelaPi({ modo, pi, onFechar, onSalvo }) {
       // tolerante: se as colunas do responsável no cliente ainda não existirem, grava o resto
       const { data, error, colunasIgnoradas } = await gravarTolerante(dadosPi, (d) => supabase.from("pis").insert(d).select().single());
       if (error) return error.message;
-      if (colunasIgnoradas?.length) avisar("PI criado, mas o responsável no cliente não foi gravado: rode o pi-responsavel-cliente.sql no Supabase.", "erro", 9000);
+      if (colunasIgnoradas?.some((c) => /pi_pai_id|valor_contrato/.test(c))) avisar("PI criado, mas o vínculo com o PI Pai / valor da obra não foi gravado: rode o script contratos-pi-pai.sql no Supabase.", "erro", 9000);
+      else if (colunasIgnoradas?.length) avisar("PI criado, mas o responsável no cliente não foi gravado: rode o pi-responsavel-cliente.sql no Supabase.", "erro", 9000);
       piId = data.id;
       registrarLog(usuario, "Criou PI", data.codigo);
     } else {
       const { error, colunasIgnoradas } = await gravarTolerante(dadosPi, (d) => supabase.from("pis").update(d).eq("id", piId));
       if (error) return error.message;
-      if (colunasIgnoradas?.length) avisar("PI salvo, mas o responsável no cliente não foi gravado: rode o pi-responsavel-cliente.sql no Supabase.", "erro", 9000);
+      if (colunasIgnoradas?.some((c) => /pi_pai_id|valor_contrato/.test(c))) avisar("PI salvo, mas o vínculo com o PI Pai / valor da obra não foi gravado: rode o script contratos-pi-pai.sql no Supabase.", "erro", 9000);
+      else if (colunasIgnoradas?.length) avisar("PI salvo, mas o responsável no cliente não foi gravado: rode o pi-responsavel-cliente.sql no Supabase.", "erro", 9000);
       registrarLog(usuario, "Editou PI", dadosPi.codigo);
     }
     // campo apagado que já tinha valor salvo vira 0
@@ -467,7 +469,7 @@ export function JanelaPi({ modo, pi, onFechar, onSalvo }) {
   if (modo === "edit" && carregando) return null;
   return (
     <>
-      {aberta && <PiModal modo={modo} piInicial={pi} categorias={categorias} valoresIniciais={valoresAtuais}
+      {aberta && <PiModal modo={modo} piInicial={pi} categorias={categorias} valoresIniciais={valoresAtuais} todosPis={pis}
         onSalvar={salvar} onCancelar={onFechar} podeCadastrarCliente={pode(usuario, "cliente.gerenciar")} />}
       {clienteNovo && <FormCliente inicial={clienteNovo} onFechar={() => { setClienteNovo(null); if (!vaiMostrarCredenciais.current) onFechar(); }}
         onSalvo={(r) => { if (r?.senha) { vaiMostrarCredenciais.current = true; setCredenciais({ ...r, titulo: "Cliente cadastrado" }); } }} />}
@@ -475,8 +477,14 @@ export function JanelaPi({ modo, pi, onFechar, onSalvo }) {
     </>
   );
 }
-function PiModal({ modo, piInicial, categorias, valoresIniciais, onSalvar, onCancelar, podeCadastrarCliente = false }) {
+function PiModal({ modo, piInicial, categorias, valoresIniciais, onSalvar, onCancelar, podeCadastrarCliente = false, todosPis = [] }) {
   const [codigo, setCodigo] = useState(piInicial?.codigo || "");
+  // contrato: PI Pai (só consolida) e valor da obra (peso no avanço consolidado)
+  const [piPaiId, setPiPaiId] = useState(piInicial?.pi_pai_id || "");
+  const [valorContrato, setValorContrato] = useState(piInicial?.valor_contrato ?? "");
+  const temFilhos = !!piInicial?.id && todosPis.some((p) => p.pi_pai_id === piInicial.id);
+  // pode ser pai: qualquer PI que não seja ele mesmo e que não seja filho de outro (1 nível)
+  const opcoesPai = todosPis.filter((p) => p.id !== piInicial?.id && !p.pi_pai_id).sort((a, b) => String(a.codigo).localeCompare(String(b.codigo), "pt-BR", { numeric: true }));
   const [cliente, setCliente] = useState(piInicial?.cliente || "");
   const [projeto, setProjeto] = useState(piInicial?.projeto || "");
   const [prazo, setPrazo] = useState(piInicial?.prazo || addDias(todayISO(), 45));
@@ -503,7 +511,8 @@ function PiModal({ modo, piInicial, categorias, valoresIniciais, onSalvar, onCan
     setSalvando(true); setErroModal("");
     // cliente e projeto sempre gravados em MAIÚSCULAS
     const erro = await onSalvar({ codigo: codigo.trim(), cliente: cliente.trim().toLocaleUpperCase("pt-BR") || null, projeto: projeto.trim().toLocaleUpperCase("pt-BR") || null, prazo: prazo || null, status,
-      responsavel_cliente_nome: respNome.trim() || null, responsavel_cliente_email: respEmail.trim() || null, responsavel_cliente_telefone: respTelefone.trim() || null }, valores,
+      responsavel_cliente_nome: respNome.trim() || null, responsavel_cliente_email: respEmail.trim() || null, responsavel_cliente_telefone: respTelefone.trim() || null,
+      pi_pai_id: temFilhos ? null : piPaiId || null, valor_contrato: valorContrato === "" ? null : Number(valorContrato) }, valores,
       cadastrarCliente ? { nome: respNome.trim(), email: respEmail.trim().toLowerCase(), telefone: respTelefone.trim(), empresa: cliente.trim().toLocaleUpperCase("pt-BR") } : null);
     setSalvando(false);
     if (erro) setErroModal(erro);
@@ -547,6 +556,17 @@ function PiModal({ modo, piInicial, categorias, valoresIniciais, onSalvar, onCan
         <Campo rotulo="Cliente" className="col-span-2 md:col-span-2"><input value={cliente} onChange={(e) => setCliente(e.target.value.toLocaleUpperCase("pt-BR"))} className="input uppercase" /></Campo>
         <Campo rotulo="Prazo" className="col-span-2 md:col-span-2"><input type="date" value={prazo || ""} onChange={(e) => setPrazo(e.target.value)} className="input" /></Campo>
         <Campo rotulo="Projeto" className="col-span-2 md:col-span-6"><input value={projeto} onChange={(e) => setProjeto(e.target.value.toLocaleUpperCase("pt-BR"))} className="input uppercase" /></Campo>
+        {/* contrato com várias obras: este PI pode ser uma obra (filho) de um PI Pai, que só consolida */}
+        <Campo rotulo="PI Pai (contrato)" className="col-span-2 md:col-span-4"
+          dica={temFilhos ? `Este PI é um PI Pai (${todosPis.filter((p) => p.pi_pai_id === piInicial.id).length} obras) — não pode ser filho de outro.` : "Deixe vazio se for um PI independente. Obras de um mesmo contrato apontam para o PI Pai."}>
+          <select value={temFilhos ? "" : piPaiId} disabled={temFilhos} onChange={(e) => setPiPaiId(e.target.value)} className="input">
+            <option value="">— nenhum (PI independente ou PI Pai) —</option>
+            {opcoesPai.map((p) => <option key={p.id} value={p.id}>{p.codigo} — {p.cliente}{p.projeto ? ` · ${p.projeto}` : ""}</option>)}
+          </select>
+        </Campo>
+        <Campo rotulo="Valor da obra (R$)" className="col-span-2 md:col-span-2" dica="Peso desta obra no avanço consolidado do contrato.">
+          <input type="number" min="0" step="0.01" value={valorContrato} onChange={(e) => setValorContrato(e.target.value)} className="input text-right" placeholder="0,00" />
+        </Campo>
         <Campo rotulo="Responsável pelo PI no cliente" className="col-span-2 md:col-span-2"><input value={respNome} onChange={(e) => setRespNome(e.target.value)} className="input" placeholder="Nome" /></Campo>
         <Campo rotulo="E-mail do responsável" className="col-span-2 md:col-span-2"><input value={respEmail} onChange={(e) => setRespEmail(e.target.value)} className="input" inputMode="email" autoCapitalize="none" /></Campo>
         <Campo rotulo="Telefone do responsável" className="col-span-2 md:col-span-2"><input value={respTelefone} onChange={(e) => setRespTelefone(e.target.value)} className="input" inputMode="tel" /></Campo>
@@ -576,3 +596,161 @@ function PiModal({ modo, piInicial, categorias, valoresIniciais, onSalvar, onCan
   );
 }
 
+// ======================= MODELOS DE CRONOGRAMA =======================
+// Seletor de modelo + data de início + prévia. `alvos`: um ou vários PIs (ex: as obras de um contrato).
+export function ModalAplicarModelo({ alvos, onFechar, onAplicado, titulo }) {
+  const { usuario } = useAuth();
+  const { avisar } = useToast();
+  const { modelos } = useModelosCronograma();
+  const [modeloId, setModeloId] = useState("");
+  const [inicio, setInicio] = useState(hojeISO());
+  const [deps, setDeps] = useState(true);
+  const [aplicando, setAplicando] = useState(false);
+  const modelo = modelos.find((m) => m.id === modeloId);
+  const previa = modelo ? etapasDoModelo(modelo, inicio) : [];
+  const aplicar = async () => {
+    if (!modelo || !alvos.length) return;
+    setAplicando(true);
+    const falhas = [];
+    for (const pi of alvos) {
+      const r = await aplicarModeloNoPi(pi.id, modelo, inicio, { dependencias: deps });
+      if (r.erro) falhas.push(`${pi.codigo}: ${r.erro}`);
+    }
+    await registrarLog(usuario, "Aplicou modelo de cronograma", `"${modelo.nome}" em ${alvos.map((p) => p.codigo).join(", ")} · início ${inicio}${falhas.length ? ` · falhas: ${falhas.join("; ")}` : ""}`);
+    setAplicando(false);
+    if (falhas.length) { avisar(`Não foi possível em: ${falhas.join(" · ")}`, "erro", 9000); return; }
+    avisar(`Modelo aplicado em ${alvos.length} PI(s).`);
+    onAplicado?.();
+    onFechar();
+  };
+  return (
+    <Modal titulo={titulo || `Aplicar modelo de cronograma${alvos.length === 1 ? ` — ${alvos[0].codigo}` : ` — ${alvos.length} PIs`}`} onFechar={() => !aplicando && onFechar()} largura="max-w-3xl" confirmarAoFechar={false}
+      rodape={<>
+        <button onClick={onFechar} disabled={aplicando} className="btn btn-fantasma">Cancelar</button>
+        <button onClick={aplicar} disabled={!modelo || !inicio || aplicando} className="btn btn-primario">{aplicando ? <><Spinner /> Aplicando...</> : `Aplicar${alvos.length > 1 ? ` em ${alvos.length} PIs` : ""}`}</button>
+      </>}>
+      <div className="flex flex-col gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+          {modelos.map((m) => (
+            <button key={m.id} type="button" onClick={() => setModeloId(m.id)}
+              className={`text-left rounded-xl border p-3 ${modeloId === m.id ? "border-cyan bg-cyan/5 ring-2 ring-cyan/20" : "border-line hover:bg-panel"}`}>
+              <div className="flex items-start justify-between gap-2"><span className="font-semibold text-sm">{m.nome}</span>{m.proprio && <span className="selo bg-[#8E5CD9]/10 text-[#8E5CD9] shrink-0">da equipe</span>}</div>
+              {m.descricao && <div className="text-xs text-muted mt-0.5">{m.descricao}</div>}
+              <div className="text-[11px] text-muteddim mt-1">{m.etapas.length} macro · {m.etapas.reduce((s, e) => s + (e.subs?.length || 0), 0)} sub-etapas · ≈ {duracaoModelo(m)} dias corridos</div>
+            </button>
+          ))}
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <Campo rotulo="Início da primeira etapa"><input type="date" value={inicio} onChange={(e) => setInicio(e.target.value)} className="input" /></Campo>
+          <label className="flex items-center gap-2 text-sm self-end pb-2 cursor-pointer"><input type="checkbox" className="accent-cyan w-4 h-4" checked={deps} onChange={(e) => setDeps(e.target.checked)} /> Criar dependências em sequência</label>
+        </div>
+        {modelo && (
+          <div className="rounded-xl border border-line max-h-[32vh] overflow-y-auto rolagem-fina">
+            {previa.map((l) => (
+              <div key={l.ref} className={`flex items-center gap-2 px-3 py-1.5 text-sm border-b border-line/60 last:border-0 ${l.paiRef ? "pl-7 text-muted" : "font-semibold bg-panel/60"}`}>
+                <span className="flex-1 min-w-0 leading-snug">{l.nome}</span>
+                <span className="text-xs tabular-nums text-muteddim whitespace-nowrap">{l.inicio.split("-").reverse().join("/")} → {l.fim.split("-").reverse().join("/")}</span>
+              </div>
+            ))}
+          </div>
+        )}
+        <div className="text-xs text-muteddim">As etapas entram depois das que o PI já tiver. Datas, nomes, equipes e alocações podem ser ajustados depois em Configurar Cronograma.</div>
+      </div>
+    </Modal>
+  );
+}
+
+// Gerenciar modelos (criar, editar, excluir, e criar a partir do cronograma de um PI).
+// `etapasPi`: etapas do PI aberto, para "Salvar este cronograma como modelo".
+export function GerenciarModelos({ onFechar, etapasPi = null, piCodigo = "" }) {
+  const { avisar } = useToast();
+  const { modelos, recarregar } = useModelosCronograma();
+  const [editando, setEditando] = useState(null);
+  const [salvando, setSalvando] = useState(false);
+  const novo = () => setEditando({ id: "", nome: "", descricao: "", etapas: [{ nome: "", subs: [{ nome: "", dias: 5 }] }] });
+  // cronograma atual → modelo (durações em dias corridos de cada etapa)
+  const doPi = () => {
+    const dur = (e) => (e.data_prevista_inicio && e.data_prevista_fim ? Math.max(1, Math.round((new Date(e.data_prevista_fim) - new Date(e.data_prevista_inicio)) / 86400000) + 1) : 5);
+    const ord = (a, b) => (a.ordem ?? 0) - (b.ordem ?? 0);
+    const macros = (etapasPi || []).filter((e) => !e.parent_etapa_id).sort(ord);
+    setEditando({ id: "", nome: `Modelo do ${piCodigo}`, descricao: `Criado a partir do cronograma do ${piCodigo}.`,
+      etapas: macros.map((m) => { const subs = etapasPi.filter((s) => s.parent_etapa_id === m.id).sort(ord); return subs.length ? { nome: m.nome, subs: subs.map((s) => ({ nome: s.nome, dias: dur(s) })) } : { nome: m.nome, dias: dur(m) }; }) });
+  };
+  const salvar = async () => {
+    setSalvando(true);
+    const { ok, json } = await chamarApi("/api/configuracoes", { acao: "modelo_salvar", modelo: editando });
+    setSalvando(false);
+    if (!ok) { avisar(json.error || "Não foi possível salvar.", "erro", 7000); return; }
+    avisar("Modelo salvo — disponível para todos."); setEditando(null); recarregar();
+  };
+  const excluir = async (m) => {
+    if (!window.confirm(`Excluir o modelo "${m.nome}"? Os cronogramas já criados com ele não mudam.`)) return;
+    const { ok, json } = await chamarApi("/api/configuracoes", { acao: "modelo_excluir", id: m.id });
+    if (!ok) { avisar(json.error || "Não foi possível excluir.", "erro", 7000); return; }
+    avisar("Modelo excluído."); recarregar();
+  };
+  const set = (fn) => setEditando((p) => { const c = JSON.parse(JSON.stringify(p)); fn(c); return c; });
+  if (editando) {
+    const valido = editando.nome.trim() && editando.etapas.some((e) => e.nome.trim());
+    return (
+      <Modal titulo={editando.id ? "Editar modelo" : "Novo modelo de cronograma"} onFechar={() => setEditando(null)} largura="max-w-3xl"
+        rodape={<>
+          <button onClick={() => setEditando(null)} className="btn btn-fantasma">Voltar</button>
+          <button onClick={salvar} disabled={!valido || salvando} className="btn btn-primario">{salvando ? <><Spinner /> Salvando...</> : "Salvar modelo"}</button>
+        </>}>
+        <div className="flex flex-col gap-3">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <Campo rotulo="Nome do modelo *"><input value={editando.nome} maxLength={80} onChange={(e) => set((c) => { c.nome = e.target.value; })} className="input" /></Campo>
+            <Campo rotulo="Descrição"><input value={editando.descricao} maxLength={240} onChange={(e) => set((c) => { c.descricao = e.target.value; })} className="input" /></Campo>
+          </div>
+          <div className="text-xs text-muted">Macro-etapas e sub-etapas com a duração em <strong>dias corridos</strong>. Macro sem sub-etapas tem a própria duração. Total ≈ {duracaoModelo(editando)} dias.</div>
+          {editando.etapas.map((m, i) => (
+            <div key={i} className="rounded-xl border border-line p-2.5 flex flex-col gap-1.5">
+              <div className="flex items-center gap-2">
+                <input value={m.nome} maxLength={70} placeholder="Nome da macro-etapa" onChange={(e) => set((c) => { c.etapas[i].nome = e.target.value; })} className="input !py-1.5 font-semibold flex-1" />
+                {!m.subs?.length && <input type="number" min="1" max="365" value={m.dias || 1} onChange={(e) => set((c) => { c.etapas[i].dias = e.target.value; })} className="input !py-1.5 !w-20 text-right" aria-label="dias" />}
+                <button onClick={() => set((c) => { if (i > 0) [c.etapas[i - 1], c.etapas[i]] = [c.etapas[i], c.etapas[i - 1]]; })} className="p-1.5 text-muted hover:text-cyan" title="Subir">▲</button>
+                <button onClick={() => set((c) => { c.etapas.splice(i, 1); })} className="p-1.5 text-muteddim hover:text-red" title="Remover macro"><Icone nome="lixo" className="w-4 h-4" /></button>
+              </div>
+              {(m.subs || []).map((s, k) => (
+                <div key={k} className="flex items-center gap-2 pl-5">
+                  <input value={s.nome} maxLength={70} placeholder="Sub-etapa" onChange={(e) => set((c) => { c.etapas[i].subs[k].nome = e.target.value; })} className="input !py-1.5 flex-1" />
+                  <input type="number" min="1" max="365" value={s.dias} onChange={(e) => set((c) => { c.etapas[i].subs[k].dias = e.target.value; })} className="input !py-1.5 !w-20 text-right" aria-label="dias" />
+                  <span className="text-xs text-muteddim">dias</span>
+                  <button onClick={() => set((c) => { c.etapas[i].subs.splice(k, 1); })} className="p-1.5 text-muteddim hover:text-red" title="Remover sub-etapa"><Icone nome="lixo" className="w-4 h-4" /></button>
+                </div>
+              ))}
+              <button onClick={() => set((c) => { c.etapas[i].subs = [...(c.etapas[i].subs || []), { nome: "", dias: 5 }]; delete c.etapas[i].dias; })} className="self-start ml-5 text-xs text-cyan hover:underline">+ sub-etapa</button>
+            </div>
+          ))}
+          <button onClick={() => set((c) => { c.etapas.push({ nome: "", subs: [{ nome: "", dias: 5 }] }); })} className="btn btn-contorno btn-sm self-start"><Icone nome="mais2" className="w-4 h-4" /> Macro-etapa</button>
+        </div>
+      </Modal>
+    );
+  }
+  return (
+    <Modal titulo="Modelos de cronograma" onFechar={onFechar} largura="max-w-3xl" confirmarAoFechar={false}
+      rodape={<button onClick={onFechar} className="btn btn-primario">Fechar</button>}>
+      <div className="flex flex-col gap-3">
+        <div className="flex flex-wrap gap-2">
+          <button onClick={novo} className="btn btn-primario btn-sm"><Icone nome="mais2" className="w-4 h-4" /> Novo modelo</button>
+          {etapasPi?.length > 0 && <button onClick={doPi} className="btn btn-contorno btn-sm">Salvar o cronograma do {piCodigo} como modelo</button>}
+        </div>
+        <div className="text-xs text-muted">Os modelos da equipe ficam disponíveis para todos ao montar cronogramas e ao criar as obras de um contrato. Os modelos do sistema não podem ser alterados, mas podem servir de base.</div>
+        <div className="flex flex-col divide-y divide-line border border-line rounded-xl">
+          {modelos.map((m) => (
+            <div key={m.id} className="p-3 flex flex-wrap items-center gap-2">
+              <div className="flex-1 min-w-[200px]">
+                <div className="font-semibold text-sm">{m.nome} {m.proprio ? <span className="selo bg-[#8E5CD9]/10 text-[#8E5CD9] ml-1">da equipe{m.criado_por ? ` · ${m.criado_por}` : ""}</span> : <span className="selo bg-panel text-muted ml-1">sistema</span>}</div>
+                <div className="text-xs text-muted">{m.etapas.length} macro · {m.etapas.reduce((s, e) => s + (e.subs?.length || 0), 0)} sub · ≈ {duracaoModelo(m)} dias{m.descricao ? ` · ${m.descricao}` : ""}</div>
+              </div>
+              {m.proprio
+                ? <><button onClick={() => setEditando(JSON.parse(JSON.stringify(m)))} className="btn btn-fantasma btn-sm">Editar</button><button onClick={() => excluir(m)} className="p-2 text-muteddim hover:text-red" aria-label="Excluir"><Icone nome="lixo" className="w-4 h-4" /></button></>
+                : <button onClick={() => setEditando({ ...JSON.parse(JSON.stringify(m)), id: "", nome: `${m.nome} (cópia)` })} className="btn btn-fantasma btn-sm">Usar como base</button>}
+            </div>
+          ))}
+        </div>
+      </div>
+    </Modal>
+  );
+}

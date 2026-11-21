@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { identificar, rotaSegura } from "../../../lib/authServidor";
+import { identificar, rotaSegura, permissoesDe } from "../../../lib/authServidor";
 
 // Configurações estruturais — SOMENTE Master. Tudo vai para a Auditoria.
 const CHAVES = ["equipes", "funcoes", "categorias_ocorrencia", "tipos_recurso", "unidades", "classificacoes_doc", "prazos", "feriados_extras", "status_etapa", "status_pi", "jornada", "alertas", "modelo_email"];
@@ -11,14 +11,54 @@ const ROTULO = {
   alertas: "Alertas por e-mail",
   modelo_email: "Modelo de e-mail (equipe)",
 };
+const erroTabelaModelo = (e) => NextResponse.json({ error: /configuracoes/.test(e.message) ? "Rode o script configuracoes.sql no Supabase." : e.message }, { status: 400 });
 const ausente = (e) => /does not exist|could not find|schema cache/i.test(e?.message || "");
+
+// modelo de cronograma: { id, nome, descricao, etapas: [{ nome, dias?, subs?: [{ nome, dias }] }] }
+function limparModelo(m) {
+  const txt = (s, n) => String(s || "").trim().slice(0, n);
+  const dias = (d) => Math.max(1, Math.min(365, Math.round(Number(d) || 1)));
+  const etapas = (Array.isArray(m?.etapas) ? m.etapas : []).slice(0, 40).map((e) => {
+    const subs = (Array.isArray(e.subs) ? e.subs : []).slice(0, 40).map((s) => ({ nome: txt(s.nome, 70), dias: dias(s.dias) })).filter((s) => s.nome);
+    return subs.length ? { nome: txt(e.nome, 70), subs } : { nome: txt(e.nome, 70), dias: dias(e.dias) };
+  }).filter((e) => e.nome);
+  return { id: txt(m?.id, 60) || `m${Date.now()}`, nome: txt(m?.nome, 80), descricao: txt(m?.descricao, 240), etapas };
+}
 
 export const POST = rotaSegura(async (req) => {
   const { admin, interno, resposta } = await identificar(req);
   if (resposta) return resposta;
-  if (interno?.perfil !== "master") return NextResponse.json({ error: "Somente o Master altera as configurações." }, { status: 403 });
   const b = await req.json().catch(() => ({}));
   const log = (acao, detalhe) => admin.from("logs_auditoria").insert({ usuario_id: interno.id, usuario_nome: interno.nome, acao, detalhe });
+
+  // ---- modelos de cronograma: quem edita cronogramas (etapa.editar) cria/altera modelos para todos ----
+  if (b.acao === "modelo_salvar" || b.acao === "modelo_excluir") {
+    if (!interno) return NextResponse.json({ error: "Acesso não autorizado." }, { status: 403 });
+    const mapa = await permissoesDe(admin, interno);
+    if (!["S", "P"].includes(mapa["etapa.editar"]) && interno.perfil !== "master") return NextResponse.json({ error: "Seu usuário não pode criar modelos de cronograma." }, { status: 403 });
+    const { data: linha, error: e0 } = await admin.from("configuracoes").select("valor").eq("chave", "modelos_cronograma").maybeSingle();
+    if (e0) return erroTabelaModelo(e0);
+    let lista = Array.isArray(linha?.valor) ? linha.valor : [];
+    let detalhe;
+    if (b.acao === "modelo_salvar") {
+      const m = limparModelo(b.modelo);
+      if (!m.nome || !m.etapas.length) return NextResponse.json({ error: "Informe o nome do modelo e ao menos uma etapa." }, { status: 400 });
+      const existe = lista.some((x) => x.id === m.id);
+      lista = existe ? lista.map((x) => (x.id === m.id ? { ...m, criado_por: x.criado_por, atualizado_por: interno.nome } : x)) : [...lista, { ...m, criado_por: interno.nome }];
+      detalhe = `${existe ? "Editou" : "Criou"} modelo "${m.nome}" (${m.etapas.length} macro-etapa(s))`;
+    } else {
+      const alvo = lista.find((x) => x.id === b.id);
+      if (!alvo) return NextResponse.json({ error: "Modelo não encontrado." }, { status: 404 });
+      lista = lista.filter((x) => x.id !== b.id);
+      detalhe = `Excluiu modelo "${alvo.nome}"`;
+    }
+    const { error } = await admin.from("configuracoes").upsert({ chave: "modelos_cronograma", valor: lista, atualizado_por: interno.nome, atualizado_em: new Date().toISOString() }, { onConflict: "chave" });
+    if (error) return erroTabelaModelo(error);
+    await log("Modelos de cronograma", detalhe);
+    return NextResponse.json({ ok: true });
+  }
+
+  if (interno?.perfil !== "master") return NextResponse.json({ error: "Somente o Master altera as configurações." }, { status: 403 });
   const erroTabela = (e) => NextResponse.json({ error: /configuracoes/.test(e.message) ? "Rode o script configuracoes.sql no Supabase." : e.message }, { status: 400 });
 
   // ---- salvar uma lista/valor ----

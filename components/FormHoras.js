@@ -19,7 +19,11 @@ import { valorPermissao } from "../lib/permissoes";
 // `largo` (computador): obras à esquerda; dia, horários e envio à direita
 export default function FormHoras({ usuario, pis, onEnviado, compacto = false, largo = false }) {
   const { avisar } = useToast();
-  const variasObras = usuario?.perfil === "lider";
+  // qualquer pessoa pode lançar o dia em várias obras (ex: líder que conduziu equipes em 4 obras)
+  const variasObras = true;
+  // várias obras: "dividir" = um horário só, total repartido · "horarios" = entrada/saída em cada obra
+  const [modoDiv, setModoDiv] = useState("horarios");
+  const [trechos, setTrechos] = useState({}); // piId → { ini, fim }
   const porCliente = useMemo(() => agruparPorCliente(pis), [pis]);
   const [pisSelecionados, setPisSelecionados] = useState(pis.length === 1 ? [pis[0].id] : []);
   const [data, setData] = useState(hojeISO());
@@ -41,7 +45,25 @@ export default function FormHoras({ usuario, pis, onEnviado, compacto = false, l
   const somaDivisao = Math.round(divisao.reduce((s, h) => s + h, 0) * 100) / 100;
   const divisaoBate = Math.abs(somaDivisao - Math.round(horasTotais * 4) / 4) < 0.01;
   const longoDemais = brutas > 16;
-  const podeEnviar = pisSelecionados.length > 0 && horasTotais > 0 && !longoDemais && divisaoBate && divisao.every((h) => h > 0) && !enviando && diaLancavel(data);
+  // ---- horários em cada obra: cada trecho tem as suas horas (almoço descontado só no trecho que passa por ele)
+  const porHorario = pisSelecionados.length > 1 && modoDiv === "horarios";
+  const paraMin = (h) => { const [a, b] = String(h || "").split(":").map(Number); return a * 60 + (b || 0); };
+  const calcTrechos = pisSelecionados.map((pid) => {
+    const t = trechos[pid] || {};
+    const r = horasComAlmoco(t.ini, t.fim);
+    return { pid, ini: t.ini || "", fim: t.fim || "", horas: Math.round(r.liquidas * 4) / 4, brutas: r.brutas, almoco: r.almoco, viraDia: r.viraDia };
+  });
+  const trechoCompleto = (t) => t.ini && t.fim && !t.viraDia && t.horas > 0;
+  const sobrepostos = new Set();
+  calcTrechos.forEach((a, i) => calcTrechos.forEach((b, j) => {
+    if (i < j && trechoCompleto(a) && trechoCompleto(b) && paraMin(a.ini) < paraMin(b.fim) && paraMin(b.ini) < paraMin(a.fim)) { sobrepostos.add(a.pid); sobrepostos.add(b.pid); }
+  }));
+  const totalTrechos = calcTrechos.reduce((s, t) => s + (trechoCompleto(t) ? t.horas : 0), 0);
+  const brutasTrechos = calcTrechos.reduce((s, t) => s + (trechoCompleto(t) ? t.brutas : 0), 0);
+  const trechosOk = calcTrechos.every(trechoCompleto) && !sobrepostos.size && brutasTrechos <= 16;
+  const setTrecho = (pid, patch) => setTrechos((p) => ({ ...p, [pid]: { ...(p[pid] || {}), ...patch } }));
+  const podeEnviar = pisSelecionados.length > 0 && !enviando && diaLancavel(data) && (porHorario ? trechosOk
+    : horasTotais > 0 && !longoDemais && divisaoBate && divisao.every((h) => h > 0));
 
   const enviar = async () => {
     if (!podeEnviar) return;
@@ -49,18 +71,21 @@ export default function FormHoras({ usuario, pis, onEnviado, compacto = false, l
     const grupo = pisSelecionados.length > 1 ? (crypto.randomUUID?.() || `${Date.now()}-${Math.random()}`) : null;
     const linhas = pisSelecionados.map((pid, i) => ({
       usuario_id: usuario.id, pi_id: pid, data,
-      horas_totais: divisao[i], status: "pendente",
-      hora_inicio: horaInicio, hora_fim: horaFim,
+      horas_totais: porHorario ? calcTrechos[i].horas : divisao[i], status: "pendente",
+      hora_inicio: porHorario ? calcTrechos[i].ini : horaInicio, hora_fim: porHorario ? calcTrechos[i].fim : horaFim,
       ...(grupo ? { grupo_lancamento: grupo } : {}),
     }));
     // tolerante: banco ainda sem hora_inicio/hora_fim/grupo_lancamento grava sem essas colunas
     const { error } = await gravarTolerante(linhas, (d) => supabase.from("apontamentos_horas").insert(d));
     setEnviando(false);
     if (error) { avisar(`Não foi possível enviar: ${error.message}`, "erro", 6000); return; }
-    await registrarLog(usuario, "Enviou horas do dia", `${data} — ${horaInicio}–${horaFim} (almoço −${formatarHoras(almoco)}) — ${pisSelecionados.length} PI(s) — ${formatarHoras(horasTotais)}`);
-    avisar(pisSelecionados.length > 1 ? `Horas enviadas — divididas em ${pisSelecionados.length} obras.` : "Horas enviadas para validação.");
+    const resumo = porHorario
+      ? calcTrechos.map((t) => `${codigo(t.pid)} ${t.ini}–${t.fim} (${formatarHoras(t.horas)})`).join(" · ")
+      : `${horaInicio}–${horaFim} (almoço −${formatarHoras(almoco)}) — ${pisSelecionados.length} PI(s) — ${formatarHoras(horasTotais)}`;
+    await registrarLog(usuario, "Enviou horas do dia", `${data} — ${resumo}`);
+    avisar(pisSelecionados.length > 1 ? `Horas enviadas em ${pisSelecionados.length} obras (${formatarHoras(porHorario ? totalTrechos : horasTotais)}).` : "Horas enviadas para validação.");
     setPisSelecionados(pis.length === 1 ? [pis[0].id] : []);
-    setHoraFim(""); setAjuste({}); setAjustar(false);
+    setHoraFim(""); setAjuste({}); setAjustar(false); setTrechos({});
     onEnviado?.();
   };
 
@@ -99,8 +124,38 @@ export default function FormHoras({ usuario, pis, onEnviado, compacto = false, l
         <input type="date" value={data} max={hojeISO()} onChange={(e) => setData(e.target.value)} className={tamanhoCampo} />
       </div>
 
+      {pisSelecionados.length > 1 && (
+        <div>
+          <div className="rotulo">Como foi o dia nas {pisSelecionados.length} obras?</div>
+          <Segmentado valor={modoDiv} onChange={setModoDiv} opcoes={[["horarios", "Horários em cada obra"], ["dividir", "Dividir o total"]]} />
+        </div>
+      )}
+
+      {porHorario && (
+        <div className="flex flex-col gap-2">
+          {calcTrechos.map((t) => (
+            <div key={t.pid} className={`rounded-xl border p-3 ${sobrepostos.has(t.pid) || t.viraDia ? "border-red/40 bg-red/5" : "border-line bg-white"}`}>
+              <div className="flex items-center justify-between gap-2 mb-2">
+                <span className="font-semibold text-sm">{codigo(t.pid)} <span className="text-xs font-normal text-muted">{pis.find((p) => p.id === t.pid)?.projeto || ""}</span></span>
+                <strong className="tabular-nums text-sm">{trechoCompleto(t) ? formatarHoras(t.horas) : "—"}</strong>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <label className="block"><span className="rotulo">Entrada</span><input type="time" value={t.ini} onChange={(e) => setTrecho(t.pid, { ini: e.target.value })} className="input" /></label>
+                <label className="block"><span className="rotulo">Saída</span><input type="time" value={t.fim} onChange={(e) => setTrecho(t.pid, { fim: e.target.value })} className="input" /></label>
+              </div>
+              {t.almoco > 0 && trechoCompleto(t) && <div className="text-xs text-muted mt-1">almoço descontado neste trecho: −{formatarHoras(t.almoco)}</div>}
+              {sobrepostos.has(t.pid) && <div className="text-xs text-red mt-1">Este horário se sobrepõe ao de outra obra.</div>}
+              {t.viraDia && <div className="text-xs text-red mt-1">A saída precisa ser depois da entrada (para virar a noite, use "Dividir o total").</div>}
+            </div>
+          ))}
+          <div className={`rounded-xl border p-3 flex items-baseline justify-between text-sm ${brutasTrechos > 16 ? "border-red/30 bg-red/5 text-red" : "border-line bg-white"}`}>
+            <span>Total do dia {brutasTrechos > 16 ? "(máximo de 16h)" : ""}</span><strong className="font-head text-2xl text-textmain">{formatarHoras(totalTrechos)}</strong>
+          </div>
+        </div>
+      )}
+
       {/* empilhados no celular — evita o controle nativo de hora do iPhone estourar a largura */}
-      <div className={compacto || largo ? "grid grid-cols-2 gap-3" : "flex flex-col gap-3"}>
+      {!porHorario && <div className={compacto || largo ? "grid grid-cols-2 gap-3" : "flex flex-col gap-3"}>
         <label className="block">
           <span className="rotulo">Entrada</span>
           <input type="time" value={horaInicio} onChange={(e) => setHoraInicio(e.target.value)} className={tamanhoCampo} />
@@ -109,9 +164,9 @@ export default function FormHoras({ usuario, pis, onEnviado, compacto = false, l
           <span className="rotulo">Saída</span>
           <input type="time" value={horaFim} onChange={(e) => setHoraFim(e.target.value)} className={tamanhoCampo} />
         </label>
-      </div>
+      </div>}
 
-      {brutas > 0 && (
+      {!porHorario && brutas > 0 && (
         <div className={`rounded-xl border p-4 text-sm leading-relaxed animar-fade ${longoDemais ? "bg-red/5 border-red/30 text-red" : "bg-white border-line text-muted"}`}>
           {longoDemais ? (
             <>Total de <strong>{formatarHoras(brutas)}</strong> — confira os horários (máximo de 16h por lançamento).</>
@@ -175,7 +230,9 @@ export const podeLancarParaRecursos = (usuario) =>
 export function FormHorasRecursos({ usuario, meusPis, todosPis, onEnviado, largo = false }) {
   const { avisar } = useToast();
   const escopoTotal = valorPermissao(usuario, "horas.lancar_equipe") === "S";
-  const pisDisponiveis = (escopoTotal ? todosPis.filter((p) => p.status === "ativo" || !p.status) : meusPis);
+  // PI Pai (contrato) não recebe horas: os lançamentos são sempre nas obras
+  const ehPai = (id) => todosPis.some((p) => p.pi_pai_id === id);
+  const pisDisponiveis = (escopoTotal ? todosPis.filter((p) => p.status === "ativo" || !p.status) : meusPis).filter((p) => !ehPai(p.id));
   const { dados: recursos } = useTabela("recursos", { order: { coluna: "nome" } });
   const { dados: alocacoes } = useTabela("alocacoes_recurso", { select: "recurso_id,pi_id" });
   const [piId, setPiId] = useState(pisDisponiveis.length === 1 ? pisDisponiveis[0].id : "");

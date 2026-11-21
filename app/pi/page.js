@@ -20,6 +20,7 @@ import { horasDoLancamento } from "../../lib/horas";
 // Página do PI: tudo de uma obra num só lugar (Resumo, Cronograma, Equipe, Campo,
 // Documentos, Financeiro, Cliente). Sem ?id=... mostra a lista de PIs para escolher.
 const ABAS = [
+  ["contrato", "Obras do contrato", null], // só no PI Pai (ver DetalhePi)
   ["resumo", "Resumo", null],
   ["cronograma", "Cronograma", "pi.ver"],
   ["equipe", "Equipe e recursos", "recurso.ver"],
@@ -204,9 +205,15 @@ function DetalhePi({ id, abaInicial }) {
   const router = useRouter();
   const { dados: pis, carregando } = useTabela("pis");
   const pi = pis.find((p) => p.id === id);
+  // contrato: PI Pai (consolida as obras) ou obra (filho) de um contrato
+  const filhos = pis.filter((p) => p.pi_pai_id === id).sort(compararPis);
+  const ehPai = filhos.length > 0;
+  const pai = pi?.pi_pai_id ? pis.find((p) => p.id === pi.pi_pai_id) : null;
   // Financeiro: completo (relatório/valores) ou só de horas (permissão financeiro.horas — ex: líder de campo)
-  const abas = ABAS.filter(([, , perm]) => !perm || pode(usuario, perm) || (perm === "relatorio.ver" && (pode(usuario, "dashboard.valores") || pode(usuario, "financeiro.horas"))));
-  const [aba, setAbaEstado] = useState(abas.some(([k]) => k === abaInicial) ? abaInicial : "resumo");
+  const abas = ABAS.filter(([k, , perm]) => (k !== "contrato" || ehPai) && (!perm || pode(usuario, perm) || (perm === "relatorio.ver" && (pode(usuario, "dashboard.valores") || pode(usuario, "financeiro.horas")))));
+  const [aba, setAbaEstado] = useState(abaInicial || null);
+  // aba pedida (se o usuário puder vê-la); sem pedido, o PI Pai abre direto na consolidação
+  const abaAtiva = aba && abas.some(([k]) => k === aba) ? aba : ehPai ? "contrato" : "resumo";
   const [qr, setQr] = useState(false);
   const setAba = (k) => { setAbaEstado(k); router.replace(`/pi?id=${id}${k !== "resumo" ? `&aba=${k}` : ""}`, { scroll: false }); };
 
@@ -225,6 +232,8 @@ function DetalhePi({ id, abaInicial }) {
           </div>
           <div className="titulo-destaque mt-1">{pi.cliente}</div>
           {pi.projeto && <div className="text-muted">{pi.projeto}</div>}
+          {ehPai && <div className="selo bg-navy/10 text-navy mt-1.5">PI Pai · contrato com {filhos.length} obras</div>}
+          {pai && <Link href={`/pi?id=${pai.id}`} className="selo bg-navy/10 text-navy mt-1.5 hover:underline">Obra do contrato {pai.codigo} →</Link>}
         </div>
         <div className="flex flex-wrap gap-2">
           <button onClick={() => setQr(true)} className="btn btn-contorno"><Icone nome="qr" className="w-4 h-4" /> QR Code</button>
@@ -234,22 +243,108 @@ function DetalhePi({ id, abaInicial }) {
 
       <div className="flex gap-1 border-b border-line mb-5 overflow-x-auto" role="tablist">
         {abas.map(([k, l]) => (
-          <button key={k} role="tab" aria-selected={aba === k} onClick={() => setAba(k)}
-            className={`relative shrink-0 px-3 sm:px-4 py-2.5 text-sm font-semibold whitespace-nowrap transition-colors ${aba === k ? "text-cyan" : "text-muted hover:text-textmain"}`}>
-            {l}{aba === k && <span className="absolute left-0 right-0 -bottom-px h-0.5 bg-cyan rounded-full" />}
+          <button key={k} role="tab" aria-selected={abaAtiva === k} onClick={() => setAba(k)}
+            className={`relative shrink-0 px-3 sm:px-4 py-2.5 text-sm font-semibold whitespace-nowrap transition-colors ${abaAtiva === k ? "text-cyan" : "text-muted hover:text-textmain"}`}>
+            {l}{abaAtiva === k && <span className="absolute left-0 right-0 -bottom-px h-0.5 bg-cyan rounded-full" />}
           </button>
         ))}
       </div>
 
-      {aba === "resumo" && <AbaResumo pi={pi} usuario={usuario} irPara={setAba} />}
-      {aba === "cronograma" && <AbaCronograma pi={pi} />}
-      {aba === "equipe" && <AbaEquipe pi={pi} usuario={usuario} />}
-      {aba === "campo" && <AbaCampo pi={pi} />}
-      {aba === "documentos" && <AbaDocumentos pi={pi} />}
-      {aba === "financeiro" && <AbaFinanceiro pi={pi} usuario={usuario} />}
-      {aba === "cliente" && <AbaCliente pi={pi} />}
+      {abaAtiva === "contrato" && <AbaContrato pai={pi} filhos={filhos} usuario={usuario} />}
+      {abaAtiva === "resumo" && <AbaResumo pi={pi} usuario={usuario} irPara={setAba} />}
+      {abaAtiva === "cronograma" && (ehPai ? <CronogramaVisao pisFixos={filhos.map((f) => f.id)} /> : <AbaCronograma pi={pi} />)}
+      {abaAtiva === "equipe" && <AbaEquipe pi={pi} usuario={usuario} />}
+      {abaAtiva === "campo" && <AbaCampo pi={pi} />}
+      {abaAtiva === "documentos" && <AbaDocumentos pi={pi} />}
+      {abaAtiva === "financeiro" && <AbaFinanceiro pi={pi} usuario={usuario} />}
+      {abaAtiva === "cliente" && <AbaCliente pi={pi} />}
 
       {qr && <ModalQrPi pi={pi} comPdf onFechar={() => setQr(false)} />}
+    </div>
+  );
+}
+
+// ---------------- Obras do contrato (PI Pai): consolidação das obras (PIs filhos) ----------------
+// Avanço ponderado pelo VALOR de cada obra (sem valor: pelo orçamento de compra; sem nada: peso igual).
+// Horas: orçado × consumo (lançamentos classificados e ajustes) × resultado, por obra e total.
+function AbaContrato({ pai, filhos, usuario }) {
+  const verValores = pode(usuario, "dashboard.valores") || pode(usuario, "relatorio.ver");
+  const ids = new Set(filhos.map((f) => f.id));
+  const { dados: etapasBrutas } = useTabela("etapas", { select: "id,pi_id,parent_etapa_id,status,percentual,data_prevista_inicio,data_prevista_fim" });
+  const { dados: itens } = useTabela("orcamento_pi_item");
+  const { dados: categorias } = useTabela("categorias_orcamento");
+  const { dados: apontamentos } = useTabela("apontamentos_horas");
+  const etapas = useMemo(() => consolidarMacros(etapasBrutas.filter((e) => ids.has(e.pi_id))), [etapasBrutas, filhos]); // eslint-disable-line react-hooks/exhaustive-deps
+  const grupoDe = Object.fromEntries(categorias.map((c) => [c.id, c.grupo]));
+  const linhas = filhos.map((f) => {
+    const ets = etapas.filter((e) => e.pi_id === f.id);
+    const macros = ets.filter((e) => !e.parent_etapa_id);
+    const avanco = macros.length ? macros.reduce((s, e) => s + (e.status === "concluida" ? 100 : Math.min(100, Number(e.percentual) || 0)), 0) / macros.length : 0;
+    const atrasadas = ets.filter((e) => !e.calculada && e.status !== "concluida" && (diasAte(e.data_prevista_fim) ?? 0) < 0).length;
+    const termino = ets.map((e) => e.data_prevista_fim).filter(Boolean).sort().pop();
+    const doPi = itens.filter((i) => i.pi_id === f.id);
+    const soma = (g, campo) => doPi.filter((i) => grupoDe[i.categoria_id] === g).reduce((s, i) => s + (Number(i[campo]) || 0), 0);
+    const hOrc = soma("moi_horas", "valor_orcado");
+    const hLanc = apontamentos.filter((a) => a.pi_id === f.id && a.status !== "rejeitado").reduce((s, a) => { const h = horasDoLancamento(a); return s + (a.categoria_normal_id ? h.normais : 0) + (a.categoria_extra_id ? h.extras : 0); }, 0);
+    const hReal = soma("moi_horas", "valor_realizado") + hLanc;
+    const rOrc = soma("compra_reais", "valor_orcado"), rReal = soma("compra_reais", "valor_realizado");
+    const valor = Number(f.valor_contrato) || 0;
+    return { f, avanco, atrasadas, termino, hOrc, hReal, rOrc, rReal, valor, etapas: ets.length };
+  });
+  const pesoDe = (l) => (linhas.some((x) => x.valor > 0) ? l.valor : linhas.some((x) => x.rOrc > 0) ? l.rOrc : 1);
+  const pesoTotal = linhas.reduce((s, l) => s + pesoDe(l), 0) || 1;
+  const avancoContrato = Math.round(linhas.reduce((s, l) => s + l.avanco * pesoDe(l), 0) / pesoTotal);
+  const criterio = linhas.some((x) => x.valor > 0) ? "ponderado pelo valor de cada obra" : linhas.some((x) => x.rOrc > 0) ? "ponderado pelo orçamento de compra" : "média simples (informe o valor de cada obra)";
+  const tot = (k) => linhas.reduce((s, l) => s + l[k], 0);
+  const consumoH = tot("hOrc") ? Math.round((tot("hReal") / tot("hOrc")) * 100) : null;
+  const termino = linhas.map((l) => l.termino).filter(Boolean).sort().pop();
+  const h = (v) => `${Number(v || 0).toLocaleString("pt-BR", { maximumFractionDigits: 1 })} h`;
+  const cor = (orc, real) => (real <= orc ? "text-green" : "text-red");
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
+        <Indicador titulo="Avanço do contrato" valor={`${avancoContrato}%`} detalhe={criterio} cor="text-cyan" />
+        <Indicador titulo="Obras" valor={filhos.length} detalhe={`${linhas.filter((l) => l.avanco >= 100).length} concluída(s)`} />
+        <Indicador titulo="Etapas atrasadas" valor={tot("atrasadas")} detalhe="somando as obras" cor={tot("atrasadas") ? "text-red" : "text-green"} />
+        <Indicador titulo="Consumo de horas" valor={consumoH === null ? "—" : `${consumoH}%`} detalhe={`${h(tot("hReal"))} de ${h(tot("hOrc"))}`} cor={consumoH === null ? "text-muteddim" : consumoH <= avancoContrato ? "text-green" : "text-red"} />
+        <Indicador titulo="Término previsto" valor={termino ? formatarData(termino) : "—"} detalhe={pai.prazo ? `prazo ${formatarData(pai.prazo)}` : ""} cor={termino && pai.prazo && termino > pai.prazo ? "text-red" : "text-textmain"} />
+      </div>
+      <Secao titulo={`Obras do contrato ${pai.codigo}`} acao={<Link href={`/linha-do-tempo`} className="text-sm text-cyan hover:underline">Ver no Cronograma</Link>}>
+        <div className="overflow-x-auto -mx-1">
+          <table className="w-full text-sm min-w-[900px]">
+            <thead><tr className="text-left border-b border-line">
+              <th className="py-2 px-1 titulo-secao">Obra</th><th className="py-2 px-1 titulo-secao text-right">Avanço</th><th className="py-2 px-1 titulo-secao text-right">Peso</th>
+              <th className="py-2 px-1 titulo-secao text-right">Atrasadas</th><th className="py-2 px-1 titulo-secao text-right">Término</th>
+              <th className="py-2 px-1 titulo-secao text-right">Horas orç.</th><th className="py-2 px-1 titulo-secao text-right">Consumo</th><th className="py-2 px-1 titulo-secao text-right">Resultado</th>
+              {verValores && <><th className="py-2 px-1 titulo-secao text-right">Valor da obra</th><th className="py-2 px-1 titulo-secao text-right">Compra orç. × real.</th></>}
+            </tr></thead>
+            <tbody>
+              {linhas.map((l) => (
+                <tr key={l.f.id} className="border-b border-line/60 hover:bg-panel/50">
+                  <td className="py-2 px-1"><Link href={`/pi?id=${l.f.id}`} className="font-mono font-semibold text-cyan hover:underline">{l.f.codigo}</Link><div className="texto-apoio">{l.f.projeto}{!l.etapas ? " · sem cronograma" : ""}</div></td>
+                  <td className="py-2 px-1 text-right"><div className="flex items-center justify-end gap-2"><span className="w-16 h-1.5 rounded-full bg-line overflow-hidden"><span className="block h-full bg-cyan" style={{ width: `${l.avanco}%` }} /></span><span className="tabular-nums font-semibold w-10">{Math.round(l.avanco)}%</span></div></td>
+                  <td className="py-2 px-1 text-right tabular-nums text-muted">{Math.round((pesoDe(l) / pesoTotal) * 100)}%</td>
+                  <td className={`py-2 px-1 text-right tabular-nums ${l.atrasadas ? "text-red font-semibold" : "text-muted"}`}>{l.atrasadas}</td>
+                  <td className="py-2 px-1 text-right tabular-nums">{l.termino ? formatarData(l.termino) : "—"}</td>
+                  <td className="py-2 px-1 text-right tabular-nums">{h(l.hOrc)}</td>
+                  <td className="py-2 px-1 text-right tabular-nums">{h(l.hReal)}</td>
+                  <td className={`py-2 px-1 text-right tabular-nums ${cor(l.hOrc, l.hReal)}`}>{l.hOrc - l.hReal > 0 ? "+" : ""}{h(l.hOrc - l.hReal)}</td>
+                  {verValores && <><td className="py-2 px-1 text-right tabular-nums">{l.valor ? reais(l.valor) : <span className="text-muteddim">—</span>}</td>
+                    <td className={`py-2 px-1 text-right tabular-nums ${cor(l.rOrc, l.rReal)}`}>{reais(l.rOrc)} × {reais(l.rReal)}</td></>}
+                </tr>
+              ))}
+              <tr className="font-semibold">
+                <td className="py-2 px-1">Total do contrato</td><td className="py-2 px-1 text-right tabular-nums text-cyan">{avancoContrato}%</td><td className="py-2 px-1 text-right">100%</td>
+                <td className="py-2 px-1 text-right tabular-nums">{tot("atrasadas")}</td><td className="py-2 px-1 text-right tabular-nums">{termino ? formatarData(termino) : "—"}</td>
+                <td className="py-2 px-1 text-right tabular-nums">{h(tot("hOrc"))}</td><td className="py-2 px-1 text-right tabular-nums">{h(tot("hReal"))}</td>
+                <td className={`py-2 px-1 text-right tabular-nums ${cor(tot("hOrc"), tot("hReal"))}`}>{h(tot("hOrc") - tot("hReal"))}</td>
+                {verValores && <><td className="py-2 px-1 text-right tabular-nums">{reais(tot("valor"))}</td><td className="py-2 px-1 text-right tabular-nums">{reais(tot("rOrc"))} × {reais(tot("rReal"))}</td></>}
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div className="texto-apoio mt-2">Avanço do contrato {criterio}. Resultado = horas orçadas − consumo (verde: dentro do orçado). Horas são lançadas sempre nas obras.</div>
+      </Secao>
     </div>
   );
 }

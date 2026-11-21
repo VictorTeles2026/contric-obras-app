@@ -32,7 +32,10 @@ export const POST = rotaSegura(async (req) => {
   const { data: meus } = await admin.from("recursos").select("id").eq("usuario_id", interno.id);
   const ids = (meus || []).map((r) => r.id);
   if (!ids.length) return NextResponse.json({ error: "Seu usuário não está vinculado a um recurso." }, { status: 403 });
-  const { data: alocs } = await admin.from("alocacoes_recurso").select("etapa_id,pi_id,periodo_inicio,periodo_fim").in("recurso_id", ids).eq("pi_id", etapa.pi_id);
+  // contrato: alocação no PI Pai (por período) vale para as obras (filhos) dele
+  const { data: piEtapa } = await admin.from("pis").select("pi_pai_id").eq("id", etapa.pi_id).maybeSingle();
+  const pisValidos = [etapa.pi_id, piEtapa?.pi_pai_id].filter(Boolean);
+  const { data: alocs } = await admin.from("alocacoes_recurso").select("etapa_id,pi_id,periodo_inicio,periodo_fim").in("recurso_id", ids).in("pi_id", pisValidos);
   const alocado = (alocs || []).some((a) => (a.etapa_id ? a.etapa_id === etapa.id || a.etapa_id === etapa.parent_etapa_id
     : sobrepoe(a.periodo_inicio, a.periodo_fim, etapa.data_prevista_inicio, etapa.data_prevista_fim)));
   if (!alocado) return NextResponse.json({ error: "Você não está alocado nesta etapa." }, { status: 403 });
