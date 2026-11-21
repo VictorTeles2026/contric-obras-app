@@ -1,6 +1,6 @@
-"use client";
+﻿"use client";
 
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useAuth, pode } from "../lib/AuthContext";
 import { chamarApi, useTabela, gravarTolerante, registrarLog, useModelosCronograma, aplicarModeloNoPi } from "../lib/dados";
 import { supabase } from "../lib/supabase";
@@ -416,19 +416,42 @@ const todayISO = hojeISO;
 export function JanelaPi({ modo, pi, onFechar, onSalvo }) {
   const { usuario } = useAuth();
   const { avisar } = useToast();
-  const { dados: pis } = useTabela("pis", { select: "*" });
+  const { dados: pis, carregando: carregandoPis } = useTabela("pis", { select: "*" });
   const { dados: categorias } = useTabela("categorias_orcamento", { order: { coluna: "ordem" } });
   const { dados: orcamentos, carregando } = useTabela("orcamento_pi_item", { filtro: [["pi_id", pi?.id]] });
   const valoresAtuais = modo === "edit" ? Object.fromEntries(orcamentos.map((o) => [o.categoria_id, o.valor_orcado])) : {};
+  // contrato: obras (PIs filhos) já existentes + os orçamentos de cada uma
+  const filhos = modo === "edit" && pi?.id ? pis.filter((p) => p.pi_pai_id === pi.id).sort((a, b) => String(a.codigo).localeCompare(String(b.codigo), "pt-BR", { numeric: true })) : [];
+  const chaveFilhos = filhos.map((f) => f.id).join(",");
+  const [orcFilhos, setOrcFilhos] = useState(null);
+  useEffect(() => {
+    if (carregandoPis) return;
+    const ids = chaveFilhos ? chaveFilhos.split(",") : [];
+    if (!ids.length) { setOrcFilhos({}); return; }
+    supabase.from("orcamento_pi_item").select("pi_id,categoria_id,valor_orcado").in("pi_id", ids).then(({ data }) => {
+      const m = {};
+      (data || []).forEach((o) => { (m[o.pi_id] ||= {})[o.categoria_id] = o.valor_orcado; });
+      setOrcFilhos(m);
+    });
+  }, [chaveFilhos, carregandoPis]);
+  const obrasIniciais = filhos.map((f) => ({ id: f.id, codigo: f.codigo, projeto: f.projeto || "", prazo: f.prazo || "", status: f.status || "ativo",
+    valor: f.valor_contrato ?? "", valores: orcFilhos?.[f.id] || {}, valoresOriginais: orcFilhos?.[f.id] || {} }));
   const [aberta, setAberta] = useState(true);
   const [clienteNovo, setClienteNovo] = useState(null);
   const [credenciais, setCredenciais] = useState(null);
   const vaiMostrarCredenciais = useRef(false); // o FormCliente fecha logo depois de salvar
 
-  const salvar = async (dadosPi, valoresOrcamento, responsavelCliente) => {
+  const salvar = async (dadosPi, valoresOrcamento, responsavelCliente, obras = null) => {
     let piId = pi?.id;
     const duplicado = pis.some((p) => p.codigo.trim().toLowerCase() === dadosPi.codigo.toLowerCase() && (modo === "create" || p.id !== piId));
     if (duplicado) return `Já existe um PI com o número ${dadosPi.codigo}.`;
+    if (obras) {
+      const cods = obras.map((o) => o.codigo.trim().toLowerCase());
+      const rep = cods.find((c, i) => cods.indexOf(c) !== i || c === dadosPi.codigo.toLowerCase());
+      if (rep) return `Código de obra repetido: ${rep.toUpperCase()}.`;
+      const usado = obras.find((o) => pis.some((p) => p.codigo.trim().toLowerCase() === o.codigo.trim().toLowerCase() && p.id !== o.id));
+      if (usado) return `Já existe um PI com o número ${usado.codigo}.`;
+    }
     if (modo === "create") {
       // tolerante: se as colunas do responsável no cliente ainda não existirem, grava o resto
       const { data, error, colunasIgnoradas } = await gravarTolerante(dadosPi, (d) => supabase.from("pis").insert(d).select().single());
@@ -452,7 +475,36 @@ export function JanelaPi({ modo, pi, onFechar, onSalvo }) {
       const { error } = await supabase.from("orcamento_pi_item").upsert(linhas, { onConflict: "pi_id,categoria_id" });
       if (error) return `PI salvo, mas o orçamento falhou: ${error.message}`;
     }
-    avisar(modo === "create" ? `PI ${dadosPi.codigo} criado.` : "PI atualizado.");
+    // obras do contrato: cada uma é um PI filho com orçamento próprio; cliente e responsável vêm do PI Pai
+    if (obras?.length) {
+      const falhas = [];
+      for (const o of obras) {
+        const dadosObra = { codigo: o.codigo.trim(), pi_pai_id: piId, cliente: dadosPi.cliente, projeto: o.projeto.trim().toLocaleUpperCase("pt-BR") || null,
+          prazo: o.prazo || dadosPi.prazo, status: o.status || "ativo", valor_contrato: o.valor === "" ? null : Number(o.valor),
+          responsavel_cliente_nome: dadosPi.responsavel_cliente_nome, responsavel_cliente_email: dadosPi.responsavel_cliente_email, responsavel_cliente_telefone: dadosPi.responsavel_cliente_telefone };
+        let obraId = o.id;
+        if (obraId) {
+          const { error, colunasIgnoradas } = await gravarTolerante(dadosObra, (d) => supabase.from("pis").update(d).eq("id", obraId));
+          if (error) { falhas.push(`${o.codigo}: ${error.message}`); continue; }
+          if (colunasIgnoradas?.includes("pi_pai_id")) return "O vínculo das obras não foi gravado: rode o script contratos-pi-pai.sql no Supabase.";
+        } else {
+          const { data, error, colunasIgnoradas } = await gravarTolerante(dadosObra, (d) => supabase.from("pis").insert(d).select().single());
+          if (error) { falhas.push(`${o.codigo}: ${error.message}`); continue; }
+          if (colunasIgnoradas?.includes("pi_pai_id")) return "As obras foram criadas sem vínculo com o PI Pai: rode o script contratos-pi-pai.sql no Supabase.";
+          obraId = data.id;
+          registrarLog(usuario, "Criou PI", `${data.codigo} (obra do contrato ${dadosPi.codigo})`);
+        }
+        const linhasObra = Object.entries(o.valores || {})
+          .filter(([c, v]) => (v !== "" && v !== undefined) || c in (o.valoresOriginais || {}))
+          .map(([c, v]) => ({ pi_id: obraId, categoria_id: c, valor_orcado: Number(v) || 0 }));
+        if (linhasObra.length) {
+          const { error } = await supabase.from("orcamento_pi_item").upsert(linhasObra, { onConflict: "pi_id,categoria_id" });
+          if (error) falhas.push(`${o.codigo} (orçamento): ${error.message}`);
+        }
+      }
+      if (falhas.length) return `PI Pai salvo, mas houve falhas nas obras: ${falhas.join(" · ")}`;
+    }
+    avisar(modo === "create" ? `PI ${dadosPi.codigo} criado${obras?.length ? ` com ${obras.length} obras` : ""}.` : "PI atualizado.");
     onSalvo?.(piId);
     setAberta(false);
     // responsável marcado para virar cliente do portal: já cadastrado → aviso; senão → abre o cadastro preenchido
@@ -466,10 +518,10 @@ export function JanelaPi({ modo, pi, onFechar, onSalvo }) {
     return null;
   };
 
-  if (modo === "edit" && carregando) return null;
+  if (modo === "edit" && (carregando || carregandoPis || orcFilhos === null)) return null;
   return (
     <>
-      {aberta && <PiModal modo={modo} piInicial={pi} categorias={categorias} valoresIniciais={valoresAtuais} todosPis={pis}
+      {aberta && <PiModal modo={modo} piInicial={pi} categorias={categorias} valoresIniciais={valoresAtuais} todosPis={pis} obrasIniciais={obrasIniciais}
         onSalvar={salvar} onCancelar={onFechar} podeCadastrarCliente={pode(usuario, "cliente.gerenciar")} />}
       {clienteNovo && <FormCliente inicial={clienteNovo} onFechar={() => { setClienteNovo(null); if (!vaiMostrarCredenciais.current) onFechar(); }}
         onSalvo={(r) => { if (r?.senha) { vaiMostrarCredenciais.current = true; setCredenciais({ ...r, titulo: "Cliente cadastrado" }); } }} />}
@@ -477,8 +529,22 @@ export function JanelaPi({ modo, pi, onFechar, onSalvo }) {
     </>
   );
 }
-function PiModal({ modo, piInicial, categorias, valoresIniciais, onSalvar, onCancelar, podeCadastrarCliente = false, todosPis = [] }) {
+function PiModal({ modo, piInicial, categorias, valoresIniciais, onSalvar, onCancelar, podeCadastrarCliente = false, todosPis = [], obrasIniciais = [] }) {
   const [codigo, setCodigo] = useState(piInicial?.codigo || "");
+  // contrato com várias obras: este PI é o PI Pai e as obras (filhos) são configuradas aqui embaixo
+  const [ehContrato, setEhContrato] = useState(obrasIniciais.length > 0);
+  const [obras, setObras] = useState(obrasIniciais);
+  const [obraAberta, setObraAberta] = useState(null);
+  const sufixo = (n) => String(n).padStart(2, "0");
+  const recodificar = (lista, base) => lista.map((o, i) => (o.id || o.codigoManual ? o : { ...o, codigo: `${base}-${sufixo(i + 1)}` }));
+  const addObras = (qtd) => setObras((prev) => {
+    const novas = Array.from({ length: qtd }, () => ({ id: null, codigo: "", projeto: "", prazo: "", status: "ativo", valor: "", valores: {}, valoresOriginais: {} }));
+    return recodificar([...prev, ...novas], codigo.trim() || "PI");
+  });
+  const mudarObra = (i, campo, v) => setObras((prev) => prev.map((o, j) => (j === i ? { ...o, [campo]: v, ...(campo === "codigo" ? { codigoManual: true } : {}) } : o)));
+  const mudarValorObra = (i, catId, v) => setObras((prev) => prev.map((o, j) => (j === i ? { ...o, valores: { ...o.valores, [catId]: v === "" ? "" : Number(v) } } : o)));
+  const tirarObra = (i) => setObras((prev) => recodificar(prev.filter((_, j) => j !== i), codigo.trim() || "PI"));
+  const mudarCodigo = (v) => { setCodigo(v); setObras((prev) => recodificar(prev, v.trim() || "PI")); };
   // contrato: PI Pai (só consolida) e valor da obra (peso no avanço consolidado)
   const [piPaiId, setPiPaiId] = useState(piInicial?.pi_pai_id || "");
   const [valorContrato, setValorContrato] = useState(piInicial?.valor_contrato ?? "");
@@ -503,8 +569,14 @@ function PiModal({ modo, piInicial, categorias, valoresIniciais, onSalvar, onCan
   const [salvando, setSalvando] = useState(false);
   const [erroModal, setErroModal] = useState("");
   const emailRespOk = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(respEmail.trim());
-  const podeSalvar = codigo.trim().length > 0 && !salvando && (!cadastrarCliente || (respNome.trim() && emailRespOk));
-  const soma = (cats) => cats.reduce((s, c) => s + (Number(valores[c.id]) || 0), 0);
+  const contratoAtivo = ehContrato && obras.length > 0;
+  const obrasOk = !ehContrato || (obras.length > 0 && obras.every((o) => o.codigo.trim()));
+  const podeSalvar = codigo.trim().length > 0 && !salvando && obrasOk && (!cadastrarCliente || (respNome.trim() && emailRespOk));
+  const somaV = (vals, cats) => cats.reduce((s, c) => s + (Number(vals?.[c.id]) || 0), 0);
+  // PI Pai: totais = soma das obras
+  const soma = (cats) => (contratoAtivo ? obras.reduce((s, o) => s + somaV(o.valores, cats), 0) : somaV(valores, cats));
+  const consolidado = (catId) => obras.reduce((s, o) => s + (Number(o.valores?.[catId]) || 0), 0);
+  const fmtR = (v) => v.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
   const salvar = async () => {
     if (!podeSalvar) return;
@@ -512,13 +584,16 @@ function PiModal({ modo, piInicial, categorias, valoresIniciais, onSalvar, onCan
     // cliente e projeto sempre gravados em MAIÚSCULAS
     const erro = await onSalvar({ codigo: codigo.trim(), cliente: cliente.trim().toLocaleUpperCase("pt-BR") || null, projeto: projeto.trim().toLocaleUpperCase("pt-BR") || null, prazo: prazo || null, status,
       responsavel_cliente_nome: respNome.trim() || null, responsavel_cliente_email: respEmail.trim() || null, responsavel_cliente_telefone: respTelefone.trim() || null,
-      pi_pai_id: temFilhos ? null : piPaiId || null, valor_contrato: valorContrato === "" ? null : Number(valorContrato) }, valores,
-      cadastrarCliente ? { nome: respNome.trim(), email: respEmail.trim().toLowerCase(), telefone: respTelefone.trim(), empresa: cliente.trim().toLocaleUpperCase("pt-BR") } : null);
+      pi_pai_id: temFilhos || ehContrato ? null : piPaiId || null,
+      valor_contrato: ehContrato ? null : valorContrato === "" ? null : Number(valorContrato) }, ehContrato ? {} : valores,
+      cadastrarCliente ? { nome: respNome.trim(), email: respEmail.trim().toLowerCase(), telefone: respTelefone.trim(), empresa: cliente.trim().toLocaleUpperCase("pt-BR") } : null,
+      ehContrato ? obras : null);
     setSalvando(false);
     if (erro) setErroModal(erro);
   };
 
-  const tabela = (cats, unidade, passo) => (
+  // vals/onSet: planilha do próprio PI ou de uma obra; somenteLeitura: consolidado do PI Pai
+  const tabela = (cats, unidade, passo, vals = valores, onSet = setValor, somenteLeitura = false) => (
     <div className="rounded-xl border border-line overflow-hidden">
       <div className="grid grid-cols-[64px_1fr_130px] gap-2 px-3 py-2 bg-panel titulo-secao">
         <span>Cód.</span><span>Descrição</span><span className="text-right">{unidade}</span>
@@ -528,8 +603,10 @@ function PiModal({ modo, piInicial, categorias, valoresIniciais, onSalvar, onCan
           <div key={c.id} className="grid grid-cols-[64px_1fr_130px] gap-2 items-center px-3 py-1.5">
             <span className="font-mono text-xs text-muted">{c.codigo}</span>
             <span className="text-sm leading-tight">{c.nome}</span>
-            <input type="number" step={passo} min="0" value={valores[c.id] ?? ""} placeholder="0" onChange={(e) => setValor(c.id, e.target.value)}
-              className="input !py-1.5 text-right" aria-label={`${c.nome} (${unidade})`} />
+            {somenteLeitura
+              ? <span className="text-right text-sm tabular-nums pr-3">{passo === "0.01" ? fmtR(consolidado(c.id)) : consolidado(c.id).toLocaleString("pt-BR")}</span>
+              : <input type="number" step={passo} min="0" value={vals?.[c.id] ?? ""} placeholder="0" onChange={(e) => onSet(c.id, e.target.value)}
+                  className="input !py-1.5 text-right" aria-label={`${c.nome} (${unidade})`} />}
           </div>
         ))}
         {cats.length === 0 && <div className="px-3 py-3 text-sm text-muteddim">Nenhuma categoria cadastrada.</div>}
@@ -547,7 +624,7 @@ function PiModal({ modo, piInicial, categorias, valoresIniciais, onSalvar, onCan
         </button>
       </>}>
       <div className="grid grid-cols-2 md:grid-cols-6 gap-3 mb-6">
-        <Campo rotulo="Nº do PI *" className="col-span-1 md:col-span-1"><input value={codigo} onChange={(e) => setCodigo(e.target.value)} className="input" autoFocus placeholder="PI-001" /></Campo>
+        <Campo rotulo={ehContrato ? "Nº do PI Pai *" : "Nº do PI *"} className="col-span-1 md:col-span-1"><input value={codigo} onChange={(e) => mudarCodigo(e.target.value)} className="input" autoFocus placeholder="PI-001" /></Campo>
         <Campo rotulo="Status" className="col-span-1 md:col-span-1">
           <select value={status} onChange={(e) => setStatus(e.target.value)} className="input">
             {Object.entries(STATUS_PI).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
@@ -556,17 +633,18 @@ function PiModal({ modo, piInicial, categorias, valoresIniciais, onSalvar, onCan
         <Campo rotulo="Cliente" className="col-span-2 md:col-span-2"><input value={cliente} onChange={(e) => setCliente(e.target.value.toLocaleUpperCase("pt-BR"))} className="input uppercase" /></Campo>
         <Campo rotulo="Prazo" className="col-span-2 md:col-span-2"><input type="date" value={prazo || ""} onChange={(e) => setPrazo(e.target.value)} className="input" /></Campo>
         <Campo rotulo="Projeto" className="col-span-2 md:col-span-6"><input value={projeto} onChange={(e) => setProjeto(e.target.value.toLocaleUpperCase("pt-BR"))} className="input uppercase" /></Campo>
-        {/* contrato com várias obras: este PI pode ser uma obra (filho) de um PI Pai, que só consolida */}
-        <Campo rotulo="PI Pai (contrato)" className="col-span-2 md:col-span-4"
-          dica={temFilhos ? `Este PI é um PI Pai (${todosPis.filter((p) => p.pi_pai_id === piInicial.id).length} obras) — não pode ser filho de outro.` : "Deixe vazio se for um PI independente. Obras de um mesmo contrato apontam para o PI Pai."}>
-          <select value={temFilhos ? "" : piPaiId} disabled={temFilhos} onChange={(e) => setPiPaiId(e.target.value)} className="input">
-            <option value="">— nenhum (PI independente ou PI Pai) —</option>
-            {opcoesPai.map((p) => <option key={p.id} value={p.id}>{p.codigo} — {p.cliente}{p.projeto ? ` · ${p.projeto}` : ""}</option>)}
-          </select>
-        </Campo>
-        <Campo rotulo="Valor da obra (R$)" className="col-span-2 md:col-span-2" dica="Peso desta obra no avanço consolidado do contrato.">
-          <input type="number" min="0" step="0.01" value={valorContrato} onChange={(e) => setValorContrato(e.target.value)} className="input text-right" placeholder="0,00" />
-        </Campo>
+        {/* obra avulsa já existente vinculada a um contrato: só na edição de um PI que já é filho */}
+        {!ehContrato && !temFilhos && piInicial?.pi_pai_id && (<>
+          <Campo rotulo="PI Pai (contrato)" className="col-span-2 md:col-span-4" dica="Esta obra pertence a este contrato.">
+            <select value={piPaiId} onChange={(e) => setPiPaiId(e.target.value)} className="input">
+              <option value="">— nenhum (PI independente) —</option>
+              {opcoesPai.map((p) => <option key={p.id} value={p.id}>{p.codigo} — {p.cliente}{p.projeto ? ` · ${p.projeto}` : ""}</option>)}
+            </select>
+          </Campo>
+          <Campo rotulo="Valor da obra (R$)" className="col-span-2 md:col-span-2" dica="Peso no avanço consolidado.">
+            <input type="number" min="0" step="0.01" value={valorContrato} onChange={(e) => setValorContrato(e.target.value)} className="input text-right" placeholder="0,00" />
+          </Campo>
+        </>)}
         <Campo rotulo="Responsável pelo PI no cliente" className="col-span-2 md:col-span-2"><input value={respNome} onChange={(e) => setRespNome(e.target.value)} className="input" placeholder="Nome" /></Campo>
         <Campo rotulo="E-mail do responsável" className="col-span-2 md:col-span-2"><input value={respEmail} onChange={(e) => setRespEmail(e.target.value)} className="input" inputMode="email" autoCapitalize="none" /></Campo>
         <Campo rotulo="Telefone do responsável" className="col-span-2 md:col-span-2"><input value={respTelefone} onChange={(e) => setRespTelefone(e.target.value)} className="input" inputMode="tel" /></Campo>
@@ -581,17 +659,68 @@ function PiModal({ modo, piInicial, categorias, valoresIniciais, onSalvar, onCan
         )}
       </div>
 
-      <div className="flex items-baseline justify-between mb-2">
-        <div className="titulo-quadro text-cyan">Compra — Produto ou Serviço</div>
-        <div className="text-xs text-muted">Total: <strong className="text-textmain">R$ {soma(compraCats).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</strong></div>
-      </div>
-      <div className="mb-6">{tabela(compraCats, "Valor (R$)", "0.01")}</div>
+      {/* contrato com várias obras */}
+      {!piInicial?.pi_pai_id && (
+        <label className={`flex items-start gap-3 rounded-xl border p-3 mb-4 ${obrasIniciais.length ? "" : "cursor-pointer"} ${ehContrato ? "border-cyan bg-cyan/5" : "border-line"}`}>
+          <input type="checkbox" checked={ehContrato} disabled={obrasIniciais.length > 0}
+            onChange={(e) => { setEhContrato(e.target.checked); if (e.target.checked && !obras.length) { addObras(1); setObraAberta(0); } }} className="mt-0.5 w-4 h-4 accent-cyan" />
+          <span className="text-sm"><strong>Contrato com várias obras</strong>
+            <span className="texto-apoio block">Este PI vira o PI Pai (só consolida). Cada obra abaixo vira um PI próprio, com orçamento de horas e de custo separado; o PI Pai mostra a soma.</span></span>
+        </label>
+      )}
+
+      {ehContrato && (
+        <div className="mb-6">
+          <div className="flex items-center justify-between gap-2 mb-2 flex-wrap">
+            <div className="titulo-quadro text-cyan">Obras do contrato ({obras.length})</div>
+            <div className="flex gap-2">
+              <button type="button" onClick={() => { addObras(1); setObraAberta(obras.length); }} className="btn btn-contorno btn-sm text-sm">+ 1 obra</button>
+              <button type="button" onClick={() => addObras(5)} className="btn btn-contorno btn-sm text-sm">+ 5 obras</button>
+            </div>
+          </div>
+          <div className="flex flex-col gap-2">
+            {obras.map((o, i) => {
+              const aberta = obraAberta === i;
+              const totR = somaV(o.valores, compraCats), totH = somaV(o.valores, moiCats);
+              return (
+                <div key={o.id || `n${i}`} className={`rounded-xl border ${aberta ? "border-cyan" : "border-line"}`}>
+                  <div className="grid grid-cols-2 md:grid-cols-[130px_1fr_140px_130px_auto] gap-2 items-end p-3">
+                    <Campo rotulo="Nº da obra *"><input value={o.codigo} onChange={(e) => mudarObra(i, "codigo", e.target.value)} className="input font-mono" /></Campo>
+                    <Campo rotulo="Projeto / local" className="col-span-2 md:col-span-1"><input value={o.projeto} onChange={(e) => mudarObra(i, "projeto", e.target.value.toLocaleUpperCase("pt-BR"))} className="input uppercase" placeholder={projeto || "Nome da obra"} /></Campo>
+                    <Campo rotulo="Prazo"><input type="date" value={o.prazo || ""} onChange={(e) => mudarObra(i, "prazo", e.target.value)} className="input" /></Campo>
+                    <Campo rotulo="Valor da obra (R$)"><input type="number" min="0" step="0.01" value={o.valor} onChange={(e) => mudarObra(i, "valor", e.target.value)} className="input text-right" placeholder="0,00" /></Campo>
+                    <div className="flex gap-1 col-span-2 md:col-span-1 justify-end">
+                      <button type="button" onClick={() => setObraAberta(aberta ? null : i)} className="btn btn-fantasma !py-1.5 text-sm whitespace-nowrap">{aberta ? "▲ Fechar orçamento" : "▼ Orçamento"}</button>
+                      {!o.id && <button type="button" onClick={() => { tirarObra(i); setObraAberta(null); }} className="btn btn-fantasma !py-1.5 text-sm text-red" title="Remover obra">✕</button>}
+                    </div>
+                  </div>
+                  <div className="px-3 pb-2 -mt-1 text-xs text-muted">Orçado: <strong className="text-textmain">R$ {fmtR(totR)}</strong> · <strong className="text-textmain">{totH.toLocaleString("pt-BR")} h</strong>{!o.prazo && " · prazo do PI Pai"}</div>
+                  {aberta && (
+                    <div className="border-t border-line p-3 grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div><div className="titulo-secao mb-1">Compra — R$ {fmtR(totR)}</div>{tabela(compraCats, "Valor (R$)", "0.01", o.valores, (c, v) => mudarValorObra(i, c, v))}</div>
+                      <div><div className="titulo-secao mb-1">Horas — {totH.toLocaleString("pt-BR")} h</div>{tabela(moiCats, "Horas", "0.5", o.valores, (c, v) => mudarValorObra(i, c, v))}</div>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+            {obras.length === 0 && <div className="text-sm text-muteddim">Adicione as obras do contrato.</div>}
+          </div>
+          <div className="text-xs text-muteddim mt-2">Cliente e responsável no cliente vêm do PI Pai. Obras já salvas não são removidas aqui (use o Cadastro de PIs).</div>
+        </div>
+      )}
 
       <div className="flex items-baseline justify-between mb-2">
-        <div className="titulo-quadro text-cyan">Horas (MOI + Contric)</div>
+        <div className="titulo-quadro text-cyan">Compra — Produto ou Serviço{ehContrato && " · consolidado das obras"}</div>
+        <div className="text-xs text-muted">Total: <strong className="text-textmain">R$ {fmtR(soma(compraCats))}</strong></div>
+      </div>
+      <div className="mb-6">{tabela(compraCats, "Valor (R$)", "0.01", valores, setValor, ehContrato)}</div>
+
+      <div className="flex items-baseline justify-between mb-2">
+        <div className="titulo-quadro text-cyan">Horas (MOI + Contric){ehContrato && " · consolidado das obras"}</div>
         <div className="text-xs text-muted">Total: <strong className="text-textmain">{soma(moiCats).toLocaleString("pt-BR")} h</strong></div>
       </div>
-      {tabela(moiCats, "Horas", "0.5")}
+      {tabela(moiCats, "Horas", "0.5", valores, setValor, ehContrato)}
     </Modal>
   );
 }
