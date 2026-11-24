@@ -240,7 +240,32 @@ export default function CronogramaVisao({ piFixo = null, pisFixos = null, acoes 
   const [soMeus, setSoMeus] = useState(false);
   const [atualizandoPi, setAtualizandoPi] = useState(null); // PI com a janela "Atualizar avanço" aberta
 
-  const pisSelecionados = pis.filter((p) => (soMeus ? meusPis.has(p.id) : piIds.includes(p.id)) && (clientesAtivos.length === 0 || clientesAtivos.includes(chaveCliente(p.cliente))));
+  const pisBase = pis.filter((p) => (soMeus ? meusPis.has(p.id) : piIds.includes(p.id)) && (clientesAtivos.length === 0 || clientesAtivos.includes(chaveCliente(p.cliente))));
+  // contrato: PI Pai selecionado traz as obras dele (o pai só consolida)
+  const idsBase = new Set(pisBase.map((p) => p.id));
+  const pisSelecionados = pis.filter((p) => idsBase.has(p.id) || (p.pi_pai_id && idsBase.has(p.pi_pai_id) && !soMeus));
+  // linhas do quadro: PI comum, ou grupo { pai, obras } quando há obras de um contrato
+  const grupos = useMemo(() => {
+    const porPai = new Map();
+    const saida = [];
+    pisSelecionados.forEach((p) => {
+      if (p.pi_pai_id && pis.some((x) => x.id === p.pi_pai_id)) {
+        if (!porPai.has(p.pi_pai_id)) { const g = { pai: pis.find((x) => x.id === p.pi_pai_id), obras: [] }; porPai.set(p.pi_pai_id, g); saida.push(g); }
+        porPai.get(p.pi_pai_id).obras.push(p);
+      } else if (!pis.some((x) => x.pi_pai_id === p.id)) saida.push({ pi: p });
+    });
+    // o pai entra no lugar dele na ordem (pelo código), mesmo quando só as obras foram escolhidas
+    const cod = (g) => String((g.pi || g.pai).codigo || "");
+    saida.forEach((g) => g.obras?.sort((a, b) => String(a.codigo).localeCompare(String(b.codigo), "pt-BR", { numeric: true })));
+    return saida.sort((a, b) => cod(a).localeCompare(cod(b), "pt-BR", { numeric: true }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pisSelecionados.map((p) => p.id).join(","), pis]);
+  // nível do contrato: "pi" (só o total) → "obras" (uma linha por obra, padrão) → "aberto" (todas as obras abertas)
+  const [nivelContrato, setNivelContrato] = useState({});
+  const [obrasAbertas, setObrasAbertas] = useState({}); // obra aberta individualmente no nível "obras"
+  const nivelC = (paiId) => nivelContrato[paiId] || "obras";
+  const ciclarContrato = (paiId) => setNivelContrato((p) => ({ ...p, [paiId]: { pi: "obras", obras: "aberto", aberto: "pi" }[nivelC(paiId)] }));
+  const alternarObra = (id) => setObrasAbertas((p) => ({ ...p, [id]: !p[id] }));
   const idsVisiveis = pisSelecionados.map((p) => p.id);
   const etapasDosPis = etapas.filter((e) => idsVisiveis.includes(e.pi_id));
   // monta a lista na mesma ordem de criação do Cronograma: cada macro-etapa
@@ -559,7 +584,8 @@ export default function CronogramaVisao({ piFixo = null, pisFixos = null, acoes 
                 </div>
               </div>
 
-              {pisSelecionados.map((pi) => {
+              {(() => {
+              const renderPi = (pi, recuo = false) => {
                 const itens = itensOrdenados(pi.id);
                 const nivel = nivelDe(pi.id);
                 const periodo = periodoTotalDoPi(pi.id);
@@ -573,7 +599,7 @@ export default function CronogramaVisao({ piFixo = null, pisFixos = null, acoes 
                     <div className="bg-panel border-y border-line" style={{ width: LW + largura }}>
                       <div className="sticky left-0 z-10 flex items-center" style={{ width: larguraContainer || LW + larguraVisivel }}>
                       <button onClick={() => ciclarNivel(pi.id)} title={`Clique para ${dicaProximo}`}
-                        className="flex-1 min-w-0 px-3 py-2 text-sm flex items-center gap-2 text-left hover:bg-line/40 transition-colors">
+                        className={`flex-1 min-w-0 ${recuo ? "pl-7" : "px-3"} pr-3 py-2 text-sm flex items-center gap-2 text-left hover:bg-line/40 transition-colors`}>
                         <span className="text-[10px] w-4 shrink-0 text-cyan">{icone}</span>
                         <span className="min-w-0 truncate" title={`${pi.codigo} — ${pi.cliente}${pi.projeto ? ` · ${pi.projeto}` : ""}${pi.responsavel_cliente_nome ? ` · Resp. no cliente: ${[pi.responsavel_cliente_nome, pi.responsavel_cliente_email, pi.responsavel_cliente_telefone].filter(Boolean).join(" · ")}` : ""}`}>
                           <span className="font-mono text-cyan font-bold">{pi.codigo}</span>
@@ -719,7 +745,75 @@ export default function CronogramaVisao({ piFixo = null, pisFixos = null, acoes 
                     )}
                   </div>
                 );
-              })}
+              };
+              // barra de período (linha compacta): PI Pai inteiro ou uma obra sem abrir
+              const barraPeriodo = (periodo, cor, dica) => (
+                <div className="relative h-8" style={{ width: largura }}>
+                  <div className="absolute top-0 bottom-0" style={{ left: hojeX, width: 1, background: "#D64545", opacity: 0.5 }} />
+                  {periodo && <div className="absolute top-3 h-3.5 rounded" title={dica}
+                    style={{ left: ((periodo.inicio - escala.min) / span) * largura, width: Math.max(4, ((periodo.fim - periodo.inicio) / span) * largura), background: cor }} />}
+                </div>
+              );
+              const juntarPeriodos = (lista) => {
+                const ps = lista.map((p) => periodoTotalDoPi(p.id)).filter(Boolean);
+                return ps.length ? { inicio: Math.min(...ps.map((p) => p.inicio)), fim: Math.max(...ps.map((p) => p.fim)) } : null;
+              };
+              const pctObra = (obraId) => {
+                const ms = etapasDosPis.filter((e) => e.pi_id === obraId && !e.parent_etapa_id);
+                return ms.length ? Math.round(ms.reduce((s, e) => s + (e.status === "concluida" ? 100 : Number(e.percentual) || 0), 0) / ms.length) : 0;
+              };
+              const renderContrato = ({ pai, obras }) => {
+                const nivel = nivelC(pai.id);
+                const periodo = juntarPeriodos(obras);
+                const icone = { aberto: "▾▾", obras: "▾", pi: "▸" }[nivel];
+                const dica = { aberto: "contrair para o PI", obras: "abrir todas as obras", pi: "mostrar as obras" }[nivel];
+                return (
+                  <div key={`c-${pai.id}`}>
+                    <div className="bg-navy/10 border-y border-line" style={{ width: LW + largura }}>
+                      <div className="sticky left-0 z-10 flex items-center" style={{ width: larguraContainer || LW + larguraVisivel }}>
+                        <button onClick={() => ciclarContrato(pai.id)} title={`Clique para ${dica}`}
+                          className="flex-1 min-w-0 px-3 py-2 text-sm flex items-center gap-2 text-left hover:bg-line/40 transition-colors">
+                          <span className="text-[10px] w-4 shrink-0 text-cyan">{icone}</span>
+                          <span className="min-w-0 truncate">
+                            <span className="font-mono text-cyan font-bold">{pai.codigo}</span>
+                            <span className="font-semibold"> — {pai.cliente}</span>
+                            {pai.projeto && <span className="text-muted"> · {pai.projeto}</span>}
+                            <span className="selo bg-navy text-white ml-2 align-middle">CONTRATO · {obras.length} obras</span>
+                          </span>
+                          {periodo && <span className="ml-auto shrink-0 text-xs text-muteddim font-mono pl-3 hidden sm:inline">
+                            {new Date(periodo.inicio).toLocaleDateString("pt-BR")} → {new Date(periodo.fim - 86400000).toLocaleDateString("pt-BR")}</span>}
+                        </button>
+                        <Link href={`/pi?id=${pai.id}`} title="Abrir a Página do PI Pai" className="shrink-0 mx-2 p-1.5 rounded-lg text-cyan hover:bg-cyan/10"><Icone nome="obra" className="w-4 h-4" /></Link>
+                      </div>
+                    </div>
+                    {nivel === "pi" && (
+                      <div className="flex border-b border-line/60">
+                        <div className="shrink-0 sticky left-0 bg-white z-10 px-3 py-2 text-xs text-muted border-r border-line" style={{ width: LW }}>Período total do contrato</div>
+                        {barraPeriodo(periodo, "#16324F", `${pai.codigo} — da primeira à última etapa das obras`)}
+                      </div>
+                    )}
+                    {nivel === "obras" && obras.map((o) => obrasAbertas[o.id] ? (
+                      <div key={o.id} className="pl-0">
+                        <button onClick={() => alternarObra(o.id)} className="sticky left-0 z-10 text-[11px] text-cyan px-3 py-1 hover:underline">▴ recolher {o.codigo}</button>
+                        {renderPi(o, true)}
+                      </div>
+                    ) : (
+                      <div key={o.id} className="flex border-b border-line/60">
+                        <button onClick={() => alternarObra(o.id)} title="Clique para abrir esta obra"
+                          className="shrink-0 sticky left-0 bg-white z-10 pl-7 pr-3 py-2 text-sm text-left border-r border-line hover:bg-panel flex items-center gap-2" style={{ width: LW }}>
+                          <span className="text-[10px] text-cyan">▸</span>
+                          <span className="min-w-0 flex-1 truncate"><span className="font-mono font-semibold">{o.codigo}</span>{o.projeto && <span className="text-muted text-xs"> · {o.projeto}</span>}</span>
+                          <span className="font-mono text-xs tabular-nums">{pctObra(o.id)}%</span>
+                        </button>
+                        {barraPeriodo(periodoTotalDoPi(o.id), "#0B84A5", `${o.codigo} — período da obra`)}
+                      </div>
+                    ))}
+                    {nivel === "aberto" && obras.map((o) => <div key={o.id}>{renderPi(o, true)}</div>)}
+                  </div>
+                );
+              };
+              return grupos.map((g) => (g.pi ? renderPi(g.pi) : renderContrato(g)));
+              })()}
             </div>
           </div>
         )}
