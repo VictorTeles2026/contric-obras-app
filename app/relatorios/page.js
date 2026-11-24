@@ -6,7 +6,7 @@ import { useAuth, pode } from "../../lib/AuthContext";
 import { supabase } from "../../lib/supabase";
 import { useToast } from "../../lib/Toast";
 import PainelShell from "../../components/PainelShell";
-import { CabecalhoPagina, EstadoVazio, Aviso, Spinner, SeletorPi } from "../../components/ui";
+import { Select, CabecalhoPagina, EstadoVazio, Aviso, Spinner, SeletorPi } from "../../components/ui";
 import Icone from "../../components/Icone";
 import { formatarData, horaCurta } from "../../lib/datas";
 import AcoesMaster from "../../components/AcoesMaster";
@@ -240,12 +240,12 @@ function LancamentosHoras({ lancamentos, usuarios, categorias, pis, pi, editavel
 
   const SeletorCodigo = ({ l, campo, horas }) => (
     <div className="flex items-center gap-1.5">
-      <select value={l[campo] || ""} disabled={!editavel || horas <= 0} onChange={(e) => classificar(l, campo, e.target.value)}
+      <Select value={l[campo] || ""} disabled={!editavel || horas <= 0} onChange={(e) => classificar(l, campo, e.target.value)}
         className={`input !py-1 !px-2 !text-xs !w-[92px] font-mono ${horas > 0 && !l[campo] ? "!border-amber" : ""}`}
         aria-label={`Código das horas ${campo === "categoria_normal_id" ? "normais" : "extras"}`} title={categorias.find((c) => c.id === l[campo])?.nome || "Escolha o código"}>
         <option value="">—</option>
         {categorias.map((c) => <option key={c.id} value={c.id}>{c.codigo}</option>)}
-      </select>
+      </Select>
       {salvando[`${l.id}-${campo}`] && <Spinner className="w-3.5 h-3.5 text-muted" />}
     </div>
   );

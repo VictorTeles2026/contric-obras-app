@@ -8,7 +8,7 @@ import { useToast } from "../lib/Toast";
 import { tsLocal, diasAte as diffDias, formatarData as formatarDataIso } from "../lib/datas";
 import { AREAS, STATUS_ETAPA, PRAZOS, datasAlertaEtapa, consolidarMacros, LISTA_STATUS_ETAPA } from "../lib/constantes";
 
-import { CabecalhoPagina, EstadoVazio, Modal, Aviso } from "./ui";
+import { Select, CabecalhoPagina, EstadoVazio, Modal, Aviso } from "./ui";
 import Icone from "./Icone";
 import { ModalQrPi } from "./LeitorQR";
 import { PainelSuspenso } from "./ui";
@@ -388,11 +388,11 @@ export default function CronogramaVisao({ piFixo = null, pisFixos = null, acoes 
           acoes={<>
             {/* contrato: mostra só as obras (PIs filhos) de um PI Pai */}
             {pis.some((p) => p.pi_pai_id) && (
-              <select value="" onChange={(e) => { const id = e.target.value; if (!id) return; setSoMeus(false); setPiIds(pis.filter((p) => p.pi_pai_id === id).map((p) => p.id)); }}
+              <Select value="" onChange={(e) => { const id = e.target.value; if (!id) return; setSoMeus(false); setPiIds(pis.filter((p) => p.pi_pai_id === id).map((p) => p.id)); }}
                 className="input !w-auto !py-2 !text-sm" aria-label="Mostrar as obras de um contrato">
                 <option value="">Contrato…</option>
                 {pis.filter((p) => pis.some((f) => f.pi_pai_id === p.id)).map((p) => <option key={p.id} value={p.id}>{p.codigo} — {pis.filter((f) => f.pi_pai_id === p.id).length} obras</option>)}
-              </select>
+              </Select>
             )}
             {meusRecursos.length > 0 && (
               <button onClick={() => setSoMeus((v) => !v)} aria-pressed={soMeus}

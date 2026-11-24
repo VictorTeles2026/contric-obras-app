@@ -8,7 +8,7 @@ import { BUCKET_DOCUMENTOS, gerarPdfRdo, gerarPdfOcorrencia, linkTemporario, bas
 import { formatarData, formatarDataHora } from "../../lib/datas";
 import { useToast } from "../../lib/Toast";
 import PainelShell from "../../components/PainelShell";
-import { CabecalhoPagina, EstadoVazio, Esqueleto, Aviso, Spinner, Modal, SeletorPi, BotaoLimpar } from "../../components/ui";
+import { Select, CabecalhoPagina, EstadoVazio, Esqueleto, Aviso, Spinner, Modal, SeletorPi, BotaoLimpar } from "../../components/ui";
 import Icone from "../../components/Icone";
 import { ConfirmarExclusao } from "../../components/AcoesMaster";
 import { EditorRdo, EditorOcorrencia } from "../../components/Editores";
@@ -469,14 +469,14 @@ export default function DocumentosPage() {
                 <div className="grid grid-cols-1 sm:grid-cols-[200px_1fr] gap-2">
                   <label className="block">
                     <span className="rotulo">Classificação</span>
-                    <select value={p.prefixo} className="input"
+                    <Select value={p.prefixo} className="input"
                       onChange={(e) => alterarPendente(i, { prefixo: e.target.value, ...(p.editado ? {} : { base: sugerirNome(e.target.value, resultado.pi) }) })}>
-                      <option value={TRANSFER[0]}>⏳ {TRANSFER[1]} (apaga em {DIAS_TRANSFER} dias)</option>
+                      <option data-fixo value={TRANSFER[0]}>⏳ {TRANSFER[1]} (apaga em {DIAS_TRANSFER} dias)</option>
                       {CLASSIFICACOES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
                       {pastasPi.length > 0 && <optgroup label={`Pastas do ${resultado?.pi?.codigo}`}>
                         {pastasPi.map((p) => <option key={p.prefixo} value={p.prefixo}>{p.nome}</option>)}
                       </optgroup>}
-                    </select>
+                    </Select>
                   </label>
                   <label className="block min-w-0">
                     <span className="rotulo">Nome do arquivo (sugestão — pode editar)</span>

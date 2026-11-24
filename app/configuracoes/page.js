@@ -8,7 +8,7 @@ import { useToast } from "../../lib/Toast";
 import { PADROES, TIPOS_RECURSO_FIXOS, aplicarConfiguracoes } from "../../lib/configuracoes";
 import { EQUIPE_CAMPO, TIPOS_ALERTA, montarEmailEquipe } from "../../lib/constantes";
 import PainelShell from "../../components/PainelShell";
-import { CabecalhoPagina, Aviso, Spinner, EstadoVazio } from "../../components/ui";
+import { Select, CabecalhoPagina, Aviso, Spinner, EstadoVazio } from "../../components/ui";
 import Icone from "../../components/Icone";
 import { GerenciarModelos } from "../../components/Editores";
 
@@ -361,9 +361,9 @@ function EditorModeloEmail({ chave, valor, personalizado, onSalvar, onRestaurar 
         <div>
           <div className="flex items-center justify-between gap-2 mb-2">
             <span className="rotulo !mb-0">Pré-visualização</span>
-            <select value={tipoPrevia} onChange={(e) => setTipoPrevia(e.target.value)} className="input !w-auto !py-1.5 text-sm">
+            <Select value={tipoPrevia} onChange={(e) => setTipoPrevia(e.target.value)} className="input !w-auto !py-1.5 text-sm">
               {TIPOS_ALERTA.map(([k, r]) => <option key={k} value={k}>{r}</option>)}
-            </select>
+            </Select>
           </div>
           <div className="text-sm mb-2"><span className="text-muted">Assunto:</span> <strong>{previa.assunto}</strong></div>
           <iframe title="Pré-visualização do e-mail" srcDoc={previa.html} sandbox="" className="w-full h-[560px] rounded-xl border border-line bg-white" />
@@ -520,7 +520,7 @@ function CategoriasOrcamento() {
           <label className="block"><span className="rotulo">Código</span><input value={editando.codigo} onChange={(e) => setEditando((p) => ({ ...p, codigo: e.target.value.toUpperCase() }))} className="input !py-1.5 font-mono" /></label>
           <label className="block"><span className="rotulo">Nome</span><input value={editando.nome} onChange={(e) => setEditando((p) => ({ ...p, nome: e.target.value }))} className="input !py-1.5" /></label>
           <label className="block"><span className="rotulo">Grupo</span>
-            <select value={editando.grupo} onChange={(e) => setEditando((p) => ({ ...p, grupo: e.target.value }))} className="input !py-1.5">{GRUPOS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select>
+            <Select value={editando.grupo} onChange={(e) => setEditando((p) => ({ ...p, grupo: e.target.value }))} className="input !py-1.5">{GRUPOS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</Select>
           </label>
           <label className="block"><span className="rotulo">Ordem</span><input type="number" value={editando.ordem ?? ""} onChange={(e) => setEditando((p) => ({ ...p, ordem: e.target.value }))} className="input !py-1.5" /></label>
           <label className="flex items-center gap-2 text-sm sm:col-span-2"><input type="checkbox" className="accent-cyan w-4 h-4" checked={editando.ativo !== false} onChange={(e) => setEditando((p) => ({ ...p, ativo: e.target.checked }))} /> Ativa (aparece na abertura de PI)</label>

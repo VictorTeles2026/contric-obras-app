@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useState, useRef, useEffect } from "react";
 import { useAuth, pode } from "../lib/AuthContext";
@@ -9,7 +9,7 @@ import { LISTA_STATUS_ETAPA, CATEGORIAS_OCORRENCIA, STATUS_PI, duracaoModelo, et
 import { horasEntreHorarios, hojeISO, isoLocal, addDias, diaLancavel } from "../lib/datas";
 import { nomeBaseAnexo } from "../lib/pdfRdo";
 import { salvarEdicaoRdo, salvarEdicaoHoras, salvarEdicaoSolicitacao, salvarEdicaoOcorrencia } from "../lib/edicoes";
-import { Modal, Campo, Aviso, Spinner, SeletorPi } from "./ui";
+import { Select, Modal, Campo, Aviso, Spinner, SeletorPi } from "./ui";
 import CapturaMidia from "./CapturaMidia";
 import Icone from "./Icone";
 import { CamposRdoTecnico, tecnicoVazio, limparTecnico } from "./RdoTecnico";
@@ -104,9 +104,9 @@ export function EditorRdo({ rdo, pi, pis, ocorrenciasOriginais, comoAprovador, o
             {ocorrencias.map((o, i) => (
               <div key={o.id || `nova-${i}`} className="rounded-xl border border-amber/25 bg-amber/5 p-3 flex flex-col gap-2">
                 <div className="flex gap-2">
-                  <select value={o.categoria} onChange={(e) => alterarOc(i, { categoria: e.target.value })} className="input flex-1" aria-label="Categoria">
+                  <Select value={o.categoria} onChange={(e) => alterarOc(i, { categoria: e.target.value })} className="input flex-1" aria-label="Categoria">
                     {CATEGORIAS_OCORRENCIA.map((c) => <option key={c} value={c}>{c}</option>)}
-                  </select>
+                  </Select>
                   <button onClick={() => setOcorrencias((p) => p.filter((_, idx) => idx !== i))} className="p-2 rounded-lg text-muteddim hover:text-red hover:bg-red/5" aria-label="Remover ocorrência">
                     <Icone nome="lixo" className="w-4 h-4" />
                   </button>
@@ -636,10 +636,10 @@ function PiModal({ modo, piInicial, categorias, valoresIniciais, onSalvar, onCan
         {/* obra avulsa já existente vinculada a um contrato: só na edição de um PI que já é filho */}
         {!ehContrato && !temFilhos && piInicial?.pi_pai_id && (<>
           <Campo rotulo="PI Pai (contrato)" className="col-span-2 md:col-span-4" dica="Esta obra pertence a este contrato.">
-            <select value={piPaiId} onChange={(e) => setPiPaiId(e.target.value)} className="input">
+            <Select value={piPaiId} onChange={(e) => setPiPaiId(e.target.value)} className="input">
               <option value="">— nenhum (PI independente) —</option>
               {opcoesPai.map((p) => <option key={p.id} value={p.id}>{p.codigo} — {p.cliente}{p.projeto ? ` · ${p.projeto}` : ""}</option>)}
-            </select>
+            </Select>
           </Campo>
           <Campo rotulo="Valor da obra (R$)" className="col-span-2 md:col-span-2" dica="Peso no avanço consolidado.">
             <input type="number" min="0" step="0.01" value={valorContrato} onChange={(e) => setValorContrato(e.target.value)} className="input text-right" placeholder="0,00" />

@@ -5,7 +5,7 @@ import { useTabela, registrarLog, chamarApi } from "../../lib/dados";
 import { useAuth, podeGerenciarUsuarios, pode } from "../../lib/AuthContext";
 import { useToast } from "../../lib/Toast";
 import PainelShell from "../../components/PainelShell";
-import { CabecalhoPagina, Modal, Campo, Aviso, Esqueleto, EstadoVazio, Spinner, SeletorEquipes, FiltroMulti, passa, disponiveis, BotaoLimpar } from "../../components/ui";
+import { Select, CabecalhoPagina, Modal, Campo, Aviso, Esqueleto, EstadoVazio, Spinner, SeletorEquipes, FiltroMulti, passa, disponiveis, BotaoLimpar } from "../../components/ui";
 import { AREAS, FUNCOES, EQUIPE_CAMPO, ALERTAS, TIPOS_ALERTA } from "../../lib/constantes";
 import { normalizarLogin, erroLogin, ehEmail, sugerirLogin } from "../../lib/constantes";
 import Icone from "../../components/Icone";
@@ -318,17 +318,17 @@ function ModalUsuario({ usuarioInicial, deCampo, empresas = [], onClose, onSalvo
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <Campo rotulo="Perfil">
-            <select value={perfil} onChange={(e) => setPerfil(e.target.value)} className="input">
+            <Select value={perfil} onChange={(e) => setPerfil(e.target.value)} className="input">
               {PERFIS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-            </select>
+            </Select>
           </Campo>
           {mostraFuncao && (
             <Campo rotulo="Função">
-              <select value={funcao} onChange={(e) => setFuncao(e.target.value)} className="input">
+              <Select value={funcao} onChange={(e) => setFuncao(e.target.value)} className="input">
                 <option value="">Selecione...</option>
                 {FUNCOES.map((f) => <option key={f} value={f}>{f}</option>)}
                 {funcao && !FUNCOES.includes(funcao) && <option value={funcao}>{funcao} (antiga)</option>}
-              </select>
+              </Select>
             </Campo>
           )}
         </div>
@@ -533,15 +533,15 @@ function CadastroEmLote({ usuariosExistentes, empresas = [], onFechar, onCriados
                   <td className={cel}><input value={l.email} disabled={travada} onChange={(e) => alterar(i, { email: e.target.value })} className={inp} placeholder="opcional" /></td>
                   <td className={cel}><input value={l.senha} disabled={travada} onChange={(e) => alterar(i, { senha: e.target.value })} className={`${inp} font-mono`} placeholder="6+ caracteres" /></td>
                   <td className={cel}>
-                    <select value={l.perfil} disabled={travada} onChange={(e) => alterar(i, { perfil: e.target.value })} className={inp}>
+                    <Select value={l.perfil} disabled={travada} onChange={(e) => alterar(i, { perfil: e.target.value })} className={inp}>
                       {PERFIS_LOTE.map(([v, t]) => <option key={v} value={v}>{t.split(" (")[0]}</option>)}
-                    </select>
+                    </Select>
                   </td>
                   <td className={cel}>
-                    <select value={l.funcao} disabled={travada} onChange={(e) => alterar(i, { funcao: e.target.value })} className={inp}>
+                    <Select value={l.funcao} disabled={travada} onChange={(e) => alterar(i, { funcao: e.target.value })} className={inp}>
                       <option value="">—</option>
                       {FUNCOES.map((f) => <option key={f} value={f}>{f}</option>)}
-                    </select>
+                    </Select>
                   </td>
                   <td className={cel}>{l.perfil === "terceiro"
                     ? <SeletorEmpresa empresas={empresas} valor={l.empresa} disabled={travada} onChange={(v) => alterar(i, { empresa: v })} compacto />
@@ -577,12 +577,12 @@ function SeletorEmpresa({ empresas, valor, onChange, disabled, compacto }) {
   const fora = valor && !nomes.some((n) => n.trim().toLowerCase() === valor.trim().toLowerCase());
   return (
     <>
-      <select value={fora ? valor : (nomes.find((n) => n.trim().toLowerCase() === (valor || "").trim().toLowerCase()) || "")} disabled={disabled}
+      <Select value={fora ? valor : (nomes.find((n) => n.trim().toLowerCase() === (valor || "").trim().toLowerCase()) || "")} disabled={disabled}
         onChange={(e) => onChange(e.target.value)} className={compacto ? "input !py-1.5 !px-2 !text-sm" : `input ${!valor ? "!border-amber" : ""}`}>
         <option value="">Selecione a empresa...</option>
         {empresas.map((e) => <option key={e.id} value={e.nome}>{e.nome}{e.cnpj && !compacto ? ` — ${e.cnpj}` : ""}</option>)}
         {fora && <option value={valor}>{valor} (não cadastrada)</option>}
-      </select>
+      </Select>
       {!compacto && !empresas.length && <span className="block text-xs text-amber mt-1">Nenhuma empresa cadastrada — cadastre em Recursos → Empresas terceiras.</span>}
     </>
   );

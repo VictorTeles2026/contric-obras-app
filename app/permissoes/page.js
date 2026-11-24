@@ -6,7 +6,7 @@ import { useAuth, ROTULO_PERFIL } from "../../lib/AuthContext";
 import { CATALOGO_PERMISSOES, PADRAO_PERMISSOES, ROTULO_VALOR, resolverPermissoes, PERFIS_INTERNOS } from "../../lib/permissoes";
 import { useToast } from "../../lib/Toast";
 import PainelShell from "../../components/PainelShell";
-import { CabecalhoPagina, Aviso, Spinner } from "../../components/ui";
+import { Select, CabecalhoPagina, Aviso, Spinner } from "../../components/ui";
 import Icone from "../../components/Icone";
 
 const PERFIS = PERFIS_INTERNOS;
@@ -145,10 +145,10 @@ function ExcecoesUsuario() {
       <div className="cartao p-4 mb-4 grid grid-cols-1 md:grid-cols-[minmax(240px,1fr)_1fr_180px] gap-3 items-end">
         <label className="block">
           <span className="rotulo">Usuário</span>
-          <select value={usuarioId} onChange={(e) => setUsuarioId(e.target.value)} className="input">
+          <Select value={usuarioId} onChange={(e) => setUsuarioId(e.target.value)} className="input">
             <option value="">Selecione o usuário...</option>
             {usuarios.map((x) => <option key={x.id} value={x.id}>{x.nome} — {ROTULO_PERFIL[x.perfil] || x.perfil}{qtdPorUsuario(x.id) ? ` (${qtdPorUsuario(x.id)} exceção(ões))` : ""}{x.ativo === false ? " · desabilitado" : ""}</option>)}
-          </select>
+          </Select>
         </label>
         <label className="block">
           <span className="rotulo">Motivo (vai junto com as próximas exceções salvas)</span>

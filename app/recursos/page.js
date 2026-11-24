@@ -11,7 +11,7 @@ import { hojeISO, formatarData } from "../../lib/datas";
 import { TIPOS_RECURSO, AREAS, FUNCOES, UNIDADES } from "../../lib/constantes";
 import { useToast } from "../../lib/Toast";
 import PainelShell from "../../components/PainelShell";
-import { Modal, EstadoVazio, Esqueleto, Aviso, Campo, SeletorEquipes, SeletorPi, FiltroMulti, passa, disponiveis, BotaoLimpar } from "../../components/ui";
+import { Select, Modal, EstadoVazio, Esqueleto, Aviso, Campo, SeletorEquipes, SeletorPi, FiltroMulti, passa, disponiveis, BotaoLimpar } from "../../components/ui";
 import Icone from "../../components/Icone";
 import GraficoUtilizacao from "../../components/GraficoUtilizacao";
 import { ConfirmacaoDupla } from "../../components/AcoesMaster";
@@ -652,27 +652,27 @@ function RecursoForm({ usuarios, recursoDoUsuario = () => null, recursoAtualId, 
         </div>
       )}
       <Campo rotulo="Vincular a um usuário (opcional)">
-        <select value={usuarioId} onChange={(e) => onSelecionarUsuario(e.target.value)} className="input">
+        <Select value={usuarioId} onChange={(e) => onSelecionarUsuario(e.target.value)} className="input">
           <option value="">Sem vínculo com usuário</option>
           {usuarios.map((u) => {
             const ja = recursoDoUsuario(u.id);
             const outro = ja && ja.id !== recursoAtualId;
             return <option key={u.id} value={u.id} disabled={outro}>{u.nome} — {ROTULO_PERFIL_CURTO[u.perfil] || u.perfil}{outro ? " (já é recurso)" : ""}</option>;
           })}
-        </select>
+        </Select>
       </Campo>
       <Campo rotulo="Nome"><input placeholder="Ex: Caminhão Munck, João Silva..." value={nome} onChange={(e) => setNome(e.target.value)} className="input" /></Campo>
       <Campo rotulo="Tipo" dica={bloqueadoPorVinculo ? "Definido pelo perfil do usuário vinculado." : undefined}>
-        <select value={tipo} onChange={(e) => setTipo(e.target.value)} disabled={bloqueadoPorVinculo} className="input">
+        <Select value={tipo} onChange={(e) => setTipo(e.target.value)} disabled={bloqueadoPorVinculo} className="input">
           {TIPOS_RECURSO.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-        </select>
+        </Select>
       </Campo>
       {ehTerceira && (
         <Campo rotulo="Empresa terceira (obrigatório)">
-          <select value={empresaId} onChange={(e) => setEmpresaId(e.target.value)} className={`input ${faltaEmpresa ? "!border-amber" : ""}`}>
+          <Select value={empresaId} onChange={(e) => setEmpresaId(e.target.value)} className={`input ${faltaEmpresa ? "!border-amber" : ""}`}>
             <option value="">Selecione a empresa...</option>
             {empresas.map((e) => <option key={e.id} value={e.id}>{e.nome}{e.cnpj ? ` — ${e.cnpj}` : ""}{e.ativa ? "" : " (inativa)"}</option>)}
-          </select>
+          </Select>
           {empresas.length === 0 && (
             <span className="block text-xs text-amber mt-1">
               Nenhuma empresa ativa cadastrada. <button type="button" onClick={onIrParaEmpresas} className="underline font-semibold">Cadastrar em Empresas terceiras</button>
@@ -687,20 +687,20 @@ function RecursoForm({ usuarios, recursoDoUsuario = () => null, recursoAtualId, 
         </Campo>
       ) : (
         <Campo rotulo="Função (obrigatório)">
-          <select value={funcao} onChange={(e) => setFuncao(e.target.value)} className={`input ${faltaFuncao ? "!border-amber" : ""}`}>
+          <Select value={funcao} onChange={(e) => setFuncao(e.target.value)} className={`input ${faltaFuncao ? "!border-amber" : ""}`}>
             <option value="">Selecione...</option>
             {FUNCOES.map((f) => <option key={f} value={f}>{f}</option>)}
             {funcao && !FUNCOES.includes(funcao) && <option value={funcao}>{funcao} (antiga)</option>}
-          </select>
+          </Select>
         </Campo>
       ))}
       <Campo rotulo="Equipes (opcional)">
         <SeletorEquipes opcoes={AREAS} valor={equipes} onChange={setEquipes} />
       </Campo>
       <Campo rotulo="Modo de apropriação">
-        <select value={unidade} onChange={(e) => setUnidade(e.target.value)} className="input">
+        <Select value={unidade} onChange={(e) => setUnidade(e.target.value)} className="input">
           {UNIDADES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-        </select>
+        </Select>
       </Campo>
       <div className="flex gap-2">
         <button type="submit" disabled={!nome.trim() || faltaEmpresa || faltaFuncao} className="btn btn-escuro flex-1">{rotuloBotao}</button>

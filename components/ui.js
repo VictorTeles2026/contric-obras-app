@@ -6,6 +6,29 @@ import Icone from "./Icone";
 import { traduzirErro } from "../lib/Toast";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { Children, isValidElement, Fragment } from "react";
+
+// <select> com as opções em ordem alfabética. Ficam no topo, na ordem original: a opção vazia
+// (placeholder/"todos") e as marcadas com data-fixo. Optgroups têm as opções ordenadas por dentro.
+const textoNo = (n) => (n == null || typeof n === "boolean" ? "" : typeof n === "string" || typeof n === "number" ? String(n)
+  : Array.isArray(n) ? n.map(textoNo).join("") : isValidElement(n) ? textoNo(n.props.children) : "");
+const achatar = (filhos) => Children.toArray(filhos).flatMap((c) => (isValidElement(c) && c.type === Fragment ? achatar(c.props.children) : [c]));
+const ordenarOpcoes = (filhos) => {
+  const itens = achatar(filhos);
+  const fixos = [], resto = [];
+  itens.forEach((c) => {
+    if (!isValidElement(c)) return;
+    if (c.type === "optgroup") resto.push(<optgroup key={c.key} {...c.props}>{ordenarOpcoes(c.props.children)}</optgroup>);
+    else if (c.props.value === "" || c.props["data-fixo"] !== undefined) fixos.push(c);
+    else resto.push(c);
+  });
+  const rot = (c) => (c.type === "optgroup" ? c.props.label : textoNo(c.props.children)) || "";
+  resto.sort((a, b) => String(rot(a)).localeCompare(String(rot(b)), "pt-BR", { numeric: true, sensitivity: "base" }));
+  return [...fixos, ...resto];
+};
+export function Select({ children, ...props }) {
+  return <select {...props}>{ordenarOpcoes(children)}</select>;
+}
 
 export function Logo({ tamanho = "md", claro = false, adaptavel = false }) {
   // logo oficial: versão "claro" (texto branco) para fundos escuros.
@@ -423,7 +446,8 @@ export function FiltroMulti({ opcoes = [], valor = [], onChange, todos = "Todos"
   const [busca, setBusca] = useState("");
   const ancoraRef = useRef(null);
   const termo = busca.trim().toLowerCase();
-  const lista = opcoes.filter(([, r, d]) => !termo || `${r} ${d || ""}`.toLowerCase().includes(termo));
+  const lista = opcoes.filter(([, r, d]) => !termo || `${r} ${d || ""}`.toLowerCase().includes(termo))
+    .sort((a, b) => String(a[1] ?? "").localeCompare(String(b[1] ?? ""), "pt-BR", { numeric: true, sensitivity: "base" }));
   const alternar = (v) => onChange(valor.includes(v) ? valor.filter((x) => x !== v) : [...valor, v]);
   const nomes = opcoes.filter(([v]) => valor.includes(v)).map(([, r]) => r);
   const resumo = !valor.length ? todos : nomes.length === 1 ? nomes[0] : `${nomes.length} selecionados`;
