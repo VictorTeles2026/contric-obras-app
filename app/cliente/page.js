@@ -178,7 +178,7 @@ function EnviarTransfer({ pi, onEnviado }) {
     setEnviando(null);
     const ate = new Date(new Date().setHours(0, 0, 0, 0) + 10 * 86400000).toLocaleDateString("pt-BR");
     setMsg(falhas.length ? { tipo: "erro", texto: `${ok ? `${ok} enviado(s). ` : ""}Falhou: ${falhas.join(" · ")}` }
-      : { tipo: "ok", texto: `${ok} arquivo(s) enviado(s) à Contric. Ficam disponíveis até ${ate}.` });
+      : { tipo: "ok", texto: `${ok} arquivo(s) enviado(s) à Contric. Ficam disponíveis até ${ate}. Uma cópia do aviso foi enviada para o seu e-mail.` });
     if (ok) onEnviado?.();
   };
   return (

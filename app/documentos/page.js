@@ -30,6 +30,8 @@ const CLASSIFICACOES = CLASSIFICACOES_DOC;
 // cliente no envio e quando faltam 5 dias, 2 dias e no dia da exclusão.
 const TRANSFER = ["TRANSFER", "Contric Transfer"];
 const DIAS_TRANSFER = 10;
+// evidências dos envios do Transfer (e-mails, destinatários, arquivos) — ficam guardadas, não expiram
+const EVIDENCIA = ["EVIDENCIA_TRANSFER", "Evidências do Transfer"];
 const diaLocal = (d) => { const x = new Date(d); return new Date(x.getFullYear(), x.getMonth(), x.getDate()); };
 const expiraEm = (data) => { const d = diaLocal(data || Date.now()); d.setDate(d.getDate() + DIAS_TRANSFER); return d; };
 const diasRestantes = (data) => Math.round((expiraEm(data) - diaLocal(Date.now())) / 86400000);
@@ -85,7 +87,7 @@ export default function DocumentosPage() {
   const [filtroPasta, setFiltroPasta] = useState("");
   const [novaPasta, setNovaPasta] = useState(null);       // nome digitado (modal aberto)
   const [liberandoPasta, setLiberandoPasta] = useState(null); // [prefixo, nome]
-  const classificacoes = [TRANSFER, ...CLASSIFICACOES, ...pastasPi.map((p) => [p.prefixo, p.nome])];
+  const classificacoes = [TRANSFER, EVIDENCIA, ...CLASSIFICACOES, ...pastasPi.map((p) => [p.prefixo, p.nome])];
   const [avisarTransfer, setAvisarTransfer] = useState([]); // clientes que recebem os arquivos do Transfer neste envio
 
   // aberto pela Página do PI (?pi=...): já busca os arquivos daquele PI (assim que a lista de PIs carregar)
@@ -113,7 +115,7 @@ export default function DocumentosPage() {
     ]);
     setPastasPi(pastas || []);
     setPastasCliente(pastasLib || []);
-    const todas = [TRANSFER, ...CLASSIFICACOES, ...(pastas || []).map((p) => [p.prefixo, p.nome])];
+    const todas = [TRANSFER, EVIDENCIA, ...CLASSIFICACOES, ...(pastas || []).map((p) => [p.prefixo, p.nome])];
     // PDF que existe na pasta mas perdeu o vínculo com o RDO/ocorrência: religa pelo nome do arquivo
     const nomes = (lista.data || []).filter((f) => f.id).map((f) => f.name);
     const usados = new Set([...(rdos || []), ...(ocorrencias || [])].map((x) => x.pdf_path).filter(Boolean));
@@ -205,7 +207,7 @@ export default function DocumentosPage() {
     setEnviando(true);
     const existentes = new Set(resultado.itens.filter((i) => i.caminho).map((i) => i.nome));
     let ok = 0, atas = 0;
-    const transferEnviados = [];
+    const transferEnviados = [], transferTamanhos = {};
     for (const { arquivo: arq, prefixo, base } of lista) {
       // mantém o prefixo da classificação mesmo que o nome tenha sido editado
       let semExt = nomeSeguro(`${base || sugerirNome(prefixo, resultado.pi)}.x`).replace(/\.x$/, "");
@@ -217,25 +219,30 @@ export default function DocumentosPage() {
       if (error) { avisar(`Falha ao enviar "${arq.name}": ${error.message}`, "erro", 6000); continue; }
       existentes.add(nome); ok++;
       if (prefixo === "ATA_REUNIAO") atas++;
-      if (prefixo === TRANSFER[0]) transferEnviados.push(nome);
+      if (prefixo === TRANSFER[0]) { transferEnviados.push(nome); transferTamanhos[nome] = arq.size; }
       await registrarLog(usuario, "Enviou documento", `${resultado.pi.codigo} — ${nome} (${classificacoes.find(([p]) => p === prefixo)?.[1]})`);
     }
     setEnviando(false);
     setPendentes(null);
     if (atas) chamarApi("/api/alertas", { acao: "cliente", piId: resultado.pi.id, tipo: "ata", detalhe: `${atas} nova(s) ata(s) de reunião.` });
-    // Contric Transfer: libera os arquivos aos clientes escolhidos e avisa (com a data de exclusão)
-    if (transferEnviados.length && avisarTransfer.length) {
-      const linhas = avisarTransfer.flatMap((cid) => transferEnviados.map((n) => ({ cliente_id: cid, pi_id: resultado.pi.id, caminho: `${resultado.pi.id}/${n}`, liberado_por_nome: usuario?.nome })));
-      const { error } = await supabase.from("cliente_documentos").insert(linhas);
-      if (error) avisar(`Arquivos salvos, mas não foi possível liberar aos clientes: ${error.message}`, "erro", 7000);
-      else {
-        const ate = expiraEm(Date.now()).toLocaleDateString("pt-BR");
-        for (const cid of avisarTransfer) {
-          chamarApi("/api/alertas", { acao: "cliente", tipo: "transfer", piId: resultado.pi.id, clienteId: cid,
-            detalhe: `${transferEnviados.length} arquivo(s): ${transferEnviados.join(", ")}. Disponível(is) até ${ate} — depois disso será(ão) apagado(s) automaticamente. Baixe e guarde uma cópia.` }).catch(() => {});
-        }
-        await registrarLog(usuario, "Contric Transfer: enviou arquivo(s)", `${resultado.pi.codigo} — ${transferEnviados.join(", ")} · ${avisarTransfer.length} cliente(s) · expira em ${ate}`);
+    // Contric Transfer: libera os arquivos aos clientes escolhidos, avisa (com a data de exclusão),
+    // manda cópia do aviso a quem enviou e salva a evidência do envio nos documentos do PI
+    if (transferEnviados.length) {
+      let liberou = true;
+      if (avisarTransfer.length) {
+        const linhas = avisarTransfer.flatMap((cid) => transferEnviados.map((n) => ({ cliente_id: cid, pi_id: resultado.pi.id, caminho: `${resultado.pi.id}/${n}`, liberado_por_nome: usuario?.nome })));
+        const { error } = await supabase.from("cliente_documentos").insert(linhas);
+        if (error) { liberou = false; avisar(`Arquivos salvos, mas não foi possível liberar aos clientes: ${error.message}`, "erro", 7000); }
       }
+      const ate = expiraEm(Date.now()).toLocaleDateString("pt-BR");
+      await registrarLog(usuario, "Contric Transfer: enviou arquivo(s)", `${resultado.pi.codigo} — ${transferEnviados.join(", ")} · ${liberou ? avisarTransfer.length : 0} cliente(s) · expira em ${ate}`);
+      try {
+        const r = await chamarApi("/api/alertas", { acao: "transfer_aviso", piId: resultado.pi.id, clienteIds: liberou ? avisarTransfer : [],
+          arquivos: transferEnviados.map((n) => ({ nome: n, tamanho: transferTamanhos[n] })) });
+        const falhas = (r.envios || []).filter((d) => d.status !== "enviado");
+        if (!r.evidencia) avisar(`Evidência do envio não foi salva: ${r.erroEvidencia || "erro"}`, "erro", 8000);
+        else avisar(`Aviso enviado${falhas.length ? ` (sem envio para: ${falhas.map((d) => `${d.nome} — ${d.status}`).join("; ")})` : " ao(s) cliente(s) e cópia para você"}. Evidência salva nos documentos do PI.`, falhas.length ? "erro" : "sucesso", 8000);
+      } catch (e) { avisar(`Arquivos salvos, mas o aviso/evidência falhou: ${e.message}`, "erro", 8000); }
     }
     if (ok) { avisar(`${ok} arquivo(s) enviado(s).`); buscar(resultado.pi.id); }
   };

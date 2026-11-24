@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { identificar, permissoesDe, supabaseAdmin, enviarEmail, emailCliente, urlApp, rotaSegura } from "../../../lib/authServidor";
+import { identificar, permissoesDe, supabaseAdmin, enviarEmail, emailCliente, urlApp, rotaSegura, avisoTransferComEvidencia } from "../../../lib/authServidor";
 import { resolverPermissoes, PERFIS_GERENCIA } from "../../../lib/permissoes";
 import { ALERTAS, PRAZOS, TIPOS_ALERTA, MODELO_EMAIL, montarEmailEquipe, datasAlertaEtapa } from "../../../lib/constantes";
 
@@ -310,6 +310,26 @@ export const POST = rotaSegura(async (req) => {
   const corpo = await req.json().catch(() => ({}));
   if (corpo.acao === "despachar") return NextResponse.json(await despachar(admin));
   if (corpo.acao === "cliente") return avisarClientes(admin, corpo);
+  // Contric Transfer: aviso aos clientes escolhidos + cópia a quem enviou + evidência salva no PI (sempre)
+  if (corpo.acao === "transfer_aviso") {
+    const { piId, clienteIds = [], arquivos = [] } = corpo;
+    if (!piId || !Array.isArray(arquivos) || !arquivos.length) return NextResponse.json({ error: "Dados inválidos." }, { status: 400 });
+    const { data: pi } = await admin.from("pis").select("id,codigo,cliente,projeto").eq("id", piId).maybeSingle();
+    if (!pi) return NextResponse.json({ error: "PI não encontrado." }, { status: 404 });
+    // só clientes com acesso a este PI (ou ao contrato) recebem
+    const { data: piFull } = await admin.from("pis").select("pi_pai_id").eq("id", piId).maybeSingle();
+    const { data: acessos } = clienteIds.length ? await admin.from("cliente_acessos").select("cliente_id, clientes(id,nome,email,ativo)")
+      .in("pi_id", [piId, piFull?.pi_pai_id].filter(Boolean)).in("cliente_id", clienteIds.slice(0, 50)) : { data: [] };
+    const vistos = new Set();
+    const destinatarios = (acessos || []).map((a) => a.clientes).filter((c) => c && c.ativo !== false && !vistos.has(c.id) && vistos.add(c.id))
+      .map((c) => ({ nome: c.nome, email: c.email, papel: "cliente" }));
+    const ate = new Date(Date.now() - 3 * 3600000 + 10 * 86400000).toISOString().slice(0, 10).split("-").reverse().join("/");
+    const r = await avisoTransferComEvidencia(admin, { pi, remetente: { nome: interno.nome, email: interno.email, tipo: "interno" },
+      destinatarios, arquivos: arquivos.slice(0, 50).map((a) => ({ nome: String(a.nome).slice(0, 200), tamanho: Number(a.tamanho) || null })), ateBR: ate });
+    await admin.from("logs_auditoria").insert({ usuario_id: interno.id, usuario_nome: interno.nome, acao: "Contric Transfer: aviso e evidência",
+      detalhe: `${pi.codigo} — ${arquivos.length} arquivo(s) · ${r.envios.map((d) => `${d.nome}: ${d.status}`).join("; ")}${r.evidencia ? ` · evidência ${r.evidencia.split("/").pop()}` : ` · evidência NÃO salva: ${r.erroEvidencia}`}` });
+    return NextResponse.json(r);
+  }
   if (corpo.acao === "alocacao") return avisarAlocacao(admin, interno, corpo);
   // PDF (ex: cronograma) salvo em Documentos do PI, enviado anexado para contatos escolhidos do cliente
   if (corpo.acao === "enviar_pdf") {

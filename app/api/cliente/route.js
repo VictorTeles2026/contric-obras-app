@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { identificar, rotaSegura } from "../../../lib/authServidor";
+import { identificar, rotaSegura, avisoTransferComEvidencia } from "../../../lib/authServidor";
 import { consolidarMacros } from "../../../lib/constantes";
 
 export const dynamic = "force-dynamic";
@@ -158,13 +158,23 @@ export const POST = rotaSegura(async (req) => {
     const { data: recs } = recIds.length ? await admin.from("recursos").select("usuario_id").in("id", recIds) : { data: [] };
     const destinos = [...new Set([...(gestores || []).map((u) => u.id), ...(recs || []).map((r) => r.usuario_id).filter(Boolean)])];
     if (destinos.length) {
-      await admin.from("notificacoes").insert(destinos.map((usuario_id) => ({ usuario_id, tipo: "documento",
+      // sininho; o e-mail vai pelo aviso abaixo (email_status "ignorado" evita e-mail em dobro)
+      await admin.from("notificacoes").insert(destinos.map((usuario_id) => ({ usuario_id, tipo: "documento", email_status: "ignorado",
         titulo: `Contric Transfer: arquivo do cliente — ${pi.codigo}`,
         mensagem: `${cliente.nome}${cliente.empresa ? ` (${cliente.empresa})` : ""} enviou "${nome}". Fica disponível por 10 dias.`,
         link: `/documentos?pi=${pi.id}&pasta=TRANSFER` })));
     }
-    await admin.from("logs_auditoria").insert({ usuario_nome: `${cliente.nome} (cliente)`, acao: "Contric Transfer: cliente enviou arquivo", detalhe: `${pi.codigo} — ${nome}` });
-    return NextResponse.json({ ok: true, nome });
+    // aviso por e-mail à equipe + cópia ao cliente que enviou + evidência salva no PI
+    const { data: equipe } = destinos.length ? await admin.from("usuarios").select("nome,email,ativo").in("id", destinos) : { data: [] };
+    const tamanho = (achados || []).find((f) => f.name === nome)?.metadata?.size ?? null;
+    const ate = new Date(Date.now() - 3 * 3600000 + 10 * 86400000).toISOString().slice(0, 10).split("-").reverse().join("/");
+    const r = await avisoTransferComEvidencia(admin, { pi: { ...pi, projeto: null }, remetente: { nome: cliente.nome, email: cliente.email, tipo: "cliente" },
+      destinatarios: (equipe || []).filter((u) => u.ativo !== false).map((u) => ({ nome: u.nome, email: u.email, papel: "equipe Contric" })),
+      arquivos: [{ nome, tamanho }], ateBR: ate });
+    await admin.from("logs_auditoria").insert({ usuario_nome: `${cliente.nome} (cliente)`, acao: "Contric Transfer: cliente enviou arquivo",
+      detalhe: `${pi.codigo} — ${nome} · ${r.envios.map((d) => `${d.nome}: ${d.status}`).join("; ")}${r.evidencia ? ` · evidência ${r.evidencia.split("/").pop()}` : ` · evidência NÃO salva: ${r.erroEvidencia}`}` });
+    const copia = r.envios.find((d) => d.papel === "cópia para quem enviou");
+    return NextResponse.json({ ok: true, nome, copiaEnviada: copia?.status === "enviado", evidencia: !!r.evidencia });
   }
   return NextResponse.json({ error: "Ação inválida." }, { status: 400 });
 });
