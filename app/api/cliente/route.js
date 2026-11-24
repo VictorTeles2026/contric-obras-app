@@ -108,3 +108,63 @@ export const GET = rotaSegura(async (req) => {
     .localeCompare(String(y.pi.pi_pai_id ? `${obras.find((o) => o.pi.id === y.pi.pi_pai_id)?.pi.codigo || ""}~${y.pi.codigo}` : y.pi.codigo), "pt-BR", { numeric: true }));
   return NextResponse.json({ cliente: perfil, obras });
 });
+
+// Contric Transfer — o cliente também envia arquivos (apagados 10 dias depois, como os da Contric).
+// 1) acao "transfer_url": confere o acesso ao PI e devolve uma URL de envio direto ao armazenamento
+//    (o arquivo não passa pelo servidor — sem o limite de tamanho da Vercel)
+// 2) acao "transfer_ok": confirma o arquivo enviado, libera para o próprio cliente e avisa a Contric
+const limpar = (t) => String(t || "").normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^A-Za-z0-9]+/g, "-").replace(/^-+|-+$/g, "").toUpperCase();
+async function temAcesso(admin, clienteId, piId) {
+  const { data: pi } = await admin.from("pis").select("id,codigo,cliente,pi_pai_id").eq("id", piId).maybeSingle();
+  if (!pi) return null;
+  const ids = [pi.id, pi.pi_pai_id].filter(Boolean);
+  const { data } = await admin.from("cliente_acessos").select("id").eq("cliente_id", clienteId).in("pi_id", ids).limit(1);
+  return data?.length ? pi : null;
+}
+export const POST = rotaSegura(async (req) => {
+  const { admin, cliente, resposta } = await identificar(req);
+  if (resposta) return resposta;
+  if (!cliente) return NextResponse.json({ error: "Não é um cliente." }, { status: 403 });
+  const corpo = await req.json().catch(() => ({}));
+  const pi = corpo.piId ? await temAcesso(admin, cliente.id, corpo.piId) : null;
+  if (!pi) return NextResponse.json({ error: "Sem acesso a esta obra." }, { status: 403 });
+
+  if (corpo.acao === "transfer_url") {
+    const original = String(corpo.nome || "arquivo");
+    if (Number(corpo.tamanho) > 50 * 1024 * 1024) return NextResponse.json({ error: "O arquivo passa de 50 MB." }, { status: 400 });
+    const partes = original.split(".");
+    const ext = partes.length > 1 ? `.${partes.pop().toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 8)}` : "";
+    const base = limpar(partes.join(".")).slice(0, 60) || "ARQUIVO";
+    const h = new Date(Date.now() - 3 * 3600000); // dia em São Paulo
+    const dia = h.toISOString().slice(0, 10).replace(/-/g, "");
+    const caminho = `${pi.id}/TRANSFER_CLIENTE_${dia}_${limpar(pi.codigo)}_${base}_${Date.now().toString(36).toUpperCase()}${ext}`;
+    const { data, error } = await admin.storage.from("documentos").createSignedUploadUrl(caminho);
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ caminho, token: data.token });
+  }
+
+  if (corpo.acao === "transfer_ok") {
+    const caminho = String(corpo.caminho || "");
+    if (!caminho.startsWith(`${pi.id}/TRANSFER_CLIENTE_`) || caminho.includes("..")) return NextResponse.json({ error: "Arquivo inválido." }, { status: 400 });
+    const nome = caminho.split("/").pop();
+    const { data: achados } = await admin.storage.from("documentos").list(pi.id, { limit: 5, search: nome });
+    if (!(achados || []).some((f) => f.name === nome)) return NextResponse.json({ error: "O envio não foi concluído." }, { status: 400 });
+    await admin.from("cliente_documentos").insert({ cliente_id: cliente.id, pi_id: pi.id, caminho, liberado_por_nome: `${cliente.nome} (cliente)` });
+    // avisa a Contric: gestores e quem está alocado na obra (ou no contrato)
+    const { data: gestores } = await admin.from("usuarios").select("id")
+      .in("perfil", ["master", "diretor", "gerente", "gerente_equipes", "gerente_processo", "coordenador"]).neq("ativo", false);
+    const { data: alocs } = await admin.from("alocacoes_recurso").select("recurso_id").in("pi_id", [pi.id, pi.pi_pai_id].filter(Boolean));
+    const recIds = [...new Set((alocs || []).map((a) => a.recurso_id))];
+    const { data: recs } = recIds.length ? await admin.from("recursos").select("usuario_id").in("id", recIds) : { data: [] };
+    const destinos = [...new Set([...(gestores || []).map((u) => u.id), ...(recs || []).map((r) => r.usuario_id).filter(Boolean)])];
+    if (destinos.length) {
+      await admin.from("notificacoes").insert(destinos.map((usuario_id) => ({ usuario_id, tipo: "documento",
+        titulo: `Contric Transfer: arquivo do cliente — ${pi.codigo}`,
+        mensagem: `${cliente.nome}${cliente.empresa ? ` (${cliente.empresa})` : ""} enviou "${nome}". Fica disponível por 10 dias.`,
+        link: `/documentos?pi=${pi.id}&pasta=TRANSFER` })));
+    }
+    await admin.from("logs_auditoria").insert({ usuario_nome: `${cliente.nome} (cliente)`, acao: "Contric Transfer: cliente enviou arquivo", detalhe: `${pi.codigo} — ${nome}` });
+    return NextResponse.json({ ok: true, nome });
+  }
+  return NextResponse.json({ error: "Ação inválida." }, { status: 400 });
+});

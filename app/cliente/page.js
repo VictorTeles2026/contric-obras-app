@@ -125,6 +125,7 @@ export default function PortalCliente() {
                   <ListaArquivos titulo="Ocorrências assinadas" icone="alerta" vazio="Nenhuma ocorrência assinada disponível ainda."
                     itens={(obra.ocorrencias || []).map((o) => ({ chave: o.id, nome: `${o.categoria || "Ocorrência"} — ${formatarData(o.data)}`, detalhe: `${o.assinadoPor ? `Assinada por ${o.assinadoPor}` : "Assinada"}${o.descricao ? ` · ${o.descricao}` : ""}`, url: o.url }))} />
                 )}
+                <EnviarTransfer pi={obra.pi} onEnviado={carregar} />
                 {(obra.documentos || []).length > 0 && (
                   <ListaArquivos titulo="Documentos" icone="pasta" vazio=""
                     itens={obra.documentos.map((d) => {
@@ -133,7 +134,7 @@ export default function PortalCliente() {
                       const exp = transfer ? new Date(new Date(d.data).setHours(0, 0, 0, 0) + 10 * 86400000) : null;
                       const faltam = exp ? Math.round((exp - new Date().setHours(0, 0, 0, 0)) / 86400000) : null;
                       return { chave: d.nome, nome: d.nome, url: d.url,
-                        detalhe: transfer ? `⏳ Contric Transfer · disponível até ${exp.toLocaleDateString("pt-BR")}${faltam <= 0 ? " (apaga hoje)" : ` (${faltam} dia${faltam > 1 ? "s" : ""})`} — baixe uma cópia` : `Disponibilizado em ${formatarDataHora(d.data)}` };
+                        detalhe: transfer ? `⏳ Contric Transfer${String(d.nome).startsWith("TRANSFER_CLIENTE_") ? " · enviado por você" : ""} · disponível até ${exp.toLocaleDateString("pt-BR")}${faltam <= 0 ? " (apaga hoje)" : ` (${faltam} dia${faltam > 1 ? "s" : ""})`} — baixe uma cópia` : `Disponibilizado em ${formatarDataHora(d.data)}` };
                     })} />
                 )}
                 </div>
@@ -144,6 +145,59 @@ export default function PortalCliente() {
       </main>
       {trocandoSenha && <AlterarSenha onFechar={() => setTrocandoSenha(false)} />}
     </div>
+  );
+}
+
+// Contric Transfer: o cliente envia arquivos para a Contric (apagados 10 dias depois do envio).
+// O arquivo vai direto ao armazenamento por uma URL assinada pelo servidor, que antes confere o acesso.
+function EnviarTransfer({ pi, onEnviado }) {
+  const inputRef = useRef(null);
+  const [enviando, setEnviando] = useState(null); // nome do arquivo em envio
+  const [msg, setMsg] = useState(null); // { tipo, texto }
+  const api = async (corpo) => {
+    const { data: s } = await supabase.auth.getSession();
+    const r = await fetch("/api/cliente", { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${s.session?.access_token}` }, body: JSON.stringify({ piId: pi.id, ...corpo }) });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(j.error || `erro ${r.status}`);
+    return j;
+  };
+  const enviar = async (arquivos) => {
+    setMsg(null);
+    let ok = 0; const falhas = [];
+    for (const arq of arquivos) {
+      if (arq.size > 50 * 1024 * 1024) { falhas.push(`${arq.name}: passa de 50 MB`); continue; }
+      setEnviando(arq.name);
+      try {
+        const { caminho, token } = await api({ acao: "transfer_url", nome: arq.name, tamanho: arq.size });
+        const { error } = await supabase.storage.from("documentos").uploadToSignedUrl(caminho, token, arq, { contentType: arq.type || undefined });
+        if (error) throw new Error(error.message);
+        await api({ acao: "transfer_ok", caminho });
+        ok++;
+      } catch (e) { falhas.push(`${arq.name}: ${e.message}`); }
+    }
+    setEnviando(null);
+    const ate = new Date(new Date().setHours(0, 0, 0, 0) + 10 * 86400000).toLocaleDateString("pt-BR");
+    setMsg(falhas.length ? { tipo: "erro", texto: `${ok ? `${ok} enviado(s). ` : ""}Falhou: ${falhas.join(" · ")}` }
+      : { tipo: "ok", texto: `${ok} arquivo(s) enviado(s) à Contric. Ficam disponíveis até ${ate}.` });
+    if (ok) onEnviado?.();
+  };
+  return (
+    <section className="rounded-2xl bg-white border border-amber-300 overflow-hidden">
+      <div className="px-5 py-3.5 border-b border-zinc-200 flex flex-wrap items-center gap-2">
+        <span>⏳</span>
+        <h2 className="titulo-quadro">Contric Transfer — enviar arquivos</h2>
+        <button onClick={() => inputRef.current?.click()} disabled={!!enviando}
+          className="ml-auto rounded-lg bg-zinc-900 text-white px-4 py-2 text-sm font-semibold hover:bg-zinc-700 disabled:opacity-60 flex items-center gap-2">
+          {enviando ? <><Spinner className="w-4 h-4" /> Enviando...</> : <><Icone nome="upload" className="w-4 h-4" /> Enviar arquivo</>}
+        </button>
+        <input ref={inputRef} type="file" multiple className="hidden" onChange={(e) => { const l = Array.from(e.target.files || []); e.target.value = ""; if (l.length) enviar(l); }} />
+      </div>
+      <div className="px-5 py-3 text-xs text-zinc-500">
+        Envie arquivos para a equipe Contric desta obra ({pi.codigo}), até 50 MB cada. Eles ficam disponíveis por <strong>10 dias</strong> e depois são apagados automaticamente.
+        {enviando && <div className="mt-1 text-zinc-700">Enviando "{enviando}"...</div>}
+        {msg && <div className={`mt-2 rounded-lg px-3 py-2 text-sm ${msg.tipo === "ok" ? "bg-green-50 text-green-800" : "bg-red-50 text-red-700"}`}>{msg.texto}</div>}
+      </div>
+    </section>
   );
 }
 

@@ -282,10 +282,20 @@ export default function DocumentosPage() {
   };
   const contagem = (t) => (resultado?.itens || []).filter((i) => !t || i.tipo === t).length;
 
+  // Contric Transfer geral: todos os arquivos do Transfer de TODOS os PIs, para qualquer pessoa da Contric
+  const veDocumentos = pode(usuario, "doc.ver");
+  const transferGeral = filtroPasta === TRANSFER[0] && !resultado && !buscando;
+  if (!veDocumentos) {
+    return <PainelShell><div className="p-4 md:p-8">
+      <CabecalhoPagina titulo="Contric Transfer" subtitulo={`Arquivos trocados com os clientes — apagados ${DIAS_TRANSFER} dias após o envio.`} />
+      <TransferGeral onAbrir={abrir} />
+    </div></PainelShell>;
+  }
+
   return (
     <PainelShell>
       <div className="p-4 md:p-8">
-        <CabecalhoPagina titulo="Documentos" subtitulo="Todos os arquivos de cada PI: PDFs dos RDOs, documentos enviados, fotos e vídeos das ocorrências." />
+        <CabecalhoPagina titulo={transferGeral ? "Contric Transfer" : "Documentos"} subtitulo={transferGeral ? `Todos os arquivos trocados com os clientes, de todos os PIs — apagados ${DIAS_TRANSFER} dias após o envio. Para enviar, escolha o PI abaixo.` : "Todos os arquivos de cada PI: PDFs dos RDOs, documentos enviados, fotos e vídeos das ocorrências."} />
 
         <form onSubmit={(e) => { e.preventDefault(); buscar(); }} className="cartao p-4 mb-5 flex flex-col sm:flex-row sm:items-end gap-3">
           <label className="block flex-1 min-w-0">
@@ -297,7 +307,8 @@ export default function DocumentosPage() {
           </button>
         </form>
 
-        {!resultado && !buscando && <EstadoVazio icone="pasta" titulo="Escolha um PI" texto="Selecione o PI e clique em Buscar para listar os arquivos." />}
+        {transferGeral && <TransferGeral onAbrir={abrir} podeIr={(id) => pis.some((p) => p.id === id)} onIrParaPi={(id) => { setPiId(id); buscar(id); }} />}
+        {!resultado && !buscando && !transferGeral && <EstadoVazio icone="pasta" titulo="Escolha um PI" texto="Selecione o PI e clique em Buscar para listar os arquivos." />}
         {buscando && <Esqueleto linhas={5} altura={52} />}
 
         {resultado && !buscando && (
@@ -552,6 +563,73 @@ export default function DocumentosPage() {
         <EditorOcorrencia oc={editandoRegistro.item} pis={pis} comoAprovador onFechar={() => setEditandoRegistro(null)} onSalvo={() => buscar(resultado.pi.id)} />
       )}
     </PainelShell>
+  );
+}
+
+// Contric Transfer de TODOS os PIs (não depende de estar alocado no PI): enviados pela Contric e pelos clientes
+function TransferGeral({ onAbrir, onIrParaPi, podeIr = () => false }) {
+  const [itens, setItens] = useState(null);
+  const [busca, setBusca] = useState("");
+  const [origem, setOrigem] = useState("");
+  const carregar = async () => {
+    // lista de PIs direto do banco (sem o filtro de "só os PIs em que estou alocado")
+    const { data: pis } = await supabase.from("pis").select("id,codigo,cliente,projeto");
+    const lista = [];
+    const todos = pis || [];
+    for (let i = 0; i < todos.length; i += 10) {
+      const lote = todos.slice(i, i + 10);
+      const res = await Promise.all(lote.map((p) => supabase.storage.from(BUCKET_DOCUMENTOS).list(p.id, { limit: 1000, search: "TRANSFER_" })));
+      res.forEach((r, k) => (r.data || []).filter((f) => f.id && f.name.startsWith("TRANSFER_")).forEach((f) => lista.push({
+        chave: `${lote[k].id}/${f.name}`, nome: f.name, caminho: `${lote[k].id}/${f.name}`, pi: lote[k], data: f.created_at, tamanho: f.metadata?.size,
+        doCliente: f.name.startsWith("TRANSFER_CLIENTE_") })));
+    }
+    lista.sort((a, b) => String(b.data || "").localeCompare(String(a.data || "")));
+    setItens(lista);
+  };
+  useEffect(() => { carregar(); }, []);
+  const termo = busca.trim().toLowerCase();
+  const vis = (itens || []).filter((i) => (!origem || (origem === "cliente") === i.doCliente) && (!termo || `${i.nome} ${i.pi.codigo} ${i.pi.cliente || ""}`.toLowerCase().includes(termo)));
+  return (
+    <div className="mb-5">
+      <div className="flex flex-col md:flex-row md:items-center gap-2 mb-3">
+        <div className="flex flex-wrap gap-1.5">
+          {[["", "Todos"], ["cliente", "Enviados pelos clientes"], ["contric", "Enviados pela Contric"]].map(([v, l]) => (
+            <button key={v} onClick={() => setOrigem(v)} className={`chip ${origem === v ? "chip-ativo" : ""}`}>{l}{itens ? ` (${(itens || []).filter((i) => !v || (v === "cliente") === i.doCliente).length})` : ""}</button>
+          ))}
+        </div>
+        <div className="relative md:ml-auto md:w-72">
+          <Icone nome="buscar" className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muteddim" />
+          <input value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Filtrar por nome, PI ou cliente..." className="input pl-9" />
+        </div>
+        <button onClick={() => { setItens(null); carregar(); }} className="btn btn-contorno btn-sm">Atualizar</button>
+      </div>
+      {!itens ? <Esqueleto linhas={4} altura={52} /> : vis.length === 0 ? (
+        <EstadoVazio icone="upload" titulo="Nenhum arquivo no Contric Transfer" texto={itens.length ? "Nada encontrado com esses filtros." : "Os arquivos enviados pela Contric ou pelos clientes aparecem aqui por 10 dias."} />
+      ) : (
+        <div className="cartao divide-y divide-line/70 overflow-hidden">
+          {vis.map((i) => (
+            <div key={i.chave} className="flex flex-wrap sm:flex-nowrap items-center gap-3 px-4 py-3 hover:bg-panel/50">
+              <div className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 ${i.doCliente ? "bg-[#8E5CD9]/10 text-[#8E5CD9]" : "bg-amber/10 text-amber"}`}><Icone nome="upload" className="w-5 h-5" /></div>
+              <div className="min-w-0 flex-1">
+                <button onClick={() => onAbrir(i)} className="font-semibold text-sm text-left hover:text-cyan hover:underline break-all">{i.nome}</button>
+                <div className="text-xs text-muted truncate">
+                  <span className="font-mono text-cyan font-semibold">{i.pi.codigo}</span> · {i.pi.cliente}{i.pi.projeto ? ` · ${i.pi.projeto}` : ""} · {i.data ? formatarDataHora(i.data) : "—"}{i.tamanho ? ` · ${tamanhoLegivel(i.tamanho)}` : ""}
+                </div>
+                <div className="mt-1 flex flex-wrap gap-1.5">
+                  <span className={`selo ${i.doCliente ? "bg-[#8E5CD9]/10 text-[#8E5CD9]" : "bg-navy/10 text-navy"}`}>{i.doCliente ? "enviado pelo cliente" : "enviado pela Contric"}</span>
+                  <SeloExpira data={i.data} />
+                </div>
+              </div>
+              <div className="flex items-center gap-1 ml-auto">
+                <button onClick={() => onAbrir(i)} className="btn btn-fantasma btn-sm">Abrir</button>
+                <button onClick={() => onAbrir(i, true)} className="p-2 rounded-lg text-muted hover:bg-panel" title="Baixar" aria-label={`Baixar ${i.nome}`}><Icone nome="download" className="w-4 h-4" /></button>
+                {onIrParaPi && podeIr(i.pi.id) && <button onClick={() => onIrParaPi(i.pi.id)} className="btn btn-fantasma btn-sm" title="Abrir os documentos deste PI">PI →</button>}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 
