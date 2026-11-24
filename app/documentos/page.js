@@ -237,8 +237,9 @@ export default function DocumentosPage() {
       const ate = expiraEm(Date.now()).toLocaleDateString("pt-BR");
       await registrarLog(usuario, "Contric Transfer: enviou arquivo(s)", `${resultado.pi.codigo} — ${transferEnviados.join(", ")} · ${liberou ? avisarTransfer.length : 0} cliente(s) · expira em ${ate}`);
       try {
-        const r = await chamarApi("/api/alertas", { acao: "transfer_aviso", piId: resultado.pi.id, clienteIds: liberou ? avisarTransfer : [],
+        const { ok: okApi, json: r } = await chamarApi("/api/alertas", { acao: "transfer_aviso", piId: resultado.pi.id, clienteIds: liberou ? avisarTransfer : [],
           arquivos: transferEnviados.map((n) => ({ nome: n, tamanho: transferTamanhos[n] })) });
+        if (!okApi) throw new Error(r.error || "erro no servidor");
         const falhas = (r.envios || []).filter((d) => d.status !== "enviado");
         if (!r.evidencia) avisar(`Evidência do envio não foi salva: ${r.erroEvidencia || "erro"}`, "erro", 8000);
         else avisar(`Aviso enviado${falhas.length ? ` (sem envio para: ${falhas.map((d) => `${d.nome} — ${d.status}`).join("; ")})` : " ao(s) cliente(s) e cópia para você"}. Evidência salva nos documentos do PI.`, falhas.length ? "erro" : "sucesso", 8000);
