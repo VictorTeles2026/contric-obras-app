@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { identificar, permissoesDe, supabaseAdmin, enviarEmail, emailCliente, urlApp, rotaSegura, avisoTransferComEvidencia } from "../../../lib/authServidor";
 import { resolverPermissoes, PERFIS_GERENCIA } from "../../../lib/permissoes";
-import { ALERTAS, PRAZOS, TIPOS_ALERTA, MODELO_EMAIL, montarEmailEquipe, datasAlertaEtapa } from "../../../lib/constantes";
+import { ALERTAS, PRAZOS, TIPOS_ALERTA, MODELO_EMAIL, montarEmailEquipe, datasAlertaEtapa, consolidarMacros } from "../../../lib/constantes";
 
 // Alertas automáticos por e-mail.
 // - Toda notificação do sininho entra numa fila (notificacoes.email_status = null). O app chama
@@ -436,6 +436,33 @@ async function rotinaTransfer(admin, { apagar }) {
 }
 
 // cron diário — a Vercel envia "Authorization: Bearer <CRON_SECRET>"
+// ---------------- foto diária do avanço (Jarvis: "avanço do dia anterior") ----------------
+// Roda no cron da manhã: guarda o avanço de cada PI como estava no fim do dia anterior.
+// configuracoes.avanco_diario = { "AAAA-MM-DD": { piId: % } } — mantém os últimos 15 dias.
+async function fotoAvancoDiario(admin) {
+  const [pis, etapas] = await Promise.all([
+    admin.from("pis").select("id,pi_pai_id").then((r) => r.data || []),
+    todas(() => admin.from("etapas").select("id,pi_id,parent_etapa_id,status,percentual,data_prevista_inicio,data_prevista_fim").order("id")).then((r) => r.data || []),
+  ]);
+  const ets = consolidarMacros(etapas);
+  const media = (ids) => {
+    const ms = ets.filter((e) => ids.includes(e.pi_id) && !e.parent_etapa_id);
+    return ms.length ? Math.round(ms.reduce((s, e) => s + (e.status === "concluida" ? 100 : Math.min(100, Number(e.percentual) || 0)), 0) / ms.length) : null;
+  };
+  const foto = {};
+  pis.forEach((p) => {
+    const filhos = pis.filter((x) => x.pi_pai_id === p.id).map((x) => x.id);
+    const v = media(filhos.length ? filhos : [p.id]);
+    if (v !== null) foto[p.id] = v;
+  });
+  const { data } = await admin.from("configuracoes").select("valor").eq("chave", "avanco_diario").maybeSingle();
+  const hist = { ...(data?.valor || {}), [agoraSP().dia]: foto };
+  const dias = Object.keys(hist).sort().slice(-15);
+  const valor = Object.fromEntries(dias.map((d) => [d, hist[d]]));
+  const { error } = await admin.from("configuracoes").upsert({ chave: "avanco_diario", valor, atualizado_por: "Sistema (rotina automática)", atualizado_em: new Date().toISOString() }, { onConflict: "chave" });
+  return { fotoAvanco: error ? { erro: error.message } : { pis: Object.keys(foto).length } };
+}
+
 export const GET = rotaSegura(async (req) => {
   const segredo = process.env.CRON_SECRET;
   if (!segredo || req.headers.get("authorization") !== `Bearer ${segredo}`) {
@@ -445,7 +472,8 @@ export const GET = rotaSegura(async (req) => {
   // cron da noite: só a exclusão do Contric Transfer
   if (new URL(req.url).searchParams.get("transfer") === "apagar") return NextResponse.json(await rotinaTransfer(admin, { apagar: true }));
   const transfer = await rotinaTransfer(admin, { apagar: false }).catch((e) => ({ transfer: { erro: e.message } }));
-  const resumo = { ...(await resumoDiario(admin)), ...transfer };
+  const foto = await fotoAvancoDiario(admin).catch((e) => ({ fotoAvanco: { erro: e.message } }));
+  const resumo = { ...(await resumoDiario(admin)), ...transfer, ...foto };
   const fila = await despachar(admin, { ignorarSilencio: true });
   return NextResponse.json({ ...resumo, ...fila });
 });

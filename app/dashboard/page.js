@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { Fragment, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
@@ -6,9 +6,10 @@ import { Responsive, WidthProvider } from "react-grid-layout";
 import "react-grid-layout/css/styles.css";
 import "react-resizable/css/styles.css";
 import { useTabela } from "../../lib/dados";
-import { useAuth } from "../../lib/AuthContext";
+import { useAuth, pode } from "../../lib/AuthContext";
 import { diasAte, formatarData, saudacao } from "../../lib/datas";
-import { STATUS_PI, COR_STATUS_PI, PRAZOS } from "../../lib/constantes";
+import { STATUS_PI, COR_STATUS_PI, PRAZOS, consolidarMacros } from "../../lib/constantes";
+import { horasDoLancamento } from "../../lib/horas";
 import PainelShell from "../../components/PainelShell";
 import { CabecalhoPagina, Esqueleto, EstadoVazio, BotaoLimpar } from "../../components/ui";
 import Icone from "../../components/Icone";
@@ -74,6 +75,8 @@ export default function DashboardPage() {
   const { dados: horasPendentes } = useTabela("apontamentos_horas", { select: "id", filtro: [["status", "pendente"]] });
   const [busca, setBusca] = useState("");
   const [filtroStatus, setFiltroStatus] = useState("ativo");
+  const [jarvis, setJarvis] = useState(false);
+  useEffect(() => { if (new URLSearchParams(window.location.search).get("jarvis")) setJarvis(true); }, []);
 
   // ---- layout dos quadros (salvo por usuário neste navegador) ----
   const chave = usuario ? `contric:dashboard:${usuario.id}` : null;
@@ -248,6 +251,9 @@ export default function DashboardPage() {
           titulo={`${saudacao()}, ${usuario?.nome?.split(" ")[0] || ""}`}
           subtitulo={podeMover ? "Arraste os quadros para reorganizar e puxe as bordas para mudar o tamanho." : "Visão geral das obras"}
           acoes={<>
+            <button onClick={() => setJarvis(true)} className="btn btn-escuro" title="Cockpit de controle geral das obras">
+              <span className="w-2 h-2 rounded-full bg-[#29d3ff] shadow-[0_0_8px_#29d3ff] animate-pulse" /> Ativar Jarvis
+            </button>
             {podeMover && <button onClick={restaurar} className="btn btn-contorno">Restaurar layout</button>}
             <Link href="/cronograma" className="btn btn-primario"><Icone nome="cronograma" className="w-4 h-4" /> Abrir cronograma</Link>
           </>}
@@ -276,7 +282,263 @@ export default function DashboardPage() {
           </GradeResponsiva>
         )}
       </div>
+      {jarvis && <Jarvis pis={pis} etapasBrutas={etapas} usuario={usuario} onFechar={() => setJarvis(false)} />}
     </PainelShell>
+  );
+}
+
+// ======================= JARVIS: cockpit de controle geral das obras =======================
+const JV = { ok: "#29d3ff", bom: "#3ee08f", at: "#ffb547", ru: "#ff4d5e", off: "#2a4a63" };
+const POR_PAGINA = 20;
+const ehAbertoPi = (p) => !["concluido", "cancelado"].includes(p.status || "ativo");
+
+function useRelogio() {
+  const [agora, setAgora] = useState(() => new Date());
+  useEffect(() => { const t = setInterval(() => setAgora(new Date()), 1000); return () => clearInterval(t); }, []);
+  return agora;
+}
+// um relógio de animação para todos os medidores (sobem juntos até o valor)
+function useAnimacaoJarvis(chave) {
+  const [t, setT] = useState(0);
+  useEffect(() => {
+    if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) { setT(1); return; }
+    let raf, ini = null; setT(0);
+    const passo = (a) => { if (ini === null) ini = a; const p = Math.min(1, (a - ini) / 1400); setT(1 - Math.pow(1 - p, 3)); if (p < 1) raf = requestAnimationFrame(passo); };
+    raf = requestAnimationFrame(passo);
+    return () => cancelAnimationFrame(raf);
+  }, [chave]);
+  return t;
+}
+function MiniMedidor({ rotulo, valor, max = 100, cor, sufixo = "%", perigo, t, dica }) {
+  const vazio = valor === null || valor === undefined;
+  const f = vazio ? 0 : Math.max(0, Math.min(1, (valor * t) / max));
+  const L = Math.PI * 15;
+  const c = vazio ? JV.off : cor;
+  return (
+    <div className={`text-center py-0.5 ${perigo ? "jv-pisca" : ""}`} title={dica}>
+      <svg viewBox="0 0 40 23" className="w-full block">
+        <path d="M5 20 A15 15 0 0 1 35 20" fill="none" stroke="#0e3550" strokeWidth="3.5" strokeLinecap="round" />
+        <path d="M5 20 A15 15 0 0 1 35 20" fill="none" stroke={c} strokeWidth="3.5" strokeLinecap="round" strokeDasharray={`${L * f} ${L}`} style={{ filter: `drop-shadow(0 0 2px ${c})` }} />
+      </svg>
+      <div className="text-[12px] font-semibold leading-none -mt-[11px] tabular-nums" style={{ color: c }}>{vazio ? "—" : `${Math.round(valor * t)}${sufixo}`}</div>
+      <div className="text-[8.5px] tracking-wide text-[#4f9cc4] mt-0.5 leading-none">{rotulo}</div>
+    </div>
+  );
+}
+
+function Jarvis({ pis, etapasBrutas, usuario, onFechar }) {
+  const agora = useRelogio();
+  const verValores = pode(usuario, "dashboard.valores") || pode(usuario, "relatorio.ver");
+  const verHoras = verValores || pode(usuario, "financeiro.horas");
+  const { dados: categorias } = useTabela("categorias_orcamento");
+  const { dados: orc } = useTabela("orcamento_pi_item");
+  const { dados: apont } = useTabela("apontamentos_horas", { select: "id,pi_id,status,entrada,saida,horas_totais,horas_normais,horas_extras,categoria_normal_id,categoria_extra_id" });
+  const { dados: rdos } = useTabela("rdos", { select: "id,pi_id,status,pdf_path,data,created_at" });
+  const { dados: ocs } = useTabela("ocorrencias", { select: "id,pi_id,status,pdf_path,rdo_id,created_at" });
+  const { dados: solic } = useTabela("solicitacoes_alteracao_cronograma", { select: "id,etapa_id,status" });
+  const { dados: lidos } = useTabela("documentos_lidos", { select: "caminho", filtro: [["usuario_id", usuario?.id]] });
+  const { dados: cfgFoto } = useTabela("configuracoes", { filtro: [["chave", "avanco_diario"]] });
+
+  // ---- seleção de PIs (guardada por usuário neste navegador) ----
+  const chave = `contric:jarvis:${usuario?.id}`;
+  const [sel, setSel] = useState(null); // null = todos os abertos
+  useEffect(() => { try { const s = JSON.parse(localStorage.getItem(chave) || "null"); if (Array.isArray(s)) setSel(s); } catch { /* sem armazenamento */ } }, [chave]);
+  const salvarSel = (s) => { setSel(s); try { if (s === null) localStorage.removeItem(chave); else localStorage.setItem(chave, JSON.stringify(s)); } catch { /* ignora */ } };
+  const [filtroAberto, setFiltroAberto] = useState(false);
+  const [buscaF, setBuscaF] = useState("");
+  const [pagina, setPagina] = useState(0);
+  useEffect(() => { const esc = (e) => e.key === "Escape" && (filtroAberto ? setFiltroAberto(false) : onFechar()); document.addEventListener("keydown", esc); return () => document.removeEventListener("keydown", esc); }, [filtroAberto, onFechar]);
+
+  // contrato: só o PI Pai (consolidado das obras)
+  const visiveis = new Set(pis.map((p) => p.id));
+  const principais = pis.filter((p) => !(p.pi_pai_id && visiveis.has(p.pi_pai_id))).sort((a, b) => String(a.codigo).localeCompare(String(b.codigo), "pt-BR", { numeric: true }));
+  const candidatos = sel === null ? principais.filter(ehAbertoPi) : principais.filter((p) => sel.includes(p.id));
+
+  // ---- indicadores de cada PI ----
+  const etapas = useMemo(() => consolidarMacros(etapasBrutas), [etapasBrutas]);
+  const lidosSet = useMemo(() => new Set(lidos.map((l) => l.caminho)), [lidos]);
+  const fotos = cfgFoto[0]?.valor || {};
+  const hojeIso = new Date().toLocaleDateString("sv-SE");
+  const diaFoto = Object.keys(fotos).filter((d) => d <= hojeIso).sort().pop(); // foto das 7h = fim do dia anterior
+  const grupoCat = useMemo(() => Object.fromEntries(categorias.map((c) => [c.id, c.grupo])), [categorias]);
+  const recente = (iso) => iso && Date.now() - new Date(iso).getTime() < 30 * 86400000;
+
+  const cartoes = useMemo(() => candidatos.map((p) => {
+    const filhos = pis.filter((x) => x.pi_pai_id === p.id).map((x) => x.id);
+    const ids = filhos.length ? filhos : [p.id];
+    const doPi = (l) => l.filter((x) => ids.includes(x.pi_id));
+    const ets = doPi(etapas);
+    const macros = ets.filter((e) => !e.parent_etapa_id);
+    const pct = (e) => (e.status === "concluida" ? 100 : Math.min(100, Number(e.percentual) || 0));
+    const avanco = macros.length ? Math.round(macros.reduce((s, e) => s + pct(e), 0) / macros.length) : null;
+    // ritmo: avanço real ÷ previsto para hoje
+    const hoje = new Date(); hoje.setHours(12, 0, 0, 0);
+    const comDatas = macros.filter((e) => e.data_prevista_inicio && e.data_prevista_fim);
+    const plan = comDatas.length ? comDatas.reduce((s, e) => { const i = new Date(`${e.data_prevista_inicio}T00:00:00`), f = new Date(`${e.data_prevista_fim}T23:59:59`); return s + Math.max(0, Math.min(1, (hoje - i) / Math.max(1, f - i))) * 100; }, 0) / comDatas.length : null;
+    const ritmo = plan !== null && plan >= 0.5 && avanco !== null ? Math.round((avanco / plan) * 100) : null;
+    // consumo (realizado ÷ orçado) — horas somam os lançamentos
+    const itens = doPi(orc);
+    const somaG = (g, campo) => itens.filter((i) => grupoCat[i.categoria_id] === g).reduce((s, i) => s + (Number(i[campo]) || 0), 0);
+    const apontado = doPi(apont).filter((a) => a.status !== "rejeitado").reduce((s, a) => {
+      const h = horasDoLancamento(a);
+      return s + (grupoCat[a.categoria_normal_id] === "moi_horas" ? h.normais : 0) + (grupoCat[a.categoria_extra_id] === "moi_horas" ? h.extras : 0);
+    }, 0);
+    const orcM = somaG("compra_reais", "valor_orcado"), orcH = somaG("moi_horas", "valor_orcado");
+    const material = orcM ? Math.round((somaG("compra_reais", "valor_realizado") / orcM) * 100) : null;
+    const horas = orcH ? Math.round(((somaG("moi_horas", "valor_realizado") + apontado) / orcH) * 100) : null;
+    const atrasadas = ets.filter((e) => !e.calculada && e.status !== "concluida" && (diasAte(e.data_prevista_fim) ?? 0) < 0).length;
+    const finalizacao = ets.map((e) => e.data_prevista_fim).filter(Boolean).sort().pop() || null;
+    const prazo = p.prazo || null;
+    const fimAposPrazo = !!(finalizacao && prazo && finalizacao > prazo);
+    const meds = ets.filter((e) => e.medicao && e.status !== "concluida" && e.data_prevista_fim);
+    const med20 = meds.filter((e) => diasAte(e.data_prevista_fim) <= PRAZOS.medicoes);
+    const medVencida = meds.some((e) => diasAte(e.data_prevista_fim) < 0);
+    const idsEt = new Set(ets.map((e) => e.id));
+    const rd = doPi(rdos), oc = doPi(ocs).filter((o) => !o.rdo_id);
+    const pend = rd.filter((r) => r.status === "pendente").length + doPi(apont).filter((a) => a.status === "pendente" && !(a.entrada && !a.saida)).length
+      + oc.filter((o) => o.status === "pendente").length + solic.filter((s) => idsEt.has(s.etapa_id) && String(s.status || "").startsWith("pendente")).length;
+    // alerta (triângulo): RDO/ocorrência em aprovação ou com PDF não aberto por mim (últimos 30 dias)
+    const rdoAprov = rd.filter((r) => r.status === "pendente").length, ocAprov = oc.filter((o) => o.status === "pendente").length;
+    const naoLidos = [...rd, ...oc].filter((x) => x.pdf_path && !lidosSet.has(x.pdf_path) && recente(x.created_at || x.data) && !["rejeitado", "rejeitada"].includes(x.status)).length;
+    const ontemV = diaFoto ? fotos[diaFoto]?.[p.id] ?? null : null;
+    const perigo = { ritmo: ritmo !== null && ritmo < 80, material: material !== null && avanco !== null && material > avanco,
+      horas: horas !== null && avanco !== null && horas > avanco, atrasadas: atrasadas > 0, fim: fimAposPrazo, pend: pend > 0, med: medVencida };
+    const qtdPerigo = Object.values(perigo).filter(Boolean).length;
+    return { p, obras: filhos.length, avanco, ritmo, plan: plan === null ? null : Math.round(plan), ontem: ontemV, material, horas, atrasadas, prazo, finalizacao, fimAposPrazo,
+      med20: med20.length, medValor: med20.reduce((s, e) => s + Number(e.medicao_valor || 0), 0), pend, perigo, qtdPerigo, rdoAprov, ocAprov, naoLidos };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }).sort((a, b) => b.qtdPerigo - a.qtdPerigo || String(a.p.codigo).localeCompare(String(b.p.codigo), "pt-BR", { numeric: true })), [candidatos.map((p) => p.id).join(","), etapas, orc, apont, rdos, ocs, solic, lidosSet, categorias, diaFoto]);
+
+  const paginas = Math.max(1, Math.ceil(cartoes.length / POR_PAGINA));
+  const pag = Math.min(pagina, paginas - 1);
+  const daPagina = cartoes.slice(pag * POR_PAGINA, pag * POR_PAGINA + POR_PAGINA);
+  const t = useAnimacaoJarvis(`${pag}|${daPagina.map((c) => c.p.id).join(",")}|${etapasBrutas.length}|${orc.length}`);
+  const totalAlertas = cartoes.filter((c) => c.qtdPerigo > 0).length;
+  const ritmos = cartoes.map((c) => c.ritmo).filter((r) => r !== null);
+  const ritmoMedio = ritmos.length ? Math.round(ritmos.reduce((s, r) => s + r, 0) / ritmos.length) : null;
+  const dataBR = (iso) => (iso ? iso.slice(2, 10).split("-").reverse().join("/") : "—");
+  const termoF = buscaF.trim().toLowerCase();
+  const listaFiltro = principais.filter((p) => !termoF || [p.codigo, p.cliente, p.projeto].some((c) => (c || "").toLowerCase().includes(termoF)));
+  const marcado = (id) => (sel === null ? ehAbertoPi(principais.find((p) => p.id === id) || {}) : sel.includes(id));
+  const alternar = (id) => { const base = sel === null ? principais.filter(ehAbertoPi).map((p) => p.id) : sel; salvarSel(base.includes(id) ? base.filter((x) => x !== id) : [...base, id]); setPagina(0); };
+
+  return (
+    <div className="fixed inset-0 z-[70] overflow-y-auto text-[#bfefff] font-mono jarvis"
+      style={{ background: "radial-gradient(ellipse at top, #06243a 0%, #020b14 55%, #01060c 100%)" }}>
+      <style>{`
+        .jarvis{background-image:repeating-linear-gradient(0deg,rgba(41,211,255,.035) 0 1px,transparent 1px 3px)}
+        .jv-c{position:relative;border:1px solid #0c3550;background:rgba(6,30,48,.55)}
+        .jv-c:before,.jv-c:after{content:"";position:absolute;width:9px;height:9px;border-color:#29d3ff;border-style:solid}
+        .jv-c:before{top:-1px;left:-1px;border-width:1px 0 0 1px}.jv-c:after{bottom:-1px;right:-1px;border-width:0 1px 1px 0}
+        .jv-pisca{animation:jvp 1s steps(2,start) infinite}
+        @keyframes jvp{50%{background:rgba(255,40,60,.28);box-shadow:inset 0 0 0 1px #ff4d5e}}
+        .jv-gira{transform-origin:26px 26px;animation:jvg 8s linear infinite}.jv-gira2{transform-origin:26px 26px;animation:jvg 5s linear infinite reverse}
+        @keyframes jvg{to{transform:rotate(360deg)}}
+        .jv-k{clip-path:polygon(7px 0,100% 0,calc(100% - 7px) 100%,0 100%)}
+        @media (prefers-reduced-motion: reduce){.jv-pisca,.jv-gira,.jv-gira2{animation:none}}
+      `}</style>
+      <div className="max-w-[1900px] mx-auto p-3 md:p-5">
+        {/* cabeçalho HUD */}
+        <div className="flex flex-wrap items-center gap-3 mb-3">
+          <svg viewBox="0 0 52 52" className="w-12 h-12 shrink-0" aria-hidden="true">
+            <circle cx="26" cy="26" r="24" fill="none" stroke="#0f4a6b" strokeWidth="1" />
+            <g className="jv-gira"><circle cx="26" cy="26" r="20" fill="none" stroke="#29d3ff" strokeWidth="2" strokeDasharray="18 8" /></g>
+            <g className="jv-gira2"><circle cx="26" cy="26" r="14" fill="none" stroke="#7fe6ff" strokeWidth="1.5" strokeDasharray="4 4" /></g>
+            <circle cx="26" cy="26" r="6" fill="#29d3ff" opacity=".85" style={{ filter: "drop-shadow(0 0 6px #29d3ff)" }} />
+          </svg>
+          <div className="min-w-0">
+            <div className="text-[15px] tracking-[0.35em] text-[#e8fbff]">J.A.R.V.I.S.</div>
+            <div className="text-[10px] tracking-[0.2em] text-[#3fb6e0]">COCKPIT DE OBRAS · {agora.toLocaleDateString("pt-BR")} {agora.toLocaleTimeString("pt-BR")}</div>
+          </div>
+          <div className="flex flex-wrap gap-1.5 ml-auto">
+            <div className="jv-k border border-[#0f4a6b] px-3 py-1 text-[10px] tracking-wider text-[#7fd8ff]">PIs <b className="text-[13px] text-[#e8fbff] font-semibold">{cartoes.length}</b></div>
+            <div className={`jv-k border border-[#0f4a6b] px-3 py-1 text-[10px] tracking-wider text-[#7fd8ff] ${totalAlertas ? "jv-pisca" : ""}`}>EM ALERTA <b className="text-[13px] font-semibold" style={{ color: totalAlertas ? JV.ru : JV.bom }}>{totalAlertas}</b></div>
+            <div className="jv-k border border-[#0f4a6b] px-3 py-1 text-[10px] tracking-wider text-[#7fd8ff]">RITMO MÉDIO <b className="text-[13px] text-[#e8fbff] font-semibold">{ritmoMedio === null ? "—" : `${ritmoMedio}%`}</b></div>
+            <button onClick={onFechar} className="jv-k border border-[#29d3ff] px-3 py-1 text-[10px] tracking-wider text-[#e8fbff] hover:bg-[#0a3650]">DESATIVAR ✕</button>
+          </div>
+        </div>
+        {/* filtro + paginação */}
+        <div className="flex flex-wrap items-center gap-2 mb-3 text-[10px] tracking-wider text-[#3fb6e0]">
+          <div className="relative">
+            <button onClick={() => setFiltroAberto((v) => !v)} className="border border-[#0f4a6b] px-2.5 py-1 hover:border-[#29d3ff] text-[#7fd8ff]">
+              FILTRO: {sel === null ? `ABERTOS (${cartoes.length})` : `${cartoes.length} PI(s) SELECIONADO(S)`} ▾
+            </button>
+            {filtroAberto && (
+              <div className="absolute left-0 top-full mt-1 z-10 w-[min(360px,90vw)] border border-[#29d3ff] bg-[#031421] p-2 shadow-[0_0_24px_rgba(41,211,255,.25)]">
+                <input value={buscaF} onChange={(e) => setBuscaF(e.target.value)} autoFocus placeholder="BUSCAR Nº, CLIENTE OU PROJETO" className="w-full bg-transparent border border-[#0f4a6b] px-2 py-1.5 text-[11px] text-[#e8fbff] placeholder:text-[#2f6f92] outline-none focus:border-[#29d3ff]" />
+                <div className="flex gap-1.5 my-2">
+                  <button onClick={() => { salvarSel(null); setPagina(0); }} className="border border-[#0f4a6b] px-2 py-0.5 hover:border-[#29d3ff]">ABERTOS</button>
+                  <button onClick={() => { salvarSel(principais.map((p) => p.id)); setPagina(0); }} className="border border-[#0f4a6b] px-2 py-0.5 hover:border-[#29d3ff]">TODOS</button>
+                  <button onClick={() => { salvarSel([]); setPagina(0); }} className="border border-[#0f4a6b] px-2 py-0.5 hover:border-[#29d3ff]">NENHUM</button>
+                </div>
+                <div className="max-h-[50vh] overflow-y-auto rolagem-fina">
+                  {listaFiltro.map((p) => (
+                    <label key={p.id} className="flex items-center gap-2 px-1 py-1 text-[11px] cursor-pointer hover:bg-[#0a3650]">
+                      <input type="checkbox" checked={marcado(p.id)} onChange={() => alternar(p.id)} className="accent-[#29d3ff]" />
+                      <span className="text-[#29d3ff]">{p.codigo}</span>
+                      <span className="truncate text-[#9fdcf5]">{p.cliente}</span>
+                      <span className="ml-auto text-[9px] text-[#3f8fb3]">{(STATUS_PI[p.status] || p.status || "").toUpperCase()}</span>
+                    </label>
+                  ))}
+                </div>
+                <button onClick={() => setFiltroAberto(false)} className="w-full mt-2 border border-[#29d3ff] py-1 text-[#e8fbff] hover:bg-[#0a3650]">APLICAR</button>
+              </div>
+            )}
+          </div>
+          <span className="hidden sm:inline"><span style={{color:"#ff4d5e"}}>●</span> EM ALERTA</span><span className="hidden sm:inline text-[#ffb547]">▲ RDO/OCORRÊNCIA NÃO LIDO OU EM APROVAÇÃO</span>
+          <div className="flex items-center gap-1 ml-auto">
+            <span>PÁG</span>
+            <button onClick={() => setPagina(Math.max(0, pag - 1))} disabled={pag === 0} className="border border-[#0f4a6b] px-2 py-0.5 disabled:opacity-30">‹</button>
+            {Array.from({ length: paginas }, (_, i) => (
+              <button key={i} onClick={() => setPagina(i)} className={`border px-2 py-0.5 ${i === pag ? "border-[#29d3ff] bg-[#0a3650] text-[#e8fbff]" : "border-[#0f4a6b]"}`}>{i + 1}</button>
+            ))}
+            <button onClick={() => setPagina(Math.min(paginas - 1, pag + 1))} disabled={pag >= paginas - 1} className="border border-[#0f4a6b] px-2 py-0.5 disabled:opacity-30">›</button>
+            <span className="ml-1">· {POR_PAGINA}/PÁG</span>
+          </div>
+        </div>
+
+        {cartoes.length === 0 && <div className="jv-c p-8 text-center text-[12px] tracking-widest text-[#3fb6e0]">NENHUM PI NO FILTRO · ABRA O FILTRO E SELECIONE AS OBRAS</div>}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-2">
+          {daPagina.map((c) => {
+            const triangulo = c.rdoAprov + c.ocAprov + c.naoLidos > 0;
+            const dicaTri = [c.rdoAprov && `${c.rdoAprov} RDO em aprovação`, c.ocAprov && `${c.ocAprov} ocorrência(s) em aprovação`, c.naoLidos && `${c.naoLidos} RDO/ocorrência não lido(s) (30 dias)`].filter(Boolean).join(" · ");
+            return (
+              <Link key={c.p.id} href={`/pi?id=${c.p.id}`} onClick={onFechar} className="jv-c block px-2 pt-1.5 pb-1.5 hover:bg-[rgba(10,54,80,.7)] transition-colors">
+                <div className="flex items-center gap-1.5 text-[11px] mb-0.5 min-w-0">
+                  <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: c.qtdPerigo ? JV.ru : JV.bom, boxShadow: `0 0 6px ${c.qtdPerigo ? JV.ru : JV.bom}` }} />
+                  <span className="text-[#29d3ff] font-semibold shrink-0">{c.p.codigo}</span>
+                  <span className="truncate text-[10px] text-[#9fdcf5]">{c.p.cliente}{c.obras ? ` · ${c.obras} OBRAS` : c.p.projeto ? ` · ${c.p.projeto}` : ""}</span>
+                  {triangulo && (
+                    <span className="ml-auto shrink-0 jv-pisca rounded px-0.5" title={dicaTri} aria-label={dicaTri}>
+                      <svg viewBox="0 0 24 24" className="w-4 h-4" aria-hidden="true"><path d="M12 3 L22 20 H2 Z" fill="#ffb547" stroke="#ffb547" strokeWidth="1.5" strokeLinejoin="round" style={{ filter: "drop-shadow(0 0 4px #ffb547)" }} /><rect x="11" y="9" width="2" height="6" fill="#020b14" /><rect x="11" y="16.5" width="2" height="2" fill="#020b14" /></svg>
+                    </span>
+                  )}
+                </div>
+                <div className="grid grid-cols-6 gap-0.5">
+                  <MiniMedidor rotulo="AVANÇO" valor={c.avanco} cor={JV.ok} t={t} dica="Avanço físico (média das macro-etapas)" />
+                  <MiniMedidor rotulo="RITMO" valor={c.ritmo} max={150} t={t} perigo={c.perigo.ritmo}
+                    cor={c.ritmo === null ? JV.off : c.ritmo >= 95 ? JV.bom : c.ritmo >= 80 ? JV.at : JV.ru} dica={c.plan === null ? "Cronograma sem datas" : `Previsto hoje ${c.plan}%`} />
+                  <MiniMedidor rotulo="ONTEM" valor={c.ontem} cor={JV.ok} t={t}
+                    dica={c.ontem === null ? "A foto diária do avanço começa no próximo dia (rotina das 7h)" : `Avanço no fim do dia anterior · variação ${(c.avanco ?? 0) - c.ontem >= 0 ? "+" : ""}${(c.avanco ?? 0) - c.ontem} pts`} />
+                  <MiniMedidor rotulo="MATER." valor={verValores ? c.material : null} t={t} perigo={verValores && c.perigo.material}
+                    cor={c.material !== null && c.avanco !== null && c.material > c.avanco ? JV.ru : JV.bom} dica={verValores ? "Consumo de material (realizado ÷ orçado)" : "Sem permissão para valores"} />
+                  <MiniMedidor rotulo="HORAS" valor={verHoras ? c.horas : null} t={t} perigo={verHoras && c.perigo.horas}
+                    cor={c.horas !== null && c.avanco !== null && c.horas > c.avanco ? JV.ru : JV.bom} dica="Consumo de horas (realizado ÷ orçado)" />
+                  <MiniMedidor rotulo="ATRAS." valor={c.atrasadas} max={Math.max(5, c.atrasadas)} sufixo="" t={t} perigo={c.perigo.atrasadas} cor={c.atrasadas ? JV.ru : JV.bom} dica="Etapas atrasadas" />
+                </div>
+                <div className="grid grid-cols-4 gap-0.5 mt-1 text-[8.5px] tracking-wide text-[#3f8fb3] leading-tight">
+                  <div className="px-0.5">PRAZO<span className="block text-[10px] text-[#d8f6ff]">{dataBR(c.prazo)}</span></div>
+                  <div className={`px-0.5 ${c.perigo.fim ? "jv-pisca" : ""}`}>FIM PREV<span className="block text-[10px]" style={{ color: c.perigo.fim ? "#ff6b78" : "#d8f6ff" }}>{dataBR(c.finalizacao)}</span></div>
+                  <div className={`px-0.5 ${c.perigo.med ? "jv-pisca" : ""}`} title={verValores && c.medValor ? `R$ ${c.medValor.toLocaleString("pt-BR")}` : undefined}>MED {PRAZOS.medicoes}D<span className="block text-[10px] text-[#d8f6ff]">{c.med20}</span></div>
+                  <div className={`px-0.5 ${c.perigo.pend ? "jv-pisca" : ""}`}>PEND<span className="block text-[10px]" style={{ color: c.pend ? "#ff6b78" : "#d8f6ff" }}>{c.pend}</span></div>
+                </div>
+              </Link>
+            );
+          })}
+        </div>
+        <div className="mt-3 text-[9px] tracking-wider text-[#2f6f92]">CLIQUE NUM PI PARA ABRIR A PÁGINA DELE · ESC PARA SAIR · PISCANDO = FORA DO NORMAL (RITMO &lt; 80%, CONSUMO ACIMA DO AVANÇO, ETAPA ATRASADA, FIM APÓS O PRAZO, MEDIÇÃO VENCIDA, PENDÊNCIA)</div>
+      </div>
+    </div>
   );
 }
 
