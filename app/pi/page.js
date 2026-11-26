@@ -251,12 +251,12 @@ function DetalhePi({ id, abaInicial }) {
       </div>
 
       {abaAtiva === "contrato" && <AbaContrato pai={pi} filhos={filhos} usuario={usuario} />}
-      {abaAtiva === "resumo" && <AbaResumo pi={pi} usuario={usuario} irPara={setAba} />}
-      {abaAtiva === "cronograma" && (ehPai ? <CronogramaVisao pisFixos={filhos.map((f) => f.id)} /> : <AbaCronograma pi={pi} />)}
+      {abaAtiva === "resumo" && <AbaResumo pi={pi} usuario={usuario} irPara={setAba} obras={ehPai ? filhos : null} />}
+      {abaAtiva === "cronograma" && <AbaCronograma pi={pi} obras={ehPai ? filhos : null} />}
       {abaAtiva === "equipe" && <AbaEquipe pi={pi} usuario={usuario} />}
       {abaAtiva === "campo" && <AbaCampo pi={pi} />}
       {abaAtiva === "documentos" && <AbaDocumentos pi={pi} />}
-      {abaAtiva === "financeiro" && <AbaFinanceiro pi={pi} usuario={usuario} />}
+      {abaAtiva === "financeiro" && <AbaFinanceiro pi={pi} usuario={usuario} obras={ehPai ? filhos : null} />}
       {abaAtiva === "cliente" && <AbaCliente pi={pi} />}
 
       {qr && <ModalQrPi pi={pi} comPdf onFechar={() => setQr(false)} />}
@@ -398,16 +398,92 @@ function IndicadorAvanco({ avanco, macros, material, horas, irPara }) {
   );
 }
 
-function AbaResumo({ pi, usuario, irPara }) {
-  const { dados: etapasBrutas } = useTabela("etapas", { filtro: [["pi_id", pi.id]] });
+// ---- medidores em semicírculo (animação sincronizada: todos usam o mesmo relógio t de 0 → 1) ----
+function useAnimacao(chave, duracao = 1400) {
+  const [t, setT] = useState(0);
+  useEffect(() => {
+    if (typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) { setT(1); return; }
+    let raf, inicio = null;
+    setT(0);
+    const passo = (agora) => {
+      if (inicio === null) inicio = agora;
+      const p = Math.min(1, (agora - inicio) / duracao);
+      setT(1 - Math.pow(1 - p, 3)); // desacelera no final
+      if (p < 1) raf = requestAnimationFrame(passo);
+    };
+    raf = requestAnimationFrame(passo);
+    return () => cancelAnimationFrame(raf);
+  }, [chave, duracao]);
+  return t;
+}
+const COR_MEDIDOR = { cyan: ["#22B8D6", "#0B84A5"], verde: ["#5CD67A", "#2E9E47"], vermelho: ["#F27A7A", "#D64545"], ambar: ["#F2B45C", "#C97A21"], cinza: ["#C9CED6", "#9AA3B2"] };
+function Medidor({ titulo, valor, max = 100, t, cor = "cyan", detalhe, onClick, marcador = null, sufixo = "%" }) {
+  const id = useMemo(() => `g${Math.random().toString(36).slice(2, 8)}`, []);
+  const vazio = valor === null || valor === undefined;
+  const atual = vazio ? 0 : valor * t;
+  const frac = Math.max(0, Math.min(1, atual / max));
+  const R = 80, C = Math.PI * R; // comprimento do semicírculo
+  const [c1, c2] = COR_MEDIDOR[vazio ? "cinza" : cor];
+  const ang = (f) => Math.PI * (1 - f); // 0 → esquerda, 1 → direita
+  const ponta = { x: 100 + R * Math.cos(ang(frac)), y: 100 - R * Math.sin(ang(frac)) };
+  const Tag = onClick ? "button" : "div";
+  return (
+    <Tag onClick={onClick} className={`cartao p-4 flex flex-col items-center text-center min-w-0 ${onClick ? "hover:shadow-md hover:-translate-y-0.5 transition-all" : ""}`}>
+      <div className="text-xs font-semibold uppercase tracking-wide text-muted self-stretch text-left">{titulo}</div>
+      <div className="relative w-full max-w-[220px] mt-1">
+        <svg viewBox="0 0 200 116" className="w-full overflow-visible" aria-hidden="true">
+          <defs>
+            <linearGradient id={id} x1="0" x2="1" y1="0" y2="0"><stop offset="0%" stopColor={c1} /><stop offset="100%" stopColor={c2} /></linearGradient>
+            <filter id={`${id}s`} x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur stdDeviation="3" /></filter>
+          </defs>
+          <path d="M20 100 A80 80 0 0 1 180 100" fill="none" stroke="currentColor" className="text-line" strokeWidth="14" strokeLinecap="round" />
+          {/* brilho suave atrás do arco */}
+          <path d="M20 100 A80 80 0 0 1 180 100" fill="none" stroke={`url(#${id})`} strokeWidth="14" strokeLinecap="round" opacity="0.35" filter={`url(#${id}s)`}
+            strokeDasharray={`${C * frac} ${C}`} />
+          <path d="M20 100 A80 80 0 0 1 180 100" fill="none" stroke={`url(#${id})`} strokeWidth="14" strokeLinecap="round" strokeDasharray={`${C * frac} ${C}`} />
+          {marcador !== null && marcador !== undefined && (() => { // referência (ex: avanço, para comparar consumo)
+            const f = Math.max(0, Math.min(1, marcador / max)), a = ang(f);
+            return <line x1={100 + 66 * Math.cos(a)} y1={100 - 66 * Math.sin(a)} x2={100 + 94 * Math.cos(a)} y2={100 - 94 * Math.sin(a)} stroke="currentColor" className="text-textmain" strokeWidth="2.5" strokeLinecap="round" opacity={t} />;
+          })()}
+          {!vazio && frac > 0.005 && <circle cx={ponta.x} cy={ponta.y} r="5" fill="#fff" stroke={c2} strokeWidth="3" />}
+        </svg>
+        <div className="absolute inset-x-0 bottom-0 flex flex-col items-center">
+          <span className="font-head font-bold text-3xl tabular-nums leading-none" style={{ color: c2 }}>{vazio ? "—" : `${Math.round(atual)}${sufixo}`}</span>
+        </div>
+      </div>
+      {detalhe && <div className="texto-apoio mt-1.5 leading-snug">{detalhe}</div>}
+    </Tag>
+  );
+}
+// ritmo: avanço real ÷ avanço que deveria haver hoje pelo cronograma (100% = no ritmo)
+function calcRitmo(macros, avanco) {
+  const hoje = new Date(); hoje.setHours(12, 0, 0, 0);
+  const comDatas = macros.filter((e) => e.data_prevista_inicio && e.data_prevista_fim);
+  if (!comDatas.length) return { ritmo: null, planejado: null };
+  const plan = comDatas.reduce((s, e) => {
+    const i = new Date(`${e.data_prevista_inicio}T00:00:00`), f = new Date(`${e.data_prevista_fim}T23:59:59`);
+    return s + Math.max(0, Math.min(1, (hoje - i) / Math.max(1, f - i))) * 100;
+  }, 0) / comDatas.length;
+  if (plan < 0.5) return { ritmo: null, planejado: 0 }; // ainda não era para ter começado
+  return { ritmo: Math.round((avanco / plan) * 100), planejado: Math.round(plan) };
+}
+
+function AbaResumo({ pi, usuario, irPara, obras = null }) {
+  // contrato (PI Pai): o resumo é o CONSOLIDADO das obras
+  const ids = obras ? obras.map((o) => o.id) : null;
+  const doPi = (l) => (ids ? l.filter((x) => ids.includes(x.pi_id)) : l);
+  const filtroPi = ids ? null : [["pi_id", pi.id]];
+  const { dados: etapasTodas } = useTabela("etapas", { filtro: filtroPi });
+  const etapasBrutas = useMemo(() => doPi(etapasTodas), [etapasTodas, ids?.join(",")]); // eslint-disable-line react-hooks/exhaustive-deps
   const etapas = useMemo(() => consolidarMacros(etapasBrutas), [etapasBrutas]); // macro = resultado das subs
-  const { dados: rdos } = useTabela("rdos", { select: "id,status", filtro: [["pi_id", pi.id]] });
-  const { dados: horasPi } = useTabela("apontamentos_horas", { select: "id,status", filtro: [["pi_id", pi.id]] });
-  const { dados: ocs } = useTabela("ocorrencias", { select: "id,status,rdo_id", filtro: [["pi_id", pi.id]] });
+  const { dados: rdosT } = useTabela("rdos", { select: "id,status,pi_id", filtro: filtroPi });
+  const { dados: horasT } = useTabela("apontamentos_horas", { select: "id,status,pi_id", filtro: filtroPi });
+  const { dados: ocsT } = useTabela("ocorrencias", { select: "id,status,rdo_id,pi_id", filtro: filtroPi });
+  const rdos = doPi(rdosT), horasPi = doPi(horasT), ocs = doPi(ocsT);
   const { dados: solic } = useTabela("solicitacoes_alteracao_cronograma", { select: "id,etapa_id,status" });
   const verValores = pode(usuario, "dashboard.valores") || pode(usuario, "relatorio.ver");
   const verHoras = verValores || pode(usuario, "financeiro.horas"); // líder: só o consumo de horas
-  const fin = useFinanceiroPi(pi);
+  const fin = useFinanceiroPi(pi, ids);
 
   const macros = etapas.filter((e) => !e.parent_etapa_id);
   const avanco = macros.length ? Math.round(macros.reduce((s, e) => s + (e.status === "concluida" ? 100 : Number(e.percentual) || 0), 0) / macros.length) : 0;
@@ -425,11 +501,40 @@ function AbaResumo({ pi, usuario, irPara }) {
   const totalPend = Object.values(pend).reduce((a, b) => a + b, 0);
   const proximas = abertas.filter((e) => e.data_prevista_fim).sort((a, b) => a.data_prevista_fim.localeCompare(b.data_prevista_fim)).slice(0, 6);
 
+  // medidores: avanço, ritmo, consumo material e horas — todos animam juntos até o valor
+  const material = verValores ? consumo(fin, "compra_reais") : undefined;
+  const horasC = verHoras ? consumo(fin, "moi_horas") : undefined;
+  const { ritmo, planejado } = calcRitmo(macros, avanco);
+  const finalizacao = etapas.map((e) => e.data_prevista_fim).filter(Boolean).sort().pop() || null;
+  const diasFinal = finalizacao ? diasAte(finalizacao) : null;
+  const folgaPrazo = finalizacao && pi.prazo ? Math.round((new Date(`${pi.prazo}T12:00:00`) - new Date(`${finalizacao}T12:00:00`)) / 86400000) : null;
+  const t = useAnimacao(`${pi.id}|${etapasBrutas.length}|${material}|${horasC}`);
+  const corConsumo = (v) => (v === null ? "cinza" : v <= avanco ? "verde" : "vermelho");
+  const corRitmo = ritmo === null ? "cinza" : ritmo >= 95 ? "verde" : ritmo >= 80 ? "ambar" : "vermelho";
+
   return (
     <div className="flex flex-col gap-4">
-      <div className={`grid grid-cols-2 ${verHoras ? "lg:grid-cols-5" : "lg:grid-cols-4"} gap-3`}>
-        <IndicadorAvanco avanco={avanco} macros={macros.length} material={verValores ? consumo(fin, "compra_reais") : undefined} horas={verHoras ? consumo(fin, "moi_horas") : undefined}
-          irPara={irPara} />
+      <div className={`grid grid-cols-2 md:grid-cols-3 ${[material, horasC].filter((v) => v !== undefined).length === 2 ? "xl:grid-cols-5" : material !== undefined || horasC !== undefined ? "xl:grid-cols-4" : "xl:grid-cols-3"} gap-3`}>
+        <Medidor titulo="Avanço" valor={avanco} t={t} cor="cyan" detalhe={`${macros.length} macro-etapa(s)`} onClick={() => irPara("cronograma")} />
+        <Medidor titulo="Ritmo da execução" valor={ritmo} max={150} t={t} cor={corRitmo} marcador={ritmo === null ? null : 100}
+          detalhe={ritmo === null ? (planejado === 0 ? "Execução ainda não começou pelo cronograma" : "Cronograma sem datas") : `${ritmo >= 100 ? "Adiantado / no ritmo" : ritmo >= 95 ? "No ritmo" : ritmo >= 80 ? "Um pouco atrasado" : "Atrasado"} · previsto hoje ${planejado}%`} onClick={() => irPara("cronograma")} />
+        {material !== undefined && <Medidor titulo="Consumo material" valor={material} t={t} cor={corConsumo(material)} marcador={material === null ? null : avanco}
+          detalhe={material === null ? "Sem valor orçado" : material <= avanco ? "Abaixo do avanço ✓" : "Acima do avanço"} onClick={() => irPara("financeiro")} />}
+        {horasC !== undefined && <Medidor titulo="Consumo horas" valor={horasC} t={t} cor={corConsumo(horasC)} marcador={horasC === null ? null : avanco}
+          detalhe={horasC === null ? "Sem horas orçadas" : horasC <= avanco ? "Abaixo do avanço ✓" : "Acima do avanço"} onClick={() => irPara("financeiro")} />}
+        <button onClick={() => irPara("cronograma")} className="cartao p-4 flex flex-col text-left min-w-0 hover:shadow-md hover:-translate-y-0.5 transition-all">
+          <div className="text-xs font-semibold uppercase tracking-wide text-muted">Finalização prevista</div>
+          <div className="flex-1 flex flex-col justify-center py-2" style={{ opacity: 0.25 + 0.75 * t, transform: `translateY(${(1 - t) * 8}px)` }}>
+            <div className="font-head font-bold text-3xl tabular-nums text-navy">{finalizacao ? formatarData(finalizacao) : "—"}</div>
+            {finalizacao && <div className="text-sm text-muted mt-1">{diasFinal < 0 ? `há ${Math.abs(diasFinal)} dia(s)` : diasFinal === 0 ? "hoje" : `em ${diasFinal} dia(s)`}</div>}
+          </div>
+          <div className="texto-apoio leading-snug">
+            {!finalizacao ? "Última data do cronograma" : folgaPrazo === null ? "Última data do cronograma"
+              : <span className={folgaPrazo >= 0 ? "text-green" : "text-red"}>{folgaPrazo >= 0 ? `${folgaPrazo} dia(s) antes do prazo (${formatarData(pi.prazo)})` : `${Math.abs(folgaPrazo)} dia(s) após o prazo (${formatarData(pi.prazo)})`}</span>}
+          </div>
+        </button>
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <Indicador titulo="Etapas atrasadas" valor={atrasadas.length} detalhe={`${abertas.length} em aberto`} cor={atrasadas.length ? "text-red" : "text-green"} onClick={() => irPara("cronograma")} />
         <Indicador titulo={`Medições em ${PRAZOS.medicoes} dias`} valor={medProximas.length}
           detalhe={verValores && medProximas.length ? reais(medProximas.reduce((s, e) => s + Number(e.medicao_valor || 0), 0)) : `${medicoes.length} em aberto`} cor="text-[#8E5CD9]" />
@@ -469,30 +574,46 @@ function AbaResumo({ pi, usuario, irPara }) {
 }
 
 // ---------------- Cronograma: a mesma visão da página Cronograma, só deste PI ----------------
-function AbaCronograma({ pi }) {
+function AbaCronograma({ pi, obras = null }) {
   const { usuario } = useAuth();
   const [gerandoPdf, setGerandoPdf] = useState(false);
+  const acoes = <>
+    <button onClick={() => setGerandoPdf(true)} className="btn btn-primario btn-sm"><Icone nome="pdf" className="w-4 h-4" /> Gerar PDF / Excel{obras ? " do contrato" : ""}</button>
+    {!obras && pode(usuario, "etapa.editar") && <Link href={`/cronograma?pi=${pi.id}`} className="btn btn-contorno btn-sm"><Icone nome="editar" className="w-4 h-4" /> Configurar Cronograma</Link>}
+  </>;
   return (
     <>
-      <CronogramaVisao piFixo={pi.id} acoes={<>
-        <button onClick={() => setGerandoPdf(true)} className="btn btn-primario btn-sm"><Icone nome="pdf" className="w-4 h-4" /> Gerar PDF / Excel</button>
-        {pode(usuario, "etapa.editar") && <Link href={`/cronograma?pi=${pi.id}`} className="btn btn-contorno btn-sm"><Icone nome="editar" className="w-4 h-4" /> Configurar Cronograma</Link>}
-      </>} />
-      {gerandoPdf && <ModalPdfCronograma pi={pi} usuario={usuario} onFechar={() => setGerandoPdf(false)} />}
+      {obras ? <CronogramaVisao pisFixos={obras.map((f) => f.id)} acoes={acoes} /> : <CronogramaVisao piFixo={pi.id} acoes={acoes} />}
+      {gerandoPdf && <ModalPdfCronograma pi={pi} obras={obras} usuario={usuario} onFechar={() => setGerandoPdf(false)} />}
     </>
   );
+}
+// contrato: cronograma consolidado = cada obra vira uma macro-etapa e as macro-etapas da obra viram sub-etapas
+function etapasDoContrato(obras, todas) {
+  const linhas = [];
+  obras.forEach((o, i) => {
+    const doObra = consolidarMacros(todas.filter((e) => e.pi_id === o.id)).filter((e) => !e.parent_etapa_id)
+      .sort((a, b) => (a.ordem ?? 999999) - (b.ordem ?? 999999) || String(a.created_at || "").localeCompare(String(b.created_at || "")));
+    if (!doObra.length) return;
+    const id = `obra-${o.id}`;
+    linhas.push({ id, nome: `OBRA ${o.codigo}${o.projeto ? ` — ${o.projeto}` : ""}`, parent_etapa_id: null, ordem: i, pi_id: o.id, responsavel_texto: "" });
+    doObra.forEach((m, k) => linhas.push({ ...m, parent_etapa_id: id, ordem: k, calculada: false }));
+  });
+  return linhas;
 }
 
 // Gerar PDF do cronograma: salvar no computador, salvar no SGO (Documentos do PI),
 // enviar pelo e-mail de quem está usando (baixa o PDF e abre o e-mail) e enviar via SGO
 // (para contatos do cliente, com o PDF anexado)
-function ModalPdfCronograma({ pi, usuario, onFechar }) {
+function ModalPdfCronograma({ pi, usuario, onFechar, obras = null }) {
   const { avisar } = useToast();
-  const { dados: etapas } = useTabela("etapas", { filtro: [["pi_id", pi.id]] });
+  const { dados: etapasT } = useTabela("etapas", { filtro: obras ? null : [["pi_id", pi.id]] });
+  const etapas = useMemo(() => (obras ? etapasDoContrato(obras, etapasT) : etapasT), [etapasT, obras]);
   const { dados: clientes } = useTabela("clientes", { order: { coluna: "nome" } });
   const { dados: acessos } = useTabela("cliente_acessos", { filtro: [["pi_id", pi.id]] });
   const [op, setOp] = useState({ computador: true, sgo: false, meuEmail: false, viaSgo: false });
   const [formato, setFormato] = useState("pdf"); // pdf | excel | ambos
+  const [porObra, setPorObra] = useState(false); // contrato: também um arquivo por obra
   const [destinos, setDestinos] = useState([]);
   const [mensagem, setMensagem] = useState("");
   const [processando, setProcessando] = useState("");
@@ -512,6 +633,16 @@ function ModalPdfCronograma({ pi, usuario, onFechar }) {
       const arquivos = [];
       if (formato !== "excel") arquivos.push({ blob: await gerarPdfCronograma({ pi, etapas }), nome: `${base}.pdf`, tipo: "application/pdf" });
       if (formato !== "pdf") arquivos.push({ blob: await gerarExcelCronograma({ pi, etapas }), nome: `${base}.xlsx`, tipo: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+      // contrato: também um arquivo separado por obra (salvos no SGO na pasta de cada obra)
+      if (obras && porObra) {
+        for (const o of obras) {
+          const eo = etapasT.filter((e) => e.pi_id === o.id);
+          if (!eo.length) continue;
+          const bo = baseNomeCronograma(o);
+          if (formato !== "excel") arquivos.push({ blob: await gerarPdfCronograma({ pi: o, etapas: eo }), nome: `${bo}.pdf`, tipo: "application/pdf", piId: o.id });
+          if (formato !== "pdf") arquivos.push({ blob: await gerarExcelCronograma({ pi: o, etapas: eo }), nome: `${bo}.xlsx`, tipo: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", piId: o.id });
+        }
+      }
       const nome = arquivos.map((a) => a.nome).join(" e ");
       if (op.computador || op.meuEmail) {
         for (const arq of arquivos) {
@@ -524,10 +655,10 @@ function ModalPdfCronograma({ pi, usuario, onFechar }) {
       if (op.sgo || op.viaSgo) {
         setProcessando("Salvando no SGO...");
         for (const arq of arquivos) {
-          const caminho = `${pi.id}/${arq.nome}`;
+          const caminho = `${arq.piId || pi.id}/${arq.nome}`;
           const { error } = await supabase.storage.from(BUCKET_DOCUMENTOS).upload(caminho, arq.blob, { upsert: true, contentType: arq.tipo });
           if (error) throw new Error(`não foi possível salvar no SGO (${error.message})`);
-          caminhos.push(caminho);
+          if (!arq.piId) caminhos.push(caminho); // o envio por e-mail leva o consolidado (arquivos da pasta do PI Pai)
         }
         await registrarLog(usuario, "Gerou cronograma (arquivo)", `${pi.codigo} — ${nome}`);
       }
@@ -572,6 +703,12 @@ function ModalPdfCronograma({ pi, usuario, onFechar }) {
           </div>
           <div className="texto-apoio mt-1.5">Layout do cronograma padrão: placar de status, EAP, responsável, duração, dias úteis, evolução e Gantt.{formato !== "pdf" ? " No Excel, as fórmulas e o Gantt se atualizam ao mudar datas ou %." : ""}</div>
         </div>
+        {obras && (
+          <label className={`flex items-start gap-3 rounded-xl border p-3 cursor-pointer ${porObra ? "border-cyan bg-cyan/5" : "border-line"}`}>
+            <input type="checkbox" checked={porObra} onChange={(e) => setPorObra(e.target.checked)} className="mt-0.5 w-4 h-4 accent-cyan" />
+            <span className="text-sm"><strong>Também um arquivo por obra</strong><span className="texto-apoio block">O consolidado mostra cada obra com as macro-etapas dela. Marcando aqui, gera também o cronograma completo de cada uma das {obras.length} obras (no SGO, cada um vai para a pasta da sua obra).</span></span>
+          </label>
+        )}
         <div className="text-sm text-muted">Escolha uma ou mais opções:</div>
         {opcao("computador", "Salvar no computador", "Baixa o(s) arquivo(s).")}
         {opcao("sgo", "Salvar no SGO", "Guarda o(s) arquivo(s) em Documentos deste PI.")}
@@ -813,11 +950,29 @@ function AbaDocumentos({ pi }) {
 // orçado × realizado do PI por grupo ("compra_reais" | "moi_horas"), com as mesmas regras do Relatório
 // useFinanceiroPi e consumo moram em lib/dados.js (usados também no app do líder)
 
-function AbaFinanceiro({ pi, usuario }) {
-  const { grupo, soma, carregando } = useFinanceiroPi(pi);
+// contrato (PI Pai): escolhe Consolidado (soma das obras) ou uma obra
+function AbaFinanceiro({ pi, usuario, obras = null }) {
+  const [sel, setSel] = useState("");
+  if (!obras) return <FinanceiroPi pi={pi} usuario={usuario} />;
+  const obra = obras.find((o) => o.id === sel);
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="flex flex-wrap gap-1.5">
+        <button onClick={() => setSel("")} className={`chip ${!sel ? "chip-ativo" : ""}`}>Consolidado do contrato</button>
+        {obras.map((o) => <button key={o.id} onClick={() => setSel(o.id)} className={`chip ${sel === o.id ? "chip-ativo" : ""}`}>{o.codigo}</button>)}
+      </div>
+      {obra ? <FinanceiroPi key={obra.id} pi={obra} usuario={usuario} titulo={`Obra ${obra.codigo}${obra.projeto ? ` — ${obra.projeto}` : ""}`} />
+        : <FinanceiroPi key="consolidado" pi={pi} usuario={usuario} obras={obras} titulo={`Consolidado — ${obras.length} obras`} />}
+    </div>
+  );
+}
+function FinanceiroPi({ pi, usuario, obras = null, titulo = "" }) {
+  const ids = obras ? obras.map((o) => o.id) : null;
+  const { grupo, soma, carregando } = useFinanceiroPi(pi, ids);
   // só horas (ex: líder de campo): sem valores em R$ (compra e medições ficam ocultas)
   const soHoras = !(pode(usuario, "relatorio.ver") || pode(usuario, "dashboard.valores"));
-  const { dados: etapas } = useTabela("etapas", { select: "id,nome,medicao,medicao_valor,medicao_percentual,status,data_prevista_fim", filtro: [["pi_id", pi.id]] });
+  const { dados: etapasT } = useTabela("etapas", { select: "id,pi_id,nome,medicao,medicao_valor,medicao_percentual,status,data_prevista_fim", filtro: ids ? null : [["pi_id", pi.id]] });
+  const etapas = ids ? etapasT.filter((e) => ids.includes(e.pi_id)) : etapasT;
   const compra = grupo("compra_reais"), moi = grupo("moi_horas");
   const medicoes = etapas.filter((e) => e.medicao);
   // diferença = Orçado − Realizado (positivo = dentro do orçado, negativo = acima), igual ao Relatório
@@ -863,7 +1018,8 @@ function AbaFinanceiro({ pi, usuario }) {
   }
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex justify-end">
+      <div className="flex items-center justify-between gap-2">
+        <div className="titulo-quadro">{titulo}</div>
         {pode(usuario, "relatorio.ver") && <Link href={`/relatorios?pi=${pi.id}`} className="btn btn-contorno btn-sm"><Icone nome="relatorio" className="w-4 h-4" /> Relatório completo</Link>}
       </div>
       {carregando && <Esqueleto linhas={3} />}
@@ -876,7 +1032,7 @@ function AbaFinanceiro({ pi, usuario }) {
         <div className="flex flex-col divide-y divide-line/70">
           {medicoes.sort((a, b) => String(a.data_prevista_fim || "9").localeCompare(String(b.data_prevista_fim || "9"))).map((e) => (
             <div key={e.id} className="py-2 flex items-center gap-2 text-sm">
-              <span className="flex-1 min-w-0 truncate">{e.nome}</span>
+              <span className="flex-1 min-w-0 truncate">{obras && <span className="font-mono text-xs text-cyan mr-1.5">{obras.find((o) => o.id === e.pi_id)?.codigo}</span>}{e.nome}</span>
               <span className="tabular-nums text-muted">{formatarData(e.data_prevista_fim)}</span>
               <span className="tabular-nums w-16 text-right">{e.medicao_percentual != null ? `${e.medicao_percentual}%` : "—"}</span>
               <span className="tabular-nums w-32 text-right font-semibold">{e.medicao_valor != null ? reais(e.medicao_valor) : "—"}</span>

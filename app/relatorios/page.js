@@ -72,39 +72,69 @@ export default function RelatoriosPage() {
     const doLink = new URLSearchParams(window.location.search).get("pi");
     if (doLink) { setPiId(doLink); setVisualizando({ piId: doLink, custo: true, horas: true }); }
   }, []);
-  const itensDoPi = orcamentos.filter((o) => o.pi_id === visualizando?.piId);
+  // contrato: PI Pai = consolidado (soma das obras, só leitura); cada obra tem o próprio relatório
+  const contrato = piVisto ? (piVisto.pi_pai_id ? pis.find((p) => p.id === piVisto.pi_pai_id) : pis.some((p) => p.pi_pai_id === piVisto.id) ? piVisto : null) : null;
+  const obrasC = contrato ? pis.filter((p) => p.pi_pai_id === contrato.id).sort((a, b) => String(a.codigo).localeCompare(String(b.codigo), "pt-BR", { numeric: true })) : [];
+  const consolidado = !!contrato && piVisto?.id === contrato.id;
+  const idsC = new Set(obrasC.map((o) => o.id));
+  const somarItens = (lista) => {
+    const m = {};
+    lista.forEach((i) => {
+      const a = (m[i.categoria_id] ||= { pi_id: contrato?.id, categoria_id: i.categoria_id, valor_orcado: 0, valor_realizado: null });
+      a.valor_orcado += Number(i.valor_orcado) || 0;
+      if (i.valor_realizado != null) a.valor_realizado = (a.valor_realizado || 0) + (Number(i.valor_realizado) || 0);
+    });
+    return Object.values(m);
+  };
+  const itensDoPi = consolidado ? somarItens(orcamentos.filter((o) => idsC.has(o.pi_id))) : orcamentos.filter((o) => o.pi_id === visualizando?.piId);
   const categoriasHoras = categorias.filter((c) => c.grupo === "moi_horas");
 
   // lançamentos de horas do PI (reprovados ficam de fora) e quanto cada código acumula
   const { dados: usuarios } = useTabela("usuarios");
   const { dados: apontamentosPi, recarregar: recarregarApontamentos } = useTabela("apontamentos_horas", {
-    filtro: visualizando?.horas ? [["pi_id", visualizando.piId]] : [["pi_id", undefined]], order: { coluna: "data", asc: false },
+    filtro: !visualizando?.horas ? [["pi_id", undefined]] : consolidado ? null : [["pi_id", visualizando.piId]], order: { coluna: "data", asc: false },
   });
-  const lancamentos = apontamentosPi.filter((a) => a.status !== "rejeitado").map((a) => ({ ...a, ...horasDoLancamento(a) }));
-  const apontadoPorCodigo = {};
-  lancamentos.forEach((l) => {
-    if (l.categoria_normal_id) apontadoPorCodigo[l.categoria_normal_id] = (apontadoPorCodigo[l.categoria_normal_id] || 0) + l.normais;
-    if (l.categoria_extra_id) apontadoPorCodigo[l.categoria_extra_id] = (apontadoPorCodigo[l.categoria_extra_id] || 0) + l.extras;
-  });
+  const lancamentos = apontamentosPi.filter((a) => a.status !== "rejeitado" && (consolidado ? idsC.has(a.pi_id) : a.pi_id === visualizando?.piId))
+    .map((a) => ({ ...a, ...horasDoLancamento(a) }));
+  const apontadoDe = (lista) => {
+    const ap = {};
+    lista.forEach((l) => {
+      if (l.categoria_normal_id) ap[l.categoria_normal_id] = (ap[l.categoria_normal_id] || 0) + l.normais;
+      if (l.categoria_extra_id) ap[l.categoria_extra_id] = (ap[l.categoria_extra_id] || 0) + l.extras;
+    });
+    return ap;
+  };
+  const apontadoPorCodigo = apontadoDe(lancamentos);
 
   // ---- PDF / impressão: documento só com os dados (cabeçalho com logo e dados do PI) ----
   const { avisar } = useToast();
-  const { dados: etapasPi } = useTabela("etapas", { filtro: [["pi_id", visualizando?.piId]] });
+  const { dados: etapasT } = useTabela("etapas", { filtro: consolidado ? null : [["pi_id", visualizando?.piId]] });
+  const etapasPi = consolidado ? etapasT.filter((e) => idsC.has(e.pi_id)) : etapasT;
   const { dados: recursosNomes } = useTabela("recursos", { select: "id,nome" });
   const [gerando, setGerando] = useState("");
   const montarPdf = async () => {
-    const linhasDe = (cats, apont = {}) => cats.map((c) => {
-      const it = itensDoPi.find((o) => o.categoria_id === c.id);
+    const linhasDe = (cats, apont = {}, itens = itensDoPi) => cats.map((c) => {
+      const it = itens.find((o) => o.categoria_id === c.id);
       return { codigo: c.codigo, nome: c.nome, orcado: Number(it?.valor_orcado) || 0, realizado: (Number(it?.valor_realizado) || 0) + (apont[c.id] || 0) };
     });
     const secoes = [];
-    if (visualizando.custo) secoes.push({ titulo: "Compra — Produto ou Serviço", tipo: "custo", colOrcado: "Custos Orçados", colRealizado: "Custos Realizados", linhas: linhasDe(categorias.filter((c) => c.grupo === "compra_reais")) });
-    if (visualizando.horas) secoes.push({ titulo: "Relatório de Horas", tipo: "horas", colOrcado: "Horas Orçadas", colRealizado: "Horas Realizadas", linhas: linhasDe(categoriasHoras, apontadoPorCodigo) });
+    const pref = consolidado ? "Consolidado do contrato — " : "";
+    if (visualizando.custo) secoes.push({ titulo: `${pref}Compra — Produto ou Serviço`, tipo: "custo", colOrcado: "Custos Orçados", colRealizado: "Custos Realizados", linhas: linhasDe(categorias.filter((c) => c.grupo === "compra_reais")) });
+    if (visualizando.horas) secoes.push({ titulo: `${pref}Relatório de Horas`, tipo: "horas", colOrcado: "Horas Orçadas", colRealizado: "Horas Realizadas", linhas: linhasDe(categoriasHoras, apontadoPorCodigo) });
+    // contrato: depois do consolidado, o orçado × realizado de cada obra em separado
+    if (consolidado) {
+      for (const o of obrasC) {
+        const itensO = orcamentos.filter((x) => x.pi_id === o.id);
+        const nomeO = `Obra ${o.codigo}${o.projeto ? ` (${o.projeto})` : ""}`;
+        if (visualizando.custo) secoes.push({ titulo: `${nomeO} — Compra`, tipo: "custo", colOrcado: "Custos Orçados", colRealizado: "Custos Realizados", linhas: linhasDe(categorias.filter((c) => c.grupo === "compra_reais"), {}, itensO) });
+        if (visualizando.horas) secoes.push({ titulo: `${nomeO} — Horas`, tipo: "horas", colOrcado: "Horas Orçadas", colRealizado: "Horas Realizadas", linhas: linhasDe(categoriasHoras, apontadoDe(lancamentos.filter((l) => l.pi_id === o.id)), itensO) });
+      }
+    }
     const cod = (id) => categoriasHoras.find((c) => c.id === id)?.codigo || "";
     const lanc = visualizando.horas ? lancamentos.map((l) => {
       const p = usuarios.find((u) => u.id === l.usuario_id);
       return {
-        nome: p?.nome || recursosNomes.find((r) => r.id === l.recurso_id)?.nome || "—", funcao: p?.funcao, data: l.data,
+        nome: `${consolidado ? `[${obrasC.find((o) => o.id === l.pi_id)?.codigo || ""}] ` : ""}${p?.nome || recursosNomes.find((r) => r.id === l.recurso_id)?.nome || "—"}`, funcao: p?.funcao, data: l.data,
         inicio: l.entrada ? horaCurta(l.entrada) : String(l.hora_inicio || "—").slice(0, 5), fim: l.saida ? horaCurta(l.saida) : l.entrada ? "em aberto" : String(l.hora_fim || "—").slice(0, 5),
         normais: l.normais, extras: l.extras, codNormais: cod(l.categoria_normal_id), codExtras: cod(l.categoria_extra_id), pendente: l.status === "pendente",
       };
@@ -180,23 +210,33 @@ export default function RelatoriosPage() {
                 </button>
               </div>
             </div>
-            {!editavel && <Aviso tipo="info" className="mb-4 print:hidden">Modo visualização — seu perfil não pode lançar valores realizados.</Aviso>}
+            {contrato && (
+              <div className="cartao p-3 mb-4 print:hidden">
+                <div className="titulo-secao mb-2">Contrato {contrato.codigo} · {obrasC.length} obras</div>
+                <div className="flex flex-wrap gap-1.5">
+                  <button onClick={() => setVisualizando((v) => ({ ...v, piId: contrato.id }))} className={`chip ${consolidado ? "chip-ativo" : ""}`}>Consolidado</button>
+                  {obrasC.map((o) => <button key={o.id} onClick={() => setVisualizando((v) => ({ ...v, piId: o.id }))} className={`chip ${piVisto.id === o.id ? "chip-ativo" : ""}`}>{o.codigo}</button>)}
+                </div>
+              </div>
+            )}
+            {consolidado && <Aviso tipo="info" className="mb-4 print:hidden">Consolidado do contrato: soma das {obrasC.length} obras (somente leitura). Os valores realizados são lançados em cada obra. O PDF traz o consolidado e, em seguida, cada obra em separado.</Aviso>}
+            {!editavel && !consolidado && <Aviso tipo="info" className="mb-4 print:hidden">Modo visualização — seu perfil não pode lançar valores realizados.</Aviso>}
             <div className="flex flex-col gap-6">
               {visualizando.custo && (
-                <TabelaOrcadoRealizado key={`custo-${piVisto.id}`} tipo="custo" titulo="Compra — Produto ou Serviço"
+                <TabelaOrcadoRealizado key={`custo-${piVisto.id}`} tipo="custo" titulo={consolidado ? "Compra — consolidado das obras" : "Compra — Produto ou Serviço"}
                   colOrcado="Custos Orçados" colRealizado="Custos Realizados"
                   categorias={categorias.filter((c) => c.grupo === "compra_reais")}
-                  itens={itensDoPi} pi={piVisto} editavel={editavel} usuario={usuario} onSalvo={recarregarOrcamentos} />
+                  itens={itensDoPi} pi={piVisto} editavel={editavel && !consolidado} usuario={usuario} onSalvo={recarregarOrcamentos} />
               )}
               {visualizando.horas && (
-                <TabelaOrcadoRealizado key={`horas-${piVisto.id}`} tipo="horas" titulo="Relatório de Horas"
+                <TabelaOrcadoRealizado key={`horas-${piVisto.id}`} tipo="horas" titulo={consolidado ? "Horas — consolidado das obras" : "Relatório de Horas"}
                   colOrcado="Horas Orçadas" colRealizado="Horas Realizadas"
                   categorias={categoriasHoras} apontado={apontadoPorCodigo}
-                  itens={itensDoPi} pi={piVisto} editavel={editavel} usuario={usuario} onSalvo={recarregarOrcamentos} />
+                  itens={itensDoPi} pi={piVisto} editavel={editavel && !consolidado} usuario={usuario} onSalvo={recarregarOrcamentos} />
               )}
               {visualizando.horas && (
                 <LancamentosHoras key={`lanc-${piVisto.id}`} lancamentos={lancamentos} usuarios={usuarios} categorias={categoriasHoras} pis={pis}
-                  pi={piVisto} editavel={editavel} usuario={usuario} onSalvo={recarregarApontamentos} />
+                  pi={piVisto} editavel={editavel && !consolidado} usuario={usuario} onSalvo={recarregarApontamentos} />
               )}
             </div>
           </>
