@@ -132,14 +132,18 @@ function ListaPis() {
   const { dados: etapasBrutas } = useTabela("etapas", { select: "id,pi_id,parent_etapa_id,status,percentual,data_prevista_inicio,data_prevista_fim" });
   const etapas = useMemo(() => consolidarMacros(etapasBrutas), [etapasBrutas]);
   const [busca, setBusca] = useState("");
-  const [status, setStatus] = useState("ativo");
-  const [porCliente, setPorCliente] = useState(false); // padrão: nº do PI crescente; opção: separado por cliente
+  // filtros de status cumulativos: cada botão liga/desliga. "Todos" = tudo menos Concluído e Cancelado
+  const PADRAO_TODOS = Object.keys(STATUS_PI).filter((k) => k !== "concluido" && k !== "cancelado");
+  const [statusSel, setStatusSel] = useState(PADRAO_TODOS);
+  const ehTodos = statusSel.length === PADRAO_TODOS.length && PADRAO_TODOS.every((k) => statusSel.includes(k));
+  const alternarStatus = (k) => setStatusSel((p) => (p.includes(k) ? p.filter((x) => x !== k) : [...p, k]));
+  const [porCliente, setPorCliente] = useState(true); // padrão: separado por cliente (nº do PI crescente dentro de cada um)
   const termo = busca.trim().toLowerCase();
   // contrato: só o PI Pai aparece (as obras ficam dentro da página dele); a busca também acha pelo nº da obra
   const visiveis = new Set(pis.map((p) => p.id));
   const obrasDe = (id) => pis.filter((x) => x.pi_pai_id === id);
   const bate = (p) => [p.codigo, p.cliente, p.projeto].some((c) => (c || "").toLowerCase().includes(termo));
-  const lista = pis.filter((p) => !(p.pi_pai_id && visiveis.has(p.pi_pai_id)) && (!status || p.status === status)
+  const lista = pis.filter((p) => !(p.pi_pai_id && visiveis.has(p.pi_pai_id)) && statusSel.includes(p.status || "ativo")
     && (!termo || bate(p) || obrasDe(p.id).some(bate))).sort(compararPis);
   // grupos por cliente (sem diferenciar maiúsculas), em ordem alfabética; dentro de cada um, nº do PI crescente
   const grupos = useMemo(() => {
@@ -152,7 +156,7 @@ function ListaPis() {
     });
     return [...m.values()].sort((a, b) => a.titulo.localeCompare(b.titulo, "pt-BR", { sensitivity: "base" }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [porCliente, pis, status, termo]);
+  }, [porCliente, pis, statusSel.join(","), termo]);
   // PI Pai: progresso e atrasos somam as obras
   const idsDe = (piId) => { const o = obrasDe(piId).map((x) => x.id); return o.length ? o : [piId]; };
   const progresso = (piId) => {
@@ -171,8 +175,11 @@ function ListaPis() {
           <input value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Buscar por nº, cliente ou projeto" className="input pl-9" autoFocus />
         </div>
         <div className="flex flex-wrap gap-1.5">
-          {[["", "Todos"], ...Object.entries(STATUS_PI)].map(([v, l]) => (
-            <button key={v} onClick={() => setStatus(v)} className={`chip ${status === v ? "chip-ativo" : ""}`}>{l}</button>
+          <button onClick={() => setStatusSel(PADRAO_TODOS)} aria-pressed={ehTodos} title="Todos, exceto Concluído e Cancelado" className={`chip ${ehTodos ? "chip-ativo" : ""}`}>Todos</button>
+          {Object.entries(STATUS_PI).map(([v, l]) => (
+            <button key={v} onClick={() => alternarStatus(v)} aria-pressed={statusSel.includes(v)} className={`chip ${statusSel.includes(v) ? "chip-ativo" : ""}`}>
+              {statusSel.includes(v) ? "✓ " : ""}{l}
+            </button>
           ))}
           <button onClick={() => setPorCliente((v) => !v)} aria-pressed={porCliente} className={`chip md:ml-2 ${porCliente ? "chip-ativo" : ""}`} title="Separar os PIs por cliente">
             <Icone nome="usuarios" className="w-3.5 h-3.5" /> Por cliente
@@ -181,9 +188,16 @@ function ListaPis() {
       </div>
       {carregando && <Esqueleto linhas={4} altura={72} />}
       {!carregando && lista.length === 0 && <EstadoVazio icone="obra" titulo="Nenhum PI encontrado" texto="Ajuste a busca ou o filtro de status." />}
-      {grupos.map((g) => (
-      <div key={g.titulo || "todos"} className="mb-5">
-      {g.titulo && <div className="titulo-quadro mb-2">{g.titulo} <span className="text-muted font-normal">({g.itens.length})</span></div>}
+      {grupos.map((g, gi) => {
+        // cada cliente com um tom próprio, só cinzas e azuis bem suaves (transparentes: funcionam no tema claro e escuro)
+        const TONS = [[100, 116, 139, 0.07], [11, 132, 165, 0.07], [71, 85, 105, 0.11], [37, 99, 235, 0.06], [148, 163, 184, 0.13], [0, 64, 128, 0.07]];
+        const [r, gg, b, a] = TONS[gi % TONS.length];
+        const tom = g.titulo ? { background: `rgba(${r},${gg},${b},${a})`, borderColor: `rgba(${r},${gg},${b},${Math.min(0.35, a * 3)})` } : undefined;
+        return (
+      <div key={g.titulo || "todos"} className={g.titulo ? "mb-4 rounded-2xl border p-3 md:p-4" : "mb-5"} style={tom}>
+      {g.titulo && <div className="titulo-quadro mb-3 flex items-center gap-2">
+        <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: `rgba(${r},${gg},${b},0.75)` }} />
+        {g.titulo} <span className="text-muted font-normal">({g.itens.length})</span></div>}
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
         {g.itens.map((p) => {
           const prog = progresso(p.id), atr = atrasadas(p.id);
@@ -210,7 +224,8 @@ function ListaPis() {
         })}
       </div>
       </div>
-      ))}
+        );
+      })}
     </div>
   );
 }
