@@ -42,7 +42,7 @@ export default function PaginaPi({ searchParams }) {
       {id ? (
         <div className="flex min-h-full">
           <ListaLateral idAtual={id} />
-          <div className="flex-1 min-w-0"><DetalhePi key={id} id={id} abaInicial={searchParams?.aba} /></div>
+          <div className="flex-1 min-w-0"><DetalhePi key={id} id={id} abaInicial={searchParams?.aba} obraInicial={searchParams?.obra} /></div>
         </div>
       ) : <ListaPis />}
     </PainelShell>
@@ -67,12 +67,19 @@ function ListaLateral({ idAtual }) {
   const [busca, setBusca] = useState("");
   const [soAtivos, setSoAtivos] = useState(true);
   const termo = busca.trim().toLowerCase();
-  const lista = pis.filter((p) => (!soAtivos || p.status === "ativo" || p.id === idAtual) && (!termo || [p.codigo, p.cliente, p.projeto].some((c) => (c || "").toLowerCase().includes(termo))));
+  // contrato: só o PI Pai na lista (as obras ficam dentro dele)
+  const visiveis = new Set(pis.map((p) => p.id));
+  const obrasDe = (id) => pis.filter((x) => x.pi_pai_id === id);
+  const bate = (p) => [p.codigo, p.cliente, p.projeto].some((c) => (c || "").toLowerCase().includes(termo));
+  const lista = pis.filter((p) => !(p.pi_pai_id && visiveis.has(p.pi_pai_id)) && (!soAtivos || p.status === "ativo" || p.id === idAtual)
+    && (!termo || bate(p) || obrasDe(p.id).some(bate)));
+  const idsDe = (piId) => { const o = obrasDe(piId).map((x) => x.id); return o.length ? o : [piId]; };
   const progresso = (piId) => {
-    const macros = etapas.filter((e) => e.pi_id === piId && !e.parent_etapa_id);
+    const ids = idsDe(piId);
+    const macros = etapas.filter((e) => ids.includes(e.pi_id) && !e.parent_etapa_id);
     return macros.length ? Math.round(macros.reduce((s, e) => s + (e.status === "concluida" ? 100 : Number(e.percentual) || 0), 0) / macros.length) : null;
   };
-  const atrasado = (piId) => etapas.some((e) => e.pi_id === piId && e.status !== "concluida" && (diasAte(e.data_prevista_fim) ?? 0) < 0);
+  const atrasado = (piId) => { const ids = idsDe(piId); return etapas.some((e) => ids.includes(e.pi_id) && e.status !== "concluida" && (diasAte(e.data_prevista_fim) ?? 0) < 0); };
   return (
     // no celular a aba lateral roubava espaço e cobria o logo: lá a troca de obra é por "Todos os PIs"
     <div ref={painelRef} className="relative shrink-0 z-40 hidden md:block">
@@ -128,7 +135,12 @@ function ListaPis() {
   const [status, setStatus] = useState("ativo");
   const [porCliente, setPorCliente] = useState(false); // padrão: nº do PI crescente; opção: separado por cliente
   const termo = busca.trim().toLowerCase();
-  const lista = pis.filter((p) => (!status || p.status === status) && (!termo || [p.codigo, p.cliente, p.projeto].some((c) => (c || "").toLowerCase().includes(termo)))).sort(compararPis);
+  // contrato: só o PI Pai aparece (as obras ficam dentro da página dele); a busca também acha pelo nº da obra
+  const visiveis = new Set(pis.map((p) => p.id));
+  const obrasDe = (id) => pis.filter((x) => x.pi_pai_id === id);
+  const bate = (p) => [p.codigo, p.cliente, p.projeto].some((c) => (c || "").toLowerCase().includes(termo));
+  const lista = pis.filter((p) => !(p.pi_pai_id && visiveis.has(p.pi_pai_id)) && (!status || p.status === status)
+    && (!termo || bate(p) || obrasDe(p.id).some(bate))).sort(compararPis);
   // grupos por cliente (sem diferenciar maiúsculas), em ordem alfabética; dentro de cada um, nº do PI crescente
   const grupos = useMemo(() => {
     if (!porCliente) return [{ titulo: null, itens: lista }];
@@ -141,11 +153,14 @@ function ListaPis() {
     return [...m.values()].sort((a, b) => a.titulo.localeCompare(b.titulo, "pt-BR", { sensitivity: "base" }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [porCliente, pis, status, termo]);
+  // PI Pai: progresso e atrasos somam as obras
+  const idsDe = (piId) => { const o = obrasDe(piId).map((x) => x.id); return o.length ? o : [piId]; };
   const progresso = (piId) => {
-    const macros = etapas.filter((e) => e.pi_id === piId && !e.parent_etapa_id);
+    const ids = idsDe(piId);
+    const macros = etapas.filter((e) => ids.includes(e.pi_id) && !e.parent_etapa_id);
     return macros.length ? Math.round(macros.reduce((s, e) => s + (e.status === "concluida" ? 100 : Number(e.percentual) || 0), 0) / macros.length) : null;
   };
-  const atrasadas = (piId) => etapas.filter((e) => e.pi_id === piId && !e.calculada && e.status !== "concluida" && (diasAte(e.data_prevista_fim) ?? 0) < 0).length; // sem contar a macro junto com as subs
+  const atrasadas = (piId) => { const ids = idsDe(piId); return etapas.filter((e) => ids.includes(e.pi_id) && !e.calculada && e.status !== "concluida" && (diasAte(e.data_prevista_fim) ?? 0) < 0).length; }; // sem contar a macro junto com as subs
 
   return (
     <div className="p-4 md:p-8">
@@ -179,6 +194,7 @@ function ListaPis() {
                   <div className="text-sm font-semibold text-cyan">{p.codigo}</div>
                   <div className="font-semibold leading-snug">{p.cliente}</div>
                   {p.projeto && <div className="text-sm text-muted leading-snug">{p.projeto}</div>}
+                  {obrasDe(p.id).length > 0 && <div className="selo bg-navy/10 text-navy mt-1">Contrato · {obrasDe(p.id).length} obras</div>}
                 </div>
                 <span className={`selo shrink-0 ${COR_STATUS_PI[p.status] || "bg-panel text-muted"}`}>{STATUS_PI[p.status] || p.status}</span>
               </div>
@@ -200,24 +216,39 @@ function ListaPis() {
 }
 
 // ---------------- detalhe do PI ----------------
-function DetalhePi({ id, abaInicial }) {
+function DetalhePi({ id, abaInicial, obraInicial }) {
   const { usuario } = useAuth();
   const router = useRouter();
   const { dados: pis, carregando } = useTabela("pis");
-  const pi = pis.find((p) => p.id === id);
+  const piBase = pis.find((p) => p.id === id);
   // contrato: PI Pai (consolida as obras) ou obra (filho) de um contrato
   const filhos = pis.filter((p) => p.pi_pai_id === id).sort(compararPis);
-  const ehPai = filhos.length > 0;
-  const pai = pi?.pi_pai_id ? pis.find((p) => p.id === pi.pi_pai_id) : null;
+  const ehContrato = filhos.length > 0;
+  const paiBase = piBase?.pi_pai_id ? pis.find((p) => p.id === piBase.pi_pai_id) : null;
+  // obra aberta direto (link antigo, QR Code): vai para a página do contrato com a obra selecionada
+  useEffect(() => {
+    if (paiBase) router.replace(`/pi?id=${paiBase.id}&obra=${piBase.id}${abaInicial ? `&aba=${abaInicial}` : ""}`, { scroll: false });
+  }, [paiBase?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  const [obraSel, setObraSel] = useState(obraInicial || "");
+  const obra = ehContrato ? filhos.find((f) => f.id === obraSel) : null;
+  const pi = obra || piBase; // o que as abas mostram: a obra escolhida ou o contrato
+  const ehPai = ehContrato && !obra; // visão consolidada
+  const pai = obra ? piBase : null;
   // Financeiro: completo (relatório/valores) ou só de horas (permissão financeiro.horas — ex: líder de campo)
   const abas = ABAS.filter(([k, , perm]) => (k !== "contrato" || ehPai) && (!perm || pode(usuario, perm) || (perm === "relatorio.ver" && (pode(usuario, "dashboard.valores") || pode(usuario, "financeiro.horas")))));
   const [aba, setAbaEstado] = useState(abaInicial || null);
   // aba pedida (se o usuário puder vê-la); sem pedido, o PI Pai abre direto na consolidação
   const abaAtiva = aba && abas.some(([k]) => k === aba) ? aba : ehPai ? "contrato" : "resumo";
   const [qr, setQr] = useState(false);
-  const setAba = (k) => { setAbaEstado(k); router.replace(`/pi?id=${id}${k !== "resumo" ? `&aba=${k}` : ""}`, { scroll: false }); };
+  const url = (k, o) => `/pi?id=${id}${o ? `&obra=${o}` : ""}${k && k !== "resumo" ? `&aba=${k}` : ""}`;
+  const setAba = (k) => { setAbaEstado(k); router.replace(url(k, obraSel), { scroll: false }); };
+  const escolherObra = (o) => {
+    setObraSel(o);
+    const k = abaAtiva === "contrato" && o ? "resumo" : abaAtiva; // aba "Obras do contrato" só existe no consolidado
+    setAbaEstado(k); router.replace(url(k, o), { scroll: false });
+  };
 
-  if (carregando) return <div className="p-4 md:p-8"><Esqueleto linhas={4} /></div>;
+  if (carregando || paiBase) return <div className="p-4 md:p-8"><Esqueleto linhas={4} /></div>;
   if (!pi) return <div className="p-4 md:p-8"><EstadoVazio icone="obra" titulo="PI não encontrado" texto="Ele pode ter sido excluído ou você não tem acesso a esta obra." acao={<Link href="/pi" className="btn btn-primario">Ver todos os PIs</Link>} /></div>;
 
   return (
@@ -233,13 +264,27 @@ function DetalhePi({ id, abaInicial }) {
           <div className="titulo-destaque mt-1">{pi.cliente}</div>
           {pi.projeto && <div className="text-muted">{pi.projeto}</div>}
           {ehPai && <div className="selo bg-navy/10 text-navy mt-1.5">PI Pai · contrato com {filhos.length} obras</div>}
-          {pai && <Link href={`/pi?id=${pai.id}`} className="selo bg-navy/10 text-navy mt-1.5 hover:underline">Obra do contrato {pai.codigo} →</Link>}
+          {pai && <button onClick={() => escolherObra("")} className="selo bg-navy/10 text-navy mt-1.5 hover:underline">Obra do contrato {pai.codigo} · ver consolidado</button>}
         </div>
         <div className="flex flex-wrap gap-2">
           <button onClick={() => setQr(true)} className="btn btn-contorno"><Icone nome="qr" className="w-4 h-4" /> QR Code</button>
           <Link href={`/cronograma?pi=${pi.id}`} className="btn btn-primario"><Icone nome="cronograma" className="w-4 h-4" /> Configurar Cronograma</Link>
         </div>
       </div>
+
+      {/* contrato: consolidado ou uma obra específica (todas as abas passam a mostrar a escolha) */}
+      {ehContrato && (
+        <div className="cartao p-2.5 mb-4 flex items-center gap-2 overflow-x-auto rolagem-fina">
+          <span className="titulo-secao shrink-0 px-1">Visão</span>
+          <button onClick={() => escolherObra("")} className={`chip shrink-0 ${!obra ? "chip-ativo" : ""}`}>Consolidado do contrato</button>
+          <span className="w-px h-5 bg-line shrink-0" />
+          {filhos.map((f) => (
+            <button key={f.id} onClick={() => escolherObra(f.id)} title={f.projeto || ""} className={`chip shrink-0 ${obra?.id === f.id ? "chip-ativo" : ""}`}>
+              <span className="font-mono">{f.codigo}</span>{f.projeto && <span className="hidden lg:inline text-muted font-normal max-w-[140px] truncate">· {f.projeto}</span>}
+            </button>
+          ))}
+        </div>
+      )}
 
       <div className="flex gap-1 border-b border-line mb-5 overflow-x-auto" role="tablist">
         {abas.map(([k, l]) => (
@@ -250,6 +295,7 @@ function DetalhePi({ id, abaInicial }) {
         ))}
       </div>
 
+      <div key={pi.id}>
       {abaAtiva === "contrato" && <AbaContrato pai={pi} filhos={filhos} usuario={usuario} />}
       {abaAtiva === "resumo" && <AbaResumo pi={pi} usuario={usuario} irPara={setAba} obras={ehPai ? filhos : null} />}
       {abaAtiva === "cronograma" && <AbaCronograma pi={pi} obras={ehPai ? filhos : null} />}
@@ -258,6 +304,7 @@ function DetalhePi({ id, abaInicial }) {
       {abaAtiva === "documentos" && <AbaDocumentos pi={pi} />}
       {abaAtiva === "financeiro" && <AbaFinanceiro pi={pi} usuario={usuario} obras={ehPai ? filhos : null} />}
       {abaAtiva === "cliente" && <AbaCliente pi={pi} />}
+      </div>
 
       {qr && <ModalQrPi pi={pi} comPdf onFechar={() => setQr(false)} />}
     </div>
