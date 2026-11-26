@@ -1,522 +1,648 @@
 "use client";
 
-import { useState } from "react";
-import { useTabela, registrarLog, chamarApi } from "../../lib/dados";
-import { useAuth, podeGerenciarUsuarios, pode } from "../../lib/AuthContext";
-import { useToast } from "../../lib/Toast";
+import { Fragment, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
+import { Responsive, WidthProvider } from "react-grid-layout";
+import "react-grid-layout/css/styles.css";
+import "react-resizable/css/styles.css";
+import { useTabela } from "../../lib/dados";
+import { useAuth, pode } from "../../lib/AuthContext";
+import { diasAte, formatarData, saudacao } from "../../lib/datas";
+import { STATUS_PI, COR_STATUS_PI, PRAZOS, consolidarMacros } from "../../lib/constantes";
+import { horasDoLancamento } from "../../lib/horas";
 import PainelShell from "../../components/PainelShell";
-import { CabecalhoPagina, Modal, Campo, Aviso, Esqueleto, EstadoVazio, Spinner, SeletorEquipes } from "../../components/ui";
-import { AREAS, FUNCOES, EQUIPE_CAMPO } from "../../lib/constantes";
-import { normalizarLogin, erroLogin, ehEmail, sugerirLogin } from "../../lib/login";
+import { CabecalhoPagina, Esqueleto, EstadoVazio, BotaoLimpar } from "../../components/ui";
 import Icone from "../../components/Icone";
-import VerSenhas from "../../components/VerSenhas";
-import ConfirmacaoDupla from "../../components/ConfirmacaoDupla";
+import DocumentosNaoAbertos from "../../components/DocumentosNaoAbertos";
 
-const PERFIS = [
-  ["master", "Master (acesso total)"],
-  ["gerente", "Gerente de Obras"],
-  ["coordenador", "Coordenador de Equipes"],
-  ["lider", "Líder Local"],
-  ["funcionario", "Funcionário (mão de obra própria)"],
-  ["terceiro", "Terceiro (mão de obra)"],
-  ["visualizador", "Visualizador"],
-];
-const PERFIS_COM_FUNCAO = ["lider", "funcionario", "terceiro", "gerente", "coordenador"];
-const COR_PERFIL = {
-  master: "bg-navy text-white", gerente: "bg-cyan/10 text-cyan", coordenador: "bg-cyan/10 text-cyan",
-  lider: "bg-green/10 text-green", funcionario: "bg-panel text-muted", terceiro: "bg-amber/10 text-amber", visualizador: "bg-panel text-muted",
+const GradeResponsiva = WidthProvider(Responsive);
+
+function formatarValor(v) { return v === null || v === undefined ? "—" : `R$ ${Number(v).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`; }
+function formatarPercentual(v) { return v === null || v === undefined ? "—" : `${v}%`; }
+
+// disposição padrão dos quadros (12 colunas; cada linha tem 56px)
+const LAYOUT_PADRAO = {
+  lg: [
+    { i: "pis-ativos", x: 0, y: 0, w: 3, h: 2, minW: 2, minH: 2 },
+    { i: "aprovacoes", x: 3, y: 0, w: 3, h: 2, minW: 2, minH: 2 },
+    { i: "atrasadas", x: 6, y: 0, w: 3, h: 2, minW: 2, minH: 2 },
+    { i: "medicoes-20", x: 9, y: 0, w: 3, h: 2, minW: 2, minH: 2 },
+    { i: "lista-pis", x: 0, y: 2, w: 5, h: 9, minW: 3, minH: 4 },
+    { i: "medicoes", x: 5, y: 2, w: 7, h: 9, minW: 4, minH: 4 },
+    { i: "docs-nao-abertos", x: 0, y: 11, w: 12, h: 8, minW: 4, minH: 4 },
+    { i: "nao-iniciados", x: 0, y: 19, w: 12, h: 7, minW: 4, minH: 4 },
+  ],
+  md: [
+    { i: "pis-ativos", x: 0, y: 0, w: 6, h: 2, minW: 3, minH: 2 },
+    { i: "aprovacoes", x: 6, y: 0, w: 6, h: 2, minW: 3, minH: 2 },
+    { i: "atrasadas", x: 0, y: 2, w: 6, h: 2, minW: 3, minH: 2 },
+    { i: "medicoes-20", x: 6, y: 2, w: 6, h: 2, minW: 3, minH: 2 },
+    { i: "lista-pis", x: 0, y: 4, w: 12, h: 8, minW: 4, minH: 4 },
+    { i: "medicoes", x: 0, y: 12, w: 12, h: 8, minW: 4, minH: 4 },
+    { i: "docs-nao-abertos", x: 0, y: 20, w: 12, h: 8, minW: 4, minH: 4 },
+    { i: "nao-iniciados", x: 0, y: 28, w: 12, h: 7, minW: 4, minH: 4 },
+  ],
+  sm: [
+    { i: "pis-ativos", x: 0, y: 0, w: 1, h: 2 },
+    { i: "aprovacoes", x: 0, y: 2, w: 1, h: 2 },
+    { i: "atrasadas", x: 0, y: 4, w: 1, h: 2 },
+    { i: "medicoes-20", x: 0, y: 6, w: 1, h: 2 },
+    { i: "lista-pis", x: 0, y: 8, w: 1, h: 9 },
+    { i: "medicoes", x: 0, y: 17, w: 1, h: 9 },
+    { i: "docs-nao-abertos", x: 0, y: 26, w: 1, h: 9 },
+    { i: "nao-iniciados", x: 0, y: 35, w: 1, h: 9 },
+  ],
 };
-const ehDeCampo = (u) => (u.equipes || []).includes(EQUIPE_CAMPO);
-// login exibido: o campo "login"; usuários antigos (antes do campo existir) usam o e-mail
-const loginDe = (u) => u.login || u.email || "";
+const IDS = LAYOUT_PADRAO.lg.map((l) => l.i);
 
-export default function UsuariosPage() {
+// garante que um layout salvo tem todos os quadros atuais (e nenhum que não exista mais)
+function completarLayouts(salvos) {
+  const r = {};
+  for (const bp of Object.keys(LAYOUT_PADRAO)) {
+    const s = (salvos?.[bp] || []).filter((l) => IDS.includes(l.i));
+    const faltando = LAYOUT_PADRAO[bp].filter((p) => !s.some((l) => l.i === p.i));
+    // mantém os limites mínimos atuais mesmo em layouts salvos antes
+    r[bp] = [...s.map((l) => ({ ...LAYOUT_PADRAO[bp].find((p) => p.i === l.i), ...l, minW: LAYOUT_PADRAO[bp].find((p) => p.i === l.i)?.minW, minH: LAYOUT_PADRAO[bp].find((p) => p.i === l.i)?.minH })), ...faltando];
+  }
+  return r;
+}
+
+export default function DashboardPage() {
   const { usuario } = useAuth();
-  const { avisar } = useToast();
-  const souMaster = podeGerenciarUsuarios(usuario); // pode criar/editar/habilitar (permissão usuario.editar)
-  const podeVerSenha = pode(usuario, "usuario.senha");
-  const podeExcluirUsuario = pode(usuario, "usuario.excluir");
-  const { dados: usuarios, carregando, recarregar } = useTabela("usuarios", { order: { coluna: "nome" } });
-  const { dados: empresas } = useTabela("empresas_terceiras", { order: { coluna: "nome" } });
-  const empresasAtivas = empresas.filter((e) => e.ativa !== false);
-
-  const [aba, setAba] = useState("geral"); // "geral" | "campo"
-  const [modalAberto, setModalAberto] = useState(false);
-  const [loteAberto, setLoteAberto] = useState(false);
-  const [editando, setEditando] = useState(null);
-  const [pinGerado, setPinGerado] = useState(null);
+  const { dados: pis, carregando: carregandoPis } = useTabela("pis", { order: { coluna: "created_at", asc: false } });
+  const { dados: etapas } = useTabela("etapas");
+  const { dados: rdosPendentes } = useTabela("rdos", { select: "id", filtro: [["status", "pendente"]] });
+  const { dados: horasPendentes } = useTabela("apontamentos_horas", { select: "id", filtro: [["status", "pendente"]] });
   const [busca, setBusca] = useState("");
-  const [filtroPerfil, setFiltroPerfil] = useState("");
-  const [filtroEquipe, setFiltroEquipe] = useState("");
-  const [filtroEmpresa, setFiltroEmpresa] = useState(""); // aba Usuários de Campo
-  const [mostrarInativos, setMostrarInativos] = useState(true);
-  const [alternando, setAlternando] = useState(null);
-  const [vendoSenha, setVendoSenha] = useState(null);
-  const [excluindo, setExcluindo] = useState(null);
+  const [filtroStatus, setFiltroStatus] = useState("ativo");
+  const [jarvis, setJarvis] = useState(false);
+  useEffect(() => { if (new URLSearchParams(window.location.search).get("jarvis")) setJarvis(true); }, []);
 
-  const abrirNovo = () => { setEditando(null); setModalAberto(true); };
-  const abrirEdicao = (u) => { setEditando(u); setModalAberto(true); };
+  // ---- layout dos quadros (salvo por usuário neste navegador) ----
+  const chave = usuario ? `contric:dashboard:${usuario.id}` : null;
+  const [layouts, setLayouts] = useState(LAYOUT_PADRAO);
+  const [pronto, setPronto] = useState(false);
+  const [breakpoint, setBreakpoint] = useState("lg");
+  useEffect(() => {
+    if (!chave) return;
+    try {
+      const salvo = JSON.parse(localStorage.getItem(chave) || "null");
+      if (salvo) setLayouts(completarLayouts(salvo));
+    } catch { /* sem armazenamento local: usa o padrão */ }
+    setPronto(true);
+  }, [chave]);
+  const aoMudarLayout = (_atual, todos) => {
+    const completos = completarLayouts(todos);
+    setLayouts(completos);
+    try { if (chave) localStorage.setItem(chave, JSON.stringify(completos)); } catch { /* ignora */ }
+  };
+  const restaurar = () => {
+    setLayouts(LAYOUT_PADRAO);
+    try { if (chave) localStorage.removeItem(chave); } catch { /* ignora */ }
+  };
+  const podeMover = breakpoint !== "sm";
 
-  const toggleAtivo = async (u) => {
-    setAlternando(u.id);
-    const { ok, json } = await chamarApi("/api/atualizar-usuario", { id: u.id, ativo: !u.ativo });
-    setAlternando(null);
-    if (!ok) { avisar(json.error || "Não foi possível alterar.", "erro", 6000); return; }
-    await registrarLog(usuario, u.ativo ? "Desabilitou usuário" : "Habilitou usuário", u.nome);
-    avisar(u.ativo ? `${u.nome} desabilitado.` : `${u.nome} habilitado.`);
-    recarregar();
+  // ---- dados ----
+  const pisAtivos = pis.filter((p) => p.status === "ativo");
+  const etapasAtrasadas = etapas.filter((e) => e.status !== "concluida" && diasAte(e.data_prevista_fim) !== null && diasAte(e.data_prevista_fim) < 0
+    && pisAtivos.some((p) => p.id === e.pi_id));
+  const pendencias = rdosPendentes.length + horasPendentes.length;
+
+  // agrupa por PI: cada macro/sub-etapa com Medição marcada, exceto as já concluídas,
+  // ordenada dentro do PI pela previsão de término mais próxima
+  const gruposMedicoes = useMemo(() => pis
+    .map((pi) => {
+      const itens = etapas
+        .filter((e) => e.pi_id === pi.id && e.medicao && e.status !== "concluida")
+        .sort((a, b) => (a.data_prevista_fim || "9999").localeCompare(b.data_prevista_fim || "9999"));
+      return { pi, itens };
+    })
+    .filter((g) => g.itens.length > 0)
+    .sort((a, b) => (a.itens[0].data_prevista_fim || "9999").localeCompare(b.itens[0].data_prevista_fim || "9999")), [pis, etapas]);
+  const medicoesProximas = gruposMedicoes.flatMap((g) => g.itens).filter((e) => { const d = diasAte(e.data_prevista_fim); return d !== null && d <= PRAZOS.medicoes; }).length;
+
+  const progressoDoPi = (piId) => {
+    const macros = etapas.filter((e) => e.pi_id === piId && !e.parent_etapa_id);
+    if (!macros.length) return null;
+    const soma = macros.reduce((s, e) => s + (e.status === "concluida" ? 100 : Number(e.percentual) || 0), 0);
+    return Math.round(soma / macros.length);
   };
 
-  // a aba "Usuários de Campo" lista quem é da equipe Campo; a principal, os demais
-  const daAba = usuarios.filter((u) => (aba === "campo" ? ehDeCampo(u) : !ehDeCampo(u)));
   const termo = busca.trim().toLowerCase();
-  const filtrados = daAba.filter((u) =>
-    (!filtroPerfil || u.perfil === filtroPerfil) && (!filtroEquipe || (u.equipes || []).includes(filtroEquipe)) &&
-    (aba !== "campo" || !filtroEmpresa || (filtroEmpresa === "__propria" ? u.perfil !== "terceiro" : (u.empresa_terceira || "").trim().toLowerCase() === filtroEmpresa)) && (mostrarInativos || u.ativo) &&
-    (!termo || [u.nome, u.email, loginDe(u), u.funcao, u.empresa_terceira].some((c) => (c || "").toLowerCase().includes(termo))));
-  const qtdCampo = usuarios.filter(ehDeCampo).length;
+  const pisFiltrados = pis.filter((p) =>
+    (!filtroStatus || p.status === filtroStatus) &&
+    (!termo || [p.codigo, p.cliente, p.projeto].some((c) => (c || "").toLowerCase().includes(termo))));
+
+  const quadros = {
+    "docs-nao-abertos": <DocumentosNaoAbertos usuario={usuario} pis={pis} />,
+    "nao-iniciados": <PisNaoIniciados pis={pisAtivos} etapas={etapas} />,
+    "pis-ativos": <Indicador titulo="PIs ativos" valor={pisAtivos.length} detalhe={`${pis.length} no total`} icone="obra" cor="text-cyan bg-cyan/10" href="/cronograma" />,
+    aprovacoes: <Indicador titulo="Aprovações pendentes" valor={pendencias} detalhe={`${rdosPendentes.length} RDO · ${horasPendentes.length} horas`} icone="aprovar"
+      cor={pendencias ? "text-amber bg-amber/10" : "text-green bg-green/10"} href="/aprovacoes" destaque={pendencias > 0} />,
+    atrasadas: <Indicador titulo="Etapas atrasadas" valor={etapasAtrasadas.length} detalhe="em PIs ativos" icone="alerta"
+      cor={etapasAtrasadas.length ? "text-red bg-red/10" : "text-green bg-green/10"} href="/linha-do-tempo" />,
+    "medicoes-20": <Indicador titulo={`Medições em ${PRAZOS.medicoes} dias`} valor={medicoesProximas} detalhe="vencidas ou próximas" icone="calendario" cor="text-[#8E5CD9] bg-[#8E5CD9]/10" />,
+
+    "lista-pis": (
+      <section className="cartao p-4 md:p-5 h-full flex flex-col min-h-0">
+        <div className="flex items-center justify-between gap-2 mb-3">
+          <h2 className="titulo-quadro">PIs</h2>
+          <span className="text-xs text-muted">{pisFiltrados.length} de {pis.length}</span>
+        </div>
+        <div className="relative mb-2">
+          <Icone nome="buscar" className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muteddim" />
+          <input value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Buscar por nº, cliente ou projeto" className="input pl-9" />
+        </div>
+        <div className="flex flex-wrap gap-1.5 mb-3">
+          {[["", "Todos"], ...Object.entries(STATUS_PI)].map(([v, l]) => (
+            <button key={v} onClick={() => setFiltroStatus(v)} className={`chip ${filtroStatus === v ? "chip-ativo" : ""}`}>{l}</button>
+          ))}
+          <BotaoLimpar qtd={(busca ? 1 : 0) + (filtroStatus !== "ativo" ? 1 : 0)} onClick={() => { setBusca(""); setFiltroStatus("ativo"); }} />
+        </div>
+        {carregandoPis && <Esqueleto linhas={4} altura={56} />}
+        {!carregandoPis && pis.length === 0 && (
+          <EstadoVazio icone="obra" titulo="Nenhum PI ainda" texto="Crie o primeiro PI em Cadastro de PIs."
+            acao={<Link href="/pis" className="btn btn-primario btn-sm">Ir para Cadastro de PIs</Link>} />
+        )}
+        {!carregandoPis && pis.length > 0 && pisFiltrados.length === 0 && <div className="text-sm text-muteddim py-6 text-center">Nenhum PI encontrado.</div>}
+        <div className="flex flex-col gap-2 overflow-y-auto rolagem-fina flex-1 min-h-0 -mx-1 px-1">
+          {pisFiltrados.map((pi) => {
+            const prog = progressoDoPi(pi.id);
+            return (
+              <Link key={pi.id} href={`/pi?id=${pi.id}`} draggable={false} className="group block p-3 rounded-xl border border-transparent bg-panel hover:bg-white hover:border-line hover:shadow-sm transition-all">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <div className="font-semibold text-sm truncate"><span className="font-mono text-cyan">{pi.codigo}</span> · {pi.cliente || "—"}</div>
+                    {pi.projeto && <div className="text-xs text-muted truncate">{pi.projeto}</div>}
+                  </div>
+                  <span className={`selo shrink-0 ${COR_STATUS_PI[pi.status] || "bg-panel text-muted"}`}>{STATUS_PI[pi.status] || pi.status}</span>
+                </div>
+                {prog !== null && (
+                  <div className="flex items-center gap-2 mt-2">
+                    <div className="flex-1 h-1.5 rounded-full bg-line overflow-hidden"><div className="h-full bg-cyan rounded-full" style={{ width: `${prog}%` }} /></div>
+                    <span className="text-[11px] font-mono text-muted w-8 text-right">{prog}%</span>
+                  </div>
+                )}
+              </Link>
+            );
+          })}
+        </div>
+      </section>
+    ),
+
+    medicoes: (
+      <section className="cartao p-4 md:p-5 h-full flex flex-col min-h-0">
+        <h2 className="titulo-quadro mb-3">Medições em aberto</h2>
+        {gruposMedicoes.length === 0 && (
+          <EstadoVazio icone="calendario" titulo="Nada a medir" texto="Marque “Medição” em macro ou sub-etapas em Configurar Cronograma para acompanhar aqui." />
+        )}
+        {gruposMedicoes.length > 0 && (
+          <div className="overflow-auto rolagem-fina flex-1 min-h-0 -mx-4 md:mx-0">
+            <table className="w-full text-sm min-w-[560px]">
+              <thead className="sticky top-0 bg-white z-10">
+                <tr className="text-left border-b border-line">
+                  <th className="py-2 px-4 md:pl-0 titulo-secao">Etapa</th>
+                  <th className="py-2 pr-3 titulo-secao text-right">Avanço</th>
+                  <th className="py-2 pr-3 titulo-secao text-right">Medição</th>
+                  <th className="py-2 pr-3 titulo-secao text-right">Valor</th>
+                  <th className="py-2 pr-4 md:pr-0 titulo-secao">Término previsto</th>
+                </tr>
+              </thead>
+              <tbody>
+                {gruposMedicoes.map(({ pi, itens }) => (
+                  <Fragment key={pi.id}>
+                    <tr>
+                      <td colSpan={5} className="pt-4 pb-1.5 px-4 md:pl-0 text-sm text-cyan font-semibold">
+                        {pi.codigo} — {pi.cliente}{pi.projeto ? ` — ${pi.projeto}` : ""}
+                      </td>
+                    </tr>
+                    {itens.map((etapa) => {
+                      const dias = diasAte(etapa.data_prevista_fim);
+                      const vencida = dias !== null && dias < 0;
+                      const proxima = dias !== null && dias >= 0 && dias <= PRAZOS.medicoes;
+                      return (
+                        <tr key={etapa.id} className="border-b border-line/60 hover:bg-panel/60">
+                          <td className="py-2 px-4 md:pl-0">{etapa.parent_etapa_id ? <span className="text-muteddim">· </span> : ""}{etapa.nome}</td>
+                          <td className="py-2 pr-3 text-right tabular-nums">{formatarPercentual(etapa.percentual)}</td>
+                          <td className="py-2 pr-3 text-right tabular-nums">{formatarPercentual(etapa.medicao_percentual)}</td>
+                          <td className="py-2 pr-3 text-right tabular-nums whitespace-nowrap">{formatarValor(etapa.medicao_valor)}</td>
+                          <td className="py-2 pr-4 md:pr-0 whitespace-nowrap tabular-nums">
+                            {formatarData(etapa.data_prevista_fim)}
+                            {vencida && <span className="selo bg-red/10 text-red ml-2">vencida</span>}
+                            {proxima && <span className="selo bg-amber/10 text-amber ml-2">{dias === 0 ? "hoje" : `em ${dias}d`}</span>}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </Fragment>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+    ),
+  };
 
   return (
     <PainelShell>
-      <div className="p-4 md:p-8 max-w-5xl mx-auto">
+      <div className="p-4 md:p-8">
         <CabecalhoPagina
-          titulo="Usuários e Acessos"
-          subtitulo={`${usuarios.filter((u) => u.ativo).length} ativos de ${usuarios.length} cadastrados`}
-          acoes={souMaster ? (
-            <>
-              {aba === "campo" && <button onClick={() => setLoteAberto(true)} className="btn btn-contorno !border-cyan !text-cyan hover:!bg-cyan/5"><Icone nome="mais2" className="w-4 h-4" /> Novos Usuários</button>}
-              <button onClick={abrirNovo} className="btn btn-primario"><Icone nome="mais2" className="w-4 h-4" /> Novo usuário</button>
-            </>
-          ) : <span className="text-xs text-muteddim">Seu usuário não pode gerenciar usuários</span>}
+          titulo={`${saudacao()}, ${usuario?.nome?.split(" ")[0] || ""}`}
+          subtitulo={podeMover ? "Arraste os quadros para reorganizar e puxe as bordas para mudar o tamanho." : "Visão geral das obras"}
+          acoes={<>
+            <button onClick={() => setJarvis(true)} className="btn btn-escuro" title="Cockpit de controle geral das obras">
+              <span className="w-2 h-2 rounded-full bg-[#29d3ff] shadow-[0_0_8px_#29d3ff] animate-pulse" /> Ativar Jarvis
+            </button>
+            {podeMover && <button onClick={restaurar} className="btn btn-contorno">Restaurar layout</button>}
+            <Link href="/cronograma" className="btn btn-primario"><Icone nome="cronograma" className="w-4 h-4" /> Abrir cronograma</Link>
+          </>}
         />
 
-        <div className="flex gap-1 border-b border-line mb-4">
-          {[["geral", "Usuários", usuarios.length - qtdCampo], ["campo", "Usuários de Campo", qtdCampo]].map(([v, l, n]) => (
-            <button key={v} onClick={() => setAba(v)} className={`relative px-4 py-2.5 text-sm font-semibold ${aba === v ? "text-cyan" : "text-muted hover:text-textmain"}`}>
-              {l} <span className="selo bg-panel text-muted ml-1">{n}</span>
-              {aba === v && <span className="absolute left-0 right-0 -bottom-px h-0.5 bg-cyan rounded-full" />}
-            </button>
-          ))}
-        </div>
-        {aba === "campo" && <p className="text-sm text-muted mb-3">Usuários da equipe <strong>Campo</strong>. Use <strong>+ Novos Usuários</strong> para cadastrar várias pessoas de uma vez (ex: equipe nova numa obra).</p>}
-
-        <div className="flex flex-col sm:flex-row gap-2 mb-4">
-          <div className="relative flex-1">
-            <Icone nome="buscar" className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muteddim" />
-            <input value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Buscar por nome, usuário, e-mail, função ou empresa" className="input pl-9" />
-          </div>
-          <select value={filtroPerfil} onChange={(e) => setFiltroPerfil(e.target.value)} className="input sm:!w-56">
-            <option value="">Todos os perfis</option>
-            {PERFIS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-          </select>
-          <select value={filtroEquipe} onChange={(e) => setFiltroEquipe(e.target.value)} className="input sm:!w-52">
-            <option value="">Todas as equipes</option>
-            {AREAS.map((a) => <option key={a} value={a}>{a}</option>)}
-          </select>
-          {aba === "campo" && (
-            <select value={filtroEmpresa} onChange={(e) => setFiltroEmpresa(e.target.value)} className={`input sm:!w-52 ${filtroEmpresa ? "!border-cyan/40 !text-cyan" : ""}`} aria-label="Filtrar por empresa terceira">
-              <option value="">Todas as empresas</option>
-              <option value="__propria">Contric (mão de obra própria)</option>
-              {[...new Set([...empresas.map((e) => e.nome), ...daAba.map((u) => u.empresa_terceira).filter(Boolean)].map((n) => n.trim()))]
-                .sort((a, b) => a.localeCompare(b, "pt-BR"))
-                .map((n) => <option key={n} value={n.toLowerCase()}>{n}</option>)}
-            </select>
-          )}
-          <label className="flex items-center gap-2 text-sm text-muted whitespace-nowrap px-1 cursor-pointer">
-            <input type="checkbox" className="accent-cyan w-4 h-4" checked={mostrarInativos} onChange={(e) => setMostrarInativos(e.target.checked)} />
-            Mostrar desabilitados
-          </label>
-        </div>
-
-        {carregando && <Esqueleto linhas={5} altura={64} />}
-        {!carregando && filtrados.length === 0 && (
-          <EstadoVazio icone="usuarios" titulo="Ninguém encontrado"
-            texto={aba === "campo" && !daAba.length ? "Nenhum usuário da equipe Campo ainda." : "Ajuste a busca ou os filtros."}
-            acao={aba === "campo" && souMaster && !daAba.length && <button onClick={() => setLoteAberto(true)} className="btn btn-primario"><Icone nome="mais2" className="w-4 h-4" /> Novos Usuários</button>} />
-        )}
-
-        <div className="flex flex-col gap-2">
-          {filtrados.map((u) => (
-            <div key={u.id} className={`cartao flex flex-wrap items-center gap-3 p-3 md:p-4 transition-opacity ${!u.ativo ? "opacity-60" : ""}`}>
-              <div className="w-10 h-10 rounded-full bg-panel border border-line flex items-center justify-center font-semibold text-sm text-muted shrink-0">
-                {(u.nome || "?").split(" ").slice(0, 2).map((p) => p[0]).join("").toUpperCase()}
-              </div>
-              <div className="flex-1 min-w-[180px]">
-                <div className="text-sm font-semibold flex items-center gap-2 flex-wrap">
-                  {u.nome}
-                  {u.id === usuario?.id && <span className="selo bg-cyan/10 text-cyan">você</span>}
-                </div>
-                <div className="text-xs text-muted flex items-center gap-1.5 flex-wrap mt-0.5">
-                  <span className={`selo ${COR_PERFIL[u.perfil] || "bg-panel text-muted"}`}>{PERFIS.find((p) => p[0] === u.perfil)?.[1]?.split(" (")[0] || u.perfil}</span>
-                  {u.funcao && <span>{u.funcao}</span>}
-                  {(u.equipes || []).map((a) => <span key={a} className="selo bg-cyan/10 text-cyan">{a}</span>)}
-                </div>
-              </div>
-              <div className="text-xs text-muted min-w-[160px] break-all">
-                {u.perfil === "terceiro" && u.tipo_terceiro === "avulso" ? (
-                  <>{u.empresa_terceira || "—"}<div className="text-[11px]">Avulso · PIN {u.pin}</div></>
-                ) : (
-                  <>
-                    <div title="Usuário de acesso"><Icone nome="chave" className="w-3 h-3 inline -mt-0.5 mr-1" /><span className="text-textmain font-medium">{loginDe(u) || "—"}</span></div>
-                    {u.email && u.email !== loginDe(u) && <div>{u.email}</div>}
-                    {u.perfil === "terceiro" && <div>{u.empresa_terceira || "—"}</div>}
-                  </>
-                )}
-              </div>
-              <div className="flex items-center gap-2 ml-auto">
-                {podeVerSenha && u.auth_user_id && (
-                  <button onClick={() => setVendoSenha(u)} className="btn btn-contorno btn-sm" title="Ver senha registrada"><Icone nome="chave" className="w-4 h-4" /> Senha</button>
-                )}
-                {souMaster && <button onClick={() => abrirEdicao(u)} className="btn btn-contorno btn-sm">Editar</button>}
-                {podeExcluirUsuario && u.id !== usuario?.id && (
-                  <button onClick={() => setExcluindo(u)} className="p-2 rounded-lg text-muteddim hover:text-red hover:bg-red/5" title="Excluir usuário" aria-label={`Excluir ${u.nome}`}>
-                    <Icone nome="lixo" className="w-4 h-4" />
-                  </button>
-                )}
-                {souMaster && u.id !== usuario?.id ? (
-                  <button onClick={() => toggleAtivo(u)} disabled={alternando === u.id} title={u.ativo ? "Clique para desabilitar" : "Clique para habilitar"}
-                    className={`btn btn-sm border ${u.ativo ? "border-green/40 text-green bg-green/5 hover:bg-green/10" : "border-line text-muted bg-white hover:bg-panel"}`}>
-                    {alternando === u.id ? <Spinner className="w-3.5 h-3.5" /> : <span className={`w-2 h-2 rounded-full ${u.ativo ? "bg-green" : "bg-muteddim"}`} />}
-                    {u.ativo ? "Ativo" : "Desabilitado"}
-                  </button>
-                ) : (
-                  <span className={`selo ${u.ativo ? "bg-green/10 text-green" : "bg-panel text-muted"}`}>{u.ativo ? "Ativo" : "Desabilitado"}</span>
-                )}
-              </div>
-            </div>
-          ))}
-        </div>
-
-        {excluindo && (
-          <ConfirmacaoDupla titulo="Excluir usuário" onFechar={() => setExcluindo(null)}
-            pergunta={<>Tem certeza que deseja excluir o usuário <strong>{excluindo.nome}</strong>?</>}
-            perdas={<>O login é apagado e também tudo o que foi lançado por ele: horas, RDOs (com os PDFs), ocorrências registradas, solicitações e notificações. Onde ele só aparece como aprovador ou responsável, o registro fica sem o vínculo. Para apenas bloquear o acesso, use o botão Ativo/Desabilitado.</>}
-            onConfirmar={async () => {
-              const { ok, json } = await chamarApi("/api/excluir-usuario", { id: excluindo.id });
-              if (!ok) return { erro: json.error || "Não foi possível excluir." };
-              avisar(`${excluindo.nome} excluído — registrado na Auditoria.`, "info"); recarregar();
-              return { ok: true };
-            }} />
-        )}
-        {vendoSenha && <VerSenhas authUserId={vendoSenha.auth_user_id} nome={vendoSenha.nome} onFechar={() => setVendoSenha(null)} />}
-        {modalAberto && (
-          <ModalUsuario
-            usuarioInicial={editando} deCampo={aba === "campo"} empresas={empresasAtivas}
-            onClose={() => setModalAberto(false)}
-            onSalvo={(msg) => { setModalAberto(false); avisar(msg); recarregar(); }}
-            onPinGerado={setPinGerado}
-          />
-        )}
-        {loteAberto && <CadastroEmLote usuariosExistentes={usuarios} empresas={empresasAtivas} onFechar={() => setLoteAberto(false)} onCriados={recarregar} />}
-
-        {pinGerado && (
-          <Modal titulo="Código gerado" onFechar={() => setPinGerado(null)} largura="max-w-xs"
-            rodape={<button onClick={() => setPinGerado(null)} className="btn btn-primario w-full">Concluir</button>}>
-            <div className="text-center">
-              <div className="text-4xl font-mono font-bold text-cyan tracking-[0.3em] my-3">{pinGerado}</div>
-              <p className="text-sm text-muted">Repasse pessoalmente. É reutilizável nas próximas obras.</p>
-            </div>
-          </Modal>
+        {pronto && (
+          <GradeResponsiva
+            className="dashboard-grade -mx-2"
+            layouts={layouts}
+            breakpoints={{ lg: 1100, md: 700, sm: 0 }}
+            cols={{ lg: 12, md: 12, sm: 1 }}
+            rowHeight={56}
+            margin={[16, 16]}
+            containerPadding={[8, 0]}
+            isDraggable={podeMover}
+            isResizable={podeMover}
+            resizeHandles={["n", "s", "e", "w", "ne", "nw", "se", "sw"]}
+            draggableCancel="input, textarea, select, button, a, .nao-arrastar"
+            compactType="vertical"
+            onBreakpointChange={setBreakpoint}
+            onLayoutChange={aoMudarLayout}
+          >
+            {IDS.map((id) => (
+              <div key={id} className={podeMover ? "quadro-movel" : ""}>{quadros[id]}</div>
+            ))}
+          </GradeResponsiva>
         )}
       </div>
+      {jarvis && <Jarvis pis={pis} etapasBrutas={etapas} usuario={usuario} onFechar={() => setJarvis(false)} />}
     </PainelShell>
   );
 }
 
-function ModalUsuario({ usuarioInicial, deCampo, empresas = [], onClose, onSalvo, onPinGerado }) {
-  const { usuario: usuarioAtual } = useAuth();
-  const ehMaster = usuarioAtual?.perfil === "master"; // só o Master define o usuário (login)
-  const editando = !!usuarioInicial;
-  const [nome, setNome] = useState(usuarioInicial?.nome || "");
-  const [perfil, setPerfil] = useState(usuarioInicial?.perfil || (deCampo ? "funcionario" : "lider"));
-  const [funcao, setFuncao] = useState(usuarioInicial?.funcao || "");
-  const [email, setEmail] = useState(usuarioInicial?.email || "");
-  const loginInicial = usuarioInicial ? loginDe(usuarioInicial) : "";
-  // "email" = o usuário de acesso é o próprio e-mail; "outro" = digitado
-  const [modoLogin, setModoLogin] = useState(!usuarioInicial || !loginInicial || loginInicial === (usuarioInicial.email || "") ? "email" : "outro");
-  const [loginDigitado, setLoginDigitado] = useState(modoLogin === "outro" ? loginInicial : "");
-  const [senha, setSenha] = useState("");
-  const [tipoTerceiro, setTipoTerceiro] = useState(usuarioInicial?.tipo_terceiro || "fixo");
-  const [empresaTerceira, setEmpresaTerceira] = useState(usuarioInicial?.empresa_terceira || "");
-  const [equipes, setEquipes] = useState(usuarioInicial?.equipes || (deCampo ? [EQUIPE_CAMPO] : []));
-  const [salvando, setSalvando] = useState(false);
-  const [erro, setErro] = useState("");
+// ======================= JARVIS: cockpit de controle geral das obras =======================
+const JV = { ok: "var(--jv-ac)", bom: "#3ee08f", at: "#ffb547", ru: "#ff4d5e", off: "var(--jv-off)" };
+const OPCOES_POR_TELA = [4, 6, 8, 10, 12, 15, 20, 24, 30, 40, 50];
+// temas: escuro (HUD original) e claro — todas as cores do Jarvis saem destas variáveis
+const TEMAS_JV = {
+  escuro: { "--jv-fundo": "radial-gradient(ellipse at top, #06243a 0%, #020b14 55%, #01060c 100%)", "--jv-t0": "#e8fbff", "--jv-t": "#bfefff", "--jv-t2": "#7fd8ff",
+    "--jv-t3": "#9fdcf5", "--jv-t4": "#3fb6e0", "--jv-t5": "#4f9cc4", "--jv-t6": "#2f6f92", "--jv-ac": "#29d3ff", "--jv-ac2": "#7fe6ff", "--jv-bd": "#0f4a6b",
+    "--jv-trk": "#0e3550", "--jv-hv": "#0a3650", "--jv-pop": "#031421", "--jv-off": "#2a4a63", "--jv-card": "rgba(6,30,48,.55)", "--jv-cardh": "rgba(10,54,80,.7)", "--jv-scan": "rgba(41,211,255,.035)" },
+  claro: { "--jv-fundo": "radial-gradient(ellipse at top, #ffffff 0%, #eaf4fa 55%, #dcebf4 100%)", "--jv-t0": "#06243a", "--jv-t": "#0b3550", "--jv-t2": "#0a5f86",
+    "--jv-t3": "#2a5a78", "--jv-t4": "#0b7ea6", "--jv-t5": "#4b7a96", "--jv-t6": "#6d8ea3", "--jv-ac": "#0b84a5", "--jv-ac2": "#3fb0d0", "--jv-bd": "#b9d6e6",
+    "--jv-trk": "#d7e7f0", "--jv-hv": "#dff0f8", "--jv-pop": "#ffffff", "--jv-off": "#b6c8d4", "--jv-card": "rgba(255,255,255,.85)", "--jv-cardh": "rgba(223,240,248,.95)", "--jv-scan": "rgba(11,132,165,.03)" },
+};
+const ehAbertoPi = (p) => !["concluido", "cancelado"].includes(p.status || "ativo");
 
-  const mostraFuncao = PERFIS_COM_FUNCAO.includes(perfil);
-  const ehTerceiroAvulso = perfil === "terceiro" && tipoTerceiro === "avulso";
-  const precisaLoginNovo = !ehTerceiroAvulso && (!editando || !usuarioInicial?.auth_user_id);
-  const senhaCurta = senha && senha.length < 6;
-  const emailValido = !email || ehEmail(email);
-  const login = normalizarLogin(modoLogin === "email" ? email : loginDigitado);
-  const problemaLogin = !ehTerceiroAvulso && (modoLogin === "outro" || email) ? erroLogin(login) : null;
-  const semLogin = !ehTerceiroAvulso && !login;
-  const faltaEmpresa = perfil === "terceiro" && !empresaTerceira.trim();
-  const podeSalvar = nome.trim() && !faltaEmpresa && !senhaCurta && emailValido && !problemaLogin && !semLogin && (!precisaLoginNovo || senha) && !salvando;
-
-  const salvar = async () => {
-    if (!podeSalvar) return;
-    setSalvando(true); setErro("");
-    const comum = { nome, perfil, funcao: mostraFuncao ? funcao : null, email: email || null, tipoTerceiro, empresaTerceira, equipes, ...(ehMaster ? { login } : {}) };
-    const { ok, json } = editando
-      ? await chamarApi("/api/atualizar-usuario", { id: usuarioInicial.id, ...comum, email: ehTerceiroAvulso ? null : comum.email, novaSenha: senha || undefined })
-      : await chamarApi("/api/criar-usuario", { ...comum, senha });
-    setSalvando(false);
-    if (!ok) { setErro(json.error || "Não foi possível salvar."); return; }
-    await registrarLog(usuarioAtual, editando ? "Editou usuário" : "Criou usuário", editando ? nome : `${nome} (${PERFIS.find((p) => p[0] === perfil)?.[1]})`);
-    if (json.usuario?.pin && !usuarioInicial?.pin) onPinGerado(json.usuario.pin);
-    onSalvo(editando ? "Alterações salvas." : `${nome} criado.`);
-  };
-
+function useRelogio() {
+  const [agora, setAgora] = useState(() => new Date());
+  useEffect(() => { const t = setInterval(() => setAgora(new Date()), 1000); return () => clearInterval(t); }, []);
+  return agora;
+}
+// um relógio de animação para todos os medidores (sobem juntos até o valor)
+function useAnimacaoJarvis(chave) {
+  const [t, setT] = useState(0);
+  useEffect(() => {
+    if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) { setT(1); return; }
+    let raf, ini = null; setT(0);
+    const passo = (a) => { if (ini === null) ini = a; const p = Math.min(1, (a - ini) / 1400); setT(1 - Math.pow(1 - p, 3)); if (p < 1) raf = requestAnimationFrame(passo); };
+    raf = requestAnimationFrame(passo);
+    return () => cancelAnimationFrame(raf);
+  }, [chave]);
+  return t;
+}
+function MiniMedidor({ rotulo, valor, max = 100, cor, sufixo = "%", perigo, t, dica }) {
+  const vazio = valor === null || valor === undefined;
+  const f = vazio ? 0 : Math.max(0, Math.min(1, (valor * t) / max));
+  const L = Math.PI * 15;
+  const c = vazio ? JV.off : cor;
   return (
-    <Modal titulo={editando ? `Editar — ${usuarioInicial.nome}` : "Novo usuário"} onFechar={onClose}
-      rodape={<>
-        <button onClick={onClose} className="btn btn-fantasma">Cancelar</button>
-        <button onClick={salvar} disabled={!podeSalvar} className="btn btn-primario">
-          {salvando ? <><Spinner /> Salvando...</> : editando ? "Salvar alterações" : "Criar usuário"}
-        </button>
-      </>}>
-      <form onSubmit={(e) => { e.preventDefault(); salvar(); }} className="flex flex-col gap-4">
-        <Campo rotulo="Nome"><input value={nome} onChange={(e) => setNome(e.target.value)} className="input" autoFocus /></Campo>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <Campo rotulo="Perfil">
-            <select value={perfil} onChange={(e) => setPerfil(e.target.value)} className="input">
-              {PERFIS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-            </select>
-          </Campo>
-          {mostraFuncao && (
-            <Campo rotulo="Função">
-              <select value={funcao} onChange={(e) => setFuncao(e.target.value)} className="input">
-                <option value="">Selecione...</option>
-                {FUNCOES.map((f) => <option key={f} value={f}>{f}</option>)}
-                {funcao && !FUNCOES.includes(funcao) && <option value={funcao}>{funcao} (antiga)</option>}
-              </select>
-            </Campo>
-          )}
-        </div>
-
-        <Campo rotulo="Equipes (opcional — pode marcar mais de uma; quem é da equipe Campo aparece na aba Usuários de Campo)">
-          <SeletorEquipes opcoes={AREAS} valor={equipes} onChange={setEquipes} />
-        </Campo>
-
-        {perfil === "terceiro" && (
-          <>
-            <div>
-              <span className="rotulo">Tipo de terceiro</span>
-              <div className="flex gap-2">
-                <button type="button" onClick={() => setTipoTerceiro("fixo")} className={`chip ${tipoTerceiro === "fixo" ? "chip-ativo" : ""}`}>Fixo (login)</button>
-                <button type="button" onClick={() => setTipoTerceiro("avulso")} className={`chip ${tipoTerceiro === "avulso" ? "!bg-amber !text-white !border-amber" : ""}`}>Avulso (PIN)</button>
-              </div>
-              {editando && usuarioInicial?.pin && ehTerceiroAvulso && (
-                <div className="text-xs text-muteddim mt-1.5">PIN atual: {usuarioInicial.pin}</div>
-              )}
-            </div>
-            <Campo rotulo="Empresa terceira (obrigatório)">
-              <SeletorEmpresa empresas={empresas} valor={empresaTerceira} onChange={setEmpresaTerceira} />
-            </Campo>
-          </>
-        )}
-
-        {!ehTerceiroAvulso && (
-          <>
-            <Campo rotulo={modoLogin === "email" ? "E-mail (é também o usuário de acesso)" : "E-mail (opcional — contato)"}>
-              <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} className="input" autoComplete="off" />
-              {!emailValido && <span className="block text-xs text-red mt-1">E-mail inválido.</span>}
-            </Campo>
-            <div>
-              <span className="rotulo">Usuário de acesso (login){!ehMaster && " — só o Master altera"}</span>
-              <div className="flex flex-wrap gap-2 mb-2">
-                <button type="button" disabled={!ehMaster} onClick={() => setModoLogin("email")} className={`chip ${modoLogin === "email" ? "chip-ativo" : ""}`}>Usar o e-mail</button>
-                <button type="button" disabled={!ehMaster} onClick={() => { setModoLogin("outro"); if (!loginDigitado) setLoginDigitado(sugerirLogin(nome)); }} className={`chip ${modoLogin === "outro" ? "chip-ativo" : ""}`}>Outro (digitar)</button>
-              </div>
-              {modoLogin === "outro" ? (
-                <input value={loginDigitado} onChange={(e) => setLoginDigitado(e.target.value.toLowerCase().replace(/\s/g, ""))} disabled={!ehMaster}
-                  className={`input ${problemaLogin ? "!border-red" : ""}`} placeholder="ex: joao.silva" autoComplete="off" />
-              ) : (
-                <div className="text-sm text-muted">{email ? <>A pessoa entra com <strong className="text-textmain">{normalizarLogin(email)}</strong></> : "Preencha o e-mail acima."}</div>
-              )}
-              {problemaLogin && <span className="block text-xs text-red mt-1">{problemaLogin}</span>}
-            </div>
-            <Campo rotulo={editando && !precisaLoginNovo ? "Nova senha (opcional)" : "Senha inicial"}>
-              <input type="password" value={senha} onChange={(e) => setSenha(e.target.value)} className="input" autoComplete="new-password"
-                placeholder={editando && !precisaLoginNovo ? "Deixe em branco para manter" : "Mínimo 6 caracteres"} />
-              {senhaCurta && <span className="block text-xs text-red mt-1">Mínimo de 6 caracteres.</span>}
-            </Campo>
-          </>
-        )}
-
-        {erro && <Aviso tipo="erro">{erro}</Aviso>}
-        <button type="submit" className="hidden" />
-      </form>
-    </Modal>
+    <div className={`text-center py-0.5 ${perigo ? "jv-pisca" : ""}`} title={dica}>
+      <svg viewBox="0 0 40 23" className="w-full block">
+        <path d="M5 20 A15 15 0 0 1 35 20" fill="none" style={{ stroke: "var(--jv-trk)" }} strokeWidth="3.5" strokeLinecap="round" />
+        <path d="M5 20 A15 15 0 0 1 35 20" fill="none" strokeWidth="3.5" strokeLinecap="round" strokeDasharray={`${L * f} ${L}`} style={{ stroke: c, filter: `drop-shadow(0 0 2px ${c})` }} />
+      </svg>
+      <div className="text-[12px] font-semibold leading-none -mt-[11px] tabular-nums" style={{ color: c }}>{vazio ? "—" : `${Math.round(valor * t)}${sufixo}`}</div>
+      <div className="text-[8.5px] tracking-wide text-[color:var(--jv-t5)] mt-0.5 leading-none">{rotulo}</div>
+    </div>
   );
 }
 
-// ---------- cadastro em batelada (aba Usuários de Campo) ----------
-const PERFIS_LOTE = PERFIS.filter(([v]) => ["funcionario", "terceiro", "lider", "visualizador"].includes(v));
-const linhaVazia = () => ({ chave: Math.random().toString(36).slice(2), nome: "", login: "", loginEditado: false, email: "", senha: "", perfil: "funcionario", funcao: "", empresa: "", status: null, erro: "" });
-const gerarSenha = () => {
-  const letras = "abcdefghjkmnpqrstuvwxyz23456789";
-  return Array.from({ length: 8 }, () => letras[Math.floor(Math.random() * letras.length)]).join("");
-};
+function Jarvis({ pis, etapasBrutas, usuario, onFechar }) {
+  const agora = useRelogio();
+  const verValores = pode(usuario, "dashboard.valores") || pode(usuario, "relatorio.ver");
+  const verHoras = verValores || pode(usuario, "financeiro.horas");
+  const { dados: categorias } = useTabela("categorias_orcamento");
+  const { dados: orc } = useTabela("orcamento_pi_item");
+  const { dados: apont } = useTabela("apontamentos_horas", { select: "id,pi_id,status,entrada,saida,horas_totais,horas_normais,horas_extras,categoria_normal_id,categoria_extra_id" });
+  const { dados: rdos } = useTabela("rdos", { select: "id,pi_id,status,pdf_path,data,created_at" });
+  const { dados: ocs } = useTabela("ocorrencias", { select: "id,pi_id,status,pdf_path,rdo_id,created_at" });
+  const { dados: solic } = useTabela("solicitacoes_alteracao_cronograma", { select: "id,etapa_id,status" });
+  const { dados: lidos } = useTabela("documentos_lidos", { select: "caminho", filtro: [["usuario_id", usuario?.id]] });
+  const { dados: cfgFoto } = useTabela("configuracoes", { filtro: [["chave", "avanco_diario"]] });
 
-function CadastroEmLote({ usuariosExistentes, empresas = [], onFechar, onCriados }) {
-  const { usuario: usuarioAtual } = useAuth();
-  const { avisar } = useToast();
-  const ehMaster = usuarioAtual?.perfil === "master";
-  const [linhas, setLinhas] = useState(() => Array.from({ length: 5 }, linhaVazia));
-  const [enviando, setEnviando] = useState(false);
-  const [criados, setCriados] = useState([]); // { nome, login, senha }
+  // ---- seleção de PIs (guardada por usuário neste navegador) ----
+  const chave = `contric:jarvis:${usuario?.id}`;
+  const [sel, setSel] = useState(null); // null = todos os abertos
+  useEffect(() => { try { const s = JSON.parse(localStorage.getItem(chave) || "null"); if (Array.isArray(s)) setSel(s); } catch { /* sem armazenamento */ } }, [chave]);
+  const salvarSel = (s) => { setSel(s); try { if (s === null) localStorage.removeItem(chave); else localStorage.setItem(chave, JSON.stringify(s)); } catch { /* ignora */ } };
+  const [filtroAberto, setFiltroAberto] = useState(false);
+  const [buscaF, setBuscaF] = useState("");
+  const [pagina, setPagina] = useState(0);
+  // quantos PIs por tela e tema (claro/escuro), guardados por usuário neste navegador
+  const [porTela, setPorTela] = useState(20);
+  const [tema, setTema] = useState("escuro");
+  useEffect(() => {
+    try {
+      const n = Number(localStorage.getItem(`${chave}:porTela`)); if (OPCOES_POR_TELA.includes(n)) setPorTela(n);
+      const tm = localStorage.getItem(`${chave}:tema`); if (tm === "claro" || tm === "escuro") setTema(tm);
+    } catch { /* sem armazenamento */ }
+  }, [chave]);
+  useEffect(() => { const esc = (e) => e.key === "Escape" && (filtroAberto ? setFiltroAberto(false) : onFechar()); document.addEventListener("keydown", esc); return () => document.removeEventListener("keydown", esc); }, [filtroAberto, onFechar]);
 
-  const alterar = (i, patch) => setLinhas((p) => p.map((l, k) => (k === i ? { ...l, ...patch } : l)));
-  const preenchidas = linhas.filter((l) => l.nome.trim() && l.status !== "ok");
-  const loginsUsados = new Set(usuariosExistentes.map((u) => normalizarLogin(loginDe(u))));
-  const problemaDa = (l, i) => {
-    if (!l.nome.trim()) return null;
-    const lg = normalizarLogin(l.login || l.email);
-    const e = erroLogin(lg);
-    if (e) return e;
-    if (loginsUsados.has(lg)) return "Usuário já existe.";
-    if (linhas.some((o, k) => k !== i && o.nome.trim() && normalizarLogin(o.login || o.email) === lg)) return "Usuário repetido na tabela.";
-    if (l.email && !ehEmail(l.email)) return "E-mail inválido.";
-    if (!l.senha || l.senha.length < 6) return "Senha com 6+ caracteres.";
-    if (l.perfil === "terceiro" && !l.empresa.trim()) return "Informe a empresa.";
-    return null;
-  };
-  const comProblema = linhas.some((l, i) => l.status !== "ok" && problemaDa(l, i));
+  // contrato: só o PI Pai (consolidado das obras)
+  const visiveis = new Set(pis.map((p) => p.id));
+  const principais = pis.filter((p) => !(p.pi_pai_id && visiveis.has(p.pi_pai_id))).sort((a, b) => String(a.codigo).localeCompare(String(b.codigo), "pt-BR", { numeric: true }));
+  const candidatos = sel === null ? principais.filter(ehAbertoPi) : principais.filter((p) => sel.includes(p.id));
 
-  // ao digitar o nome, sugere o usuário "nome.sobrenome" (se ainda não foi editado à mão)
-  const mudarNome = (i, nome) => setLinhas((p) => p.map((l, k) => (k === i ? { ...l, nome, ...(l.loginEditado || !ehMaster ? {} : { login: sugerirLogin(nome) }) } : l)));
-  const gerarSenhas = () => setLinhas((p) => p.map((l) => (l.nome.trim() && !l.senha ? { ...l, senha: gerarSenha() } : l)));
-  const repetirParaBaixo = (campo) => setLinhas((p) => { const v = p[0][campo]; return p.map((l) => ({ ...l, [campo]: v })); });
+  // ---- indicadores de cada PI ----
+  const etapas = useMemo(() => consolidarMacros(etapasBrutas), [etapasBrutas]);
+  const lidosSet = useMemo(() => new Set(lidos.map((l) => l.caminho)), [lidos]);
+  const fotos = cfgFoto[0]?.valor || {};
+  const hojeIso = new Date().toLocaleDateString("sv-SE");
+  const diaFoto = Object.keys(fotos).filter((d) => d <= hojeIso).sort().pop(); // foto das 7h = fim do dia anterior
+  const grupoCat = useMemo(() => Object.fromEntries(categorias.map((c) => [c.id, c.grupo])), [categorias]);
+  const recente = (iso) => iso && Date.now() - new Date(iso).getTime() < 30 * 86400000;
 
-  const enviar = async () => {
-    if (!preenchidas.length || comProblema) return;
-    setEnviando(true);
-    const alvo = linhas.map((l, i) => ({ l, i })).filter(({ l }) => l.nome.trim() && l.status !== "ok");
-    const { ok, json } = await chamarApi("/api/criar-usuario", {
-      lote: alvo.map(({ l }) => ({
-        nome: l.nome.trim(), email: l.email.trim() || null, login: ehMaster ? normalizarLogin(l.login || l.email) : undefined,
-        senha: l.senha, perfil: l.perfil, funcao: l.funcao || null, tipoTerceiro: "fixo", empresaTerceira: l.empresa.trim() || null,
-        equipes: [EQUIPE_CAMPO],
-      })),
-    });
-    setEnviando(false);
-    if (!ok) { avisar(json.error || "Não foi possível criar.", "erro", 7000); return; }
-    const novos = [];
-    setLinhas((p) => p.map((l, k) => {
-      const pos = alvo.findIndex((a) => a.i === k);
-      if (pos === -1) return l;
-      const r = json.resultados[pos];
-      if (r?.usuario) novos.push({ nome: l.nome.trim(), login: r.usuario.login || normalizarLogin(l.login || l.email), senha: l.senha });
-      return r?.usuario ? { ...l, status: "ok", erro: "" } : { ...l, status: "erro", erro: r?.erro || "Falhou." };
-    }));
-    setCriados((c) => [...c, ...novos]);
-    const falhas = json.resultados.filter((r) => !r.usuario).length;
-    avisar(`${json.resultados.length - falhas} usuário(s) criado(s)${falhas ? ` · ${falhas} com erro (veja na tabela)` : ""}.`, falhas ? "erro" : "sucesso", 7000);
-    onCriados();
-  };
+  const cartoes = useMemo(() => candidatos.map((p) => {
+    const filhos = pis.filter((x) => x.pi_pai_id === p.id).map((x) => x.id);
+    const ids = filhos.length ? filhos : [p.id];
+    const doPi = (l) => l.filter((x) => ids.includes(x.pi_id));
+    const ets = doPi(etapas);
+    const macros = ets.filter((e) => !e.parent_etapa_id);
+    const pct = (e) => (e.status === "concluida" ? 100 : Math.min(100, Number(e.percentual) || 0));
+    const avanco = macros.length ? Math.round(macros.reduce((s, e) => s + pct(e), 0) / macros.length) : null;
+    // ritmo: avanço real ÷ previsto para hoje
+    const hoje = new Date(); hoje.setHours(12, 0, 0, 0);
+    const comDatas = macros.filter((e) => e.data_prevista_inicio && e.data_prevista_fim);
+    const plan = comDatas.length ? comDatas.reduce((s, e) => { const i = new Date(`${e.data_prevista_inicio}T00:00:00`), f = new Date(`${e.data_prevista_fim}T23:59:59`); return s + Math.max(0, Math.min(1, (hoje - i) / Math.max(1, f - i))) * 100; }, 0) / comDatas.length : null;
+    const ritmo = plan !== null && plan >= 0.5 && avanco !== null ? Math.round((avanco / plan) * 100) : null;
+    // consumo (realizado ÷ orçado) — horas somam os lançamentos
+    const itens = doPi(orc);
+    const somaG = (g, campo) => itens.filter((i) => grupoCat[i.categoria_id] === g).reduce((s, i) => s + (Number(i[campo]) || 0), 0);
+    const apontado = doPi(apont).filter((a) => a.status !== "rejeitado").reduce((s, a) => {
+      const h = horasDoLancamento(a);
+      return s + (grupoCat[a.categoria_normal_id] === "moi_horas" ? h.normais : 0) + (grupoCat[a.categoria_extra_id] === "moi_horas" ? h.extras : 0);
+    }, 0);
+    const orcM = somaG("compra_reais", "valor_orcado"), orcH = somaG("moi_horas", "valor_orcado");
+    const material = orcM ? Math.round((somaG("compra_reais", "valor_realizado") / orcM) * 100) : null;
+    const horas = orcH ? Math.round(((somaG("moi_horas", "valor_realizado") + apontado) / orcH) * 100) : null;
+    const atrasadas = ets.filter((e) => !e.calculada && e.status !== "concluida" && (diasAte(e.data_prevista_fim) ?? 0) < 0).length;
+    const finalizacao = ets.map((e) => e.data_prevista_fim).filter(Boolean).sort().pop() || null;
+    const prazo = p.prazo || null;
+    const fimAposPrazo = !!(finalizacao && prazo && finalizacao > prazo);
+    const meds = ets.filter((e) => e.medicao && e.status !== "concluida" && e.data_prevista_fim);
+    const med20 = meds.filter((e) => diasAte(e.data_prevista_fim) <= PRAZOS.medicoes);
+    const medVencida = meds.some((e) => diasAte(e.data_prevista_fim) < 0);
+    const idsEt = new Set(ets.map((e) => e.id));
+    const rd = doPi(rdos), oc = doPi(ocs).filter((o) => !o.rdo_id);
+    const pend = rd.filter((r) => r.status === "pendente").length + doPi(apont).filter((a) => a.status === "pendente" && !(a.entrada && !a.saida)).length
+      + oc.filter((o) => o.status === "pendente").length + solic.filter((s) => idsEt.has(s.etapa_id) && String(s.status || "").startsWith("pendente")).length;
+    // alerta (triângulo): RDO/ocorrência em aprovação ou com PDF não aberto por mim (últimos 30 dias)
+    const rdoAprov = rd.filter((r) => r.status === "pendente").length, ocAprov = oc.filter((o) => o.status === "pendente").length;
+    const naoLidos = [...rd, ...oc].filter((x) => x.pdf_path && !lidosSet.has(x.pdf_path) && recente(x.created_at || x.data) && !["rejeitado", "rejeitada"].includes(x.status)).length;
+    const ontemV = diaFoto ? fotos[diaFoto]?.[p.id] ?? null : null;
+    const perigo = { ritmo: ritmo !== null && ritmo < 80, material: material !== null && avanco !== null && material > avanco,
+      horas: horas !== null && avanco !== null && horas > avanco, atrasadas: atrasadas > 0, fim: fimAposPrazo, pend: pend > 0, med: medVencida };
+    const qtdPerigo = Object.values(perigo).filter(Boolean).length;
+    return { p, obras: filhos.length, avanco, ritmo, plan: plan === null ? null : Math.round(plan), ontem: ontemV, material, horas, atrasadas, prazo, finalizacao, fimAposPrazo,
+      med20: med20.length, medValor: med20.reduce((s, e) => s + Number(e.medicao_valor || 0), 0), pend, perigo, qtdPerigo, rdoAprov, ocAprov, naoLidos };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }).sort((a, b) => b.qtdPerigo - a.qtdPerigo || String(a.p.codigo).localeCompare(String(b.p.codigo), "pt-BR", { numeric: true })), [candidatos.map((p) => p.id).join(","), etapas, orc, apont, rdos, ocs, solic, lidosSet, categorias, diaFoto]);
 
-  const copiarCredenciais = async () => {
-    const texto = criados.map((c) => `${c.nome}\nUsuário: ${c.login}\nSenha: ${c.senha}`).join("\n\n");
-    try { await navigator.clipboard.writeText(texto); avisar("Credenciais copiadas."); } catch { avisar("Não foi possível copiar.", "erro"); }
-  };
+  const paginas = Math.max(1, Math.ceil(cartoes.length / porTela));
+  const pag = Math.min(pagina, paginas - 1);
+  const daPagina = cartoes.slice(pag * porTela, pag * porTela + porTela);
+  const t = useAnimacaoJarvis(`${pag}|${daPagina.map((c) => c.p.id).join(",")}|${etapasBrutas.length}|${orc.length}`);
+  const totalAlertas = cartoes.filter((c) => c.qtdPerigo > 0).length;
+  const ritmos = cartoes.map((c) => c.ritmo).filter((r) => r !== null);
+  const ritmoMedio = ritmos.length ? Math.round(ritmos.reduce((s, r) => s + r, 0) / ritmos.length) : null;
+  const dataBR = (iso) => (iso ? iso.slice(2, 10).split("-").reverse().join("/") : "—");
+  const termoF = buscaF.trim().toLowerCase();
+  const listaFiltro = principais.filter((p) => !termoF || [p.codigo, p.cliente, p.projeto].some((c) => (c || "").toLowerCase().includes(termoF)));
+  const marcado = (id) => (sel === null ? ehAbertoPi(principais.find((p) => p.id === id) || {}) : sel.includes(id));
+  const alternar = (id) => { const base = sel === null ? principais.filter(ehAbertoPi).map((p) => p.id) : sel; salvarSel(base.includes(id) ? base.filter((x) => x !== id) : [...base, id]); setPagina(0); };
 
-  const cel = "px-1.5 py-1.5 align-top";
-  const inp = "input !py-1.5 !px-2 !text-sm";
   return (
-    <Modal titulo="Novos usuários de campo (em lote)" onFechar={() => !enviando && onFechar()} largura="max-w-[min(1200px,96vw)]"
-      rodape={<>
-        <span className="text-sm text-muted mr-auto self-center">{preenchidas.length} para criar{criados.length ? ` · ${criados.length} criado(s)` : ""}</span>
-        {criados.length > 0 && <button onClick={copiarCredenciais} className="btn btn-contorno"><Icone nome="copiar" className="w-4 h-4" /> Copiar usuários e senhas</button>}
-        <button onClick={onFechar} disabled={enviando} className="btn btn-fantasma">Fechar</button>
-        <button onClick={enviar} disabled={!preenchidas.length || comProblema || enviando} className="btn btn-primario">
-          {enviando ? <><Spinner /> Criando...</> : `Criar ${preenchidas.length || ""} usuário(s)`}
-        </button>
-      </>}>
-      <div className="flex flex-wrap items-center gap-2 mb-3">
-        <button onClick={() => setLinhas((p) => [...p, linhaVazia()])} className="btn btn-contorno btn-sm"><Icone nome="mais2" className="w-4 h-4" /> 1 linha</button>
-        <button onClick={() => setLinhas((p) => [...p, ...Array.from({ length: 10 }, linhaVazia)])} className="btn btn-contorno btn-sm"><Icone nome="mais2" className="w-4 h-4" /> 10 linhas</button>
-        <button onClick={gerarSenhas} className="btn btn-contorno btn-sm">Gerar senhas vazias</button>
-        <span className="texto-apoio">Todos entram na equipe <strong>Campo</strong>. O usuário é sugerido a partir do nome (nome.sobrenome){ehMaster ? " e pode ser editado" : ""}.</span>
-      </div>
-      <div className="overflow-auto rounded-xl border border-line">
-        <table className="w-full text-sm min-w-[1080px]">
-          <thead className="bg-panel sticky top-0 z-10">
-            <tr className="text-left">
-              <th className="px-2 py-2 titulo-secao w-8">#</th>
-              <th className="px-2 py-2 titulo-secao">Nome *</th>
-              <th className="px-2 py-2 titulo-secao">Usuário (login) *</th>
-              <th className="px-2 py-2 titulo-secao">E-mail</th>
-              <th className="px-2 py-2 titulo-secao">Senha *</th>
-              <th className="px-2 py-2 titulo-secao">Perfil <button onClick={() => repetirParaBaixo("perfil")} className="normal-case font-normal text-cyan hover:underline ml-1" title="Repetir o valor da 1ª linha em todas">↓ repetir</button></th>
-              <th className="px-2 py-2 titulo-secao">Função <button onClick={() => repetirParaBaixo("funcao")} className="normal-case font-normal text-cyan hover:underline ml-1" title="Repetir o valor da 1ª linha em todas">↓ repetir</button></th>
-              <th className="px-2 py-2 titulo-secao">Empresa (terceiro) <button onClick={() => repetirParaBaixo("empresa")} className="normal-case font-normal text-cyan hover:underline ml-1" title="Repetir o valor da 1ª linha em todas">↓ repetir</button></th>
-              <th className="px-2 py-2 titulo-secao w-10" />
-            </tr>
-          </thead>
-          <tbody>
-            {linhas.map((l, i) => {
-              const travada = l.status === "ok";
-              return (
-                <tr key={l.chave} className={`border-t border-line ${travada ? "bg-green/5" : l.status === "erro" ? "bg-red/5" : ""}`}>
-                  <td className={`${cel} text-muteddim pt-3`}>{i + 1}</td>
-                  <td className={cel}><input value={l.nome} disabled={travada} onChange={(e) => mudarNome(i, e.target.value)} className={inp} placeholder="Nome completo" /></td>
-                  <td className={cel}><input value={l.login} disabled={travada || !ehMaster} onChange={(e) => alterar(i, { login: e.target.value.toLowerCase().replace(/\s/g, ""), loginEditado: true })} className={inp} placeholder={ehMaster ? "nome.sobrenome" : "usa o e-mail"} /></td>
-                  <td className={cel}><input value={l.email} disabled={travada} onChange={(e) => alterar(i, { email: e.target.value })} className={inp} placeholder="opcional" /></td>
-                  <td className={cel}><input value={l.senha} disabled={travada} onChange={(e) => alterar(i, { senha: e.target.value })} className={`${inp} font-mono`} placeholder="6+ caracteres" /></td>
-                  <td className={cel}>
-                    <select value={l.perfil} disabled={travada} onChange={(e) => alterar(i, { perfil: e.target.value })} className={inp}>
-                      {PERFIS_LOTE.map(([v, t]) => <option key={v} value={v}>{t.split(" (")[0]}</option>)}
-                    </select>
-                  </td>
-                  <td className={cel}>
-                    <select value={l.funcao} disabled={travada} onChange={(e) => alterar(i, { funcao: e.target.value })} className={inp}>
-                      <option value="">—</option>
-                      {FUNCOES.map((f) => <option key={f} value={f}>{f}</option>)}
-                    </select>
-                  </td>
-                  <td className={cel}>{l.perfil === "terceiro"
-                    ? <SeletorEmpresa empresas={empresas} valor={l.empresa} disabled={travada} onChange={(v) => alterar(i, { empresa: v })} compacto />
-                    : <span className="text-muteddim text-xs pl-1">—</span>}</td>
-                  <td className={`${cel} pt-2`}>
-                    {travada ? <span className="text-green font-bold" title="Criado">✓</span> : (
-                      <button onClick={() => setLinhas((p) => (p.length > 1 ? p.filter((_, k) => k !== i) : [linhaVazia()]))} className="p-1.5 rounded-lg text-muteddim hover:text-red hover:bg-red/5" aria-label="Remover linha"><Icone nome="lixo" className="w-4 h-4" /></button>
-                    )}
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
-      {/* pendências por linha (antes de criar) e erros devolvidos pelo servidor */}
-      {linhas.some((l, i) => (l.status !== "ok" && problemaDa(l, i)) || l.erro) && (
-        <div className="mt-3 flex flex-col gap-1 text-xs">
-          {linhas.map((l, i) => {
-            const msg = l.erro || (l.status !== "ok" ? problemaDa(l, i) : null);
-            return msg ? <div key={l.chave} className="text-red">Linha {i + 1} ({l.nome || "sem nome"}): {msg}</div> : null;
+    <div className="fixed inset-0 z-[70] overflow-y-auto text-[color:var(--jv-t)] font-mono jarvis"
+      style={{ background: "var(--jv-fundo)", ...TEMAS_JV[tema] }}>
+      <style>{`
+        .jarvis{background-image:repeating-linear-gradient(0deg,var(--jv-scan) 0 1px,transparent 1px 3px)}
+        .jv-c{position:relative;border:1px solid var(--jv-bd);background:var(--jv-card)}
+        .jv-c:before,.jv-c:after{content:"";position:absolute;width:9px;height:9px;border-color:var(--jv-ac);border-style:solid}
+        .jv-c:before{top:-1px;left:-1px;border-width:1px 0 0 1px}.jv-c:after{bottom:-1px;right:-1px;border-width:0 1px 1px 0}
+        .jv-pisca{animation:jvp 1s steps(2,start) infinite}
+        @keyframes jvp{50%{background:rgba(255,40,60,.28);box-shadow:inset 0 0 0 1px #ff4d5e}}
+        .jv-gira{transform-origin:26px 26px;animation:jvg 8s linear infinite}.jv-gira2{transform-origin:26px 26px;animation:jvg 5s linear infinite reverse}
+        @keyframes jvg{to{transform:rotate(360deg)}}
+        .jv-k{clip-path:polygon(7px 0,100% 0,calc(100% - 7px) 100%,0 100%)}
+        @media (prefers-reduced-motion: reduce){.jv-pisca,.jv-gira,.jv-gira2{animation:none}}
+      `}</style>
+      <div className="max-w-[1900px] mx-auto p-3 md:p-5">
+        {/* cabeçalho HUD */}
+        <div className="flex flex-wrap items-center gap-3 mb-3">
+          <svg viewBox="0 0 52 52" className="w-12 h-12 shrink-0" aria-hidden="true">
+            <circle cx="26" cy="26" r="24" fill="none" style={{ stroke: "var(--jv-bd)" }} strokeWidth="1" />
+            <g className="jv-gira"><circle cx="26" cy="26" r="20" fill="none" style={{ stroke: "var(--jv-ac)" }} strokeWidth="2" strokeDasharray="18 8" /></g>
+            <g className="jv-gira2"><circle cx="26" cy="26" r="14" fill="none" style={{ stroke: "var(--jv-ac2)" }} strokeWidth="1.5" strokeDasharray="4 4" /></g>
+            <circle cx="26" cy="26" r="6" opacity=".85" style={{ fill: "var(--jv-ac)", filter: "drop-shadow(0 0 6px var(--jv-ac))" }} />
+          </svg>
+          <div className="min-w-0">
+            <div className="text-[15px] tracking-[0.35em] text-[color:var(--jv-t0)]">J.A.R.V.I.S.</div>
+            <div className="text-[10px] tracking-[0.2em] text-[color:var(--jv-t4)]">COCKPIT DE OBRAS · {agora.toLocaleDateString("pt-BR")} {agora.toLocaleTimeString("pt-BR")}</div>
+          </div>
+          <div className="flex flex-wrap gap-1.5 ml-auto">
+            <div className="jv-k border border-[color:var(--jv-bd)] px-3 py-1 text-[10px] tracking-wider text-[color:var(--jv-t2)]">PIs <b className="text-[13px] text-[color:var(--jv-t0)] font-semibold">{cartoes.length}</b></div>
+            <div className={`jv-k border border-[color:var(--jv-bd)] px-3 py-1 text-[10px] tracking-wider text-[color:var(--jv-t2)] ${totalAlertas ? "jv-pisca" : ""}`}>EM ALERTA <b className="text-[13px] font-semibold" style={{ color: totalAlertas ? JV.ru : JV.bom }}>{totalAlertas}</b></div>
+            <div className="jv-k border border-[color:var(--jv-bd)] px-3 py-1 text-[10px] tracking-wider text-[color:var(--jv-t2)]">RITMO MÉDIO <b className="text-[13px] text-[color:var(--jv-t0)] font-semibold">{ritmoMedio === null ? "—" : `${ritmoMedio}%`}</b></div>
+            <button onClick={() => { const n = tema === "escuro" ? "claro" : "escuro"; setTema(n); try { localStorage.setItem(`${chave}:tema`, n); } catch { /* ignora */ } }}
+              className="jv-k border border-[color:var(--jv-bd)] px-3 py-1 text-[10px] tracking-wider text-[color:var(--jv-t2)] hover:bg-[color:var(--jv-hv)]" title="Alternar visual claro / escuro">
+              {tema === "escuro" ? "☀ VISUAL CLARO" : "☾ VISUAL ESCURO"}
+            </button>
+            <button onClick={onFechar} className="jv-k border border-[color:var(--jv-ac)] px-3 py-1 text-[10px] tracking-wider text-[color:var(--jv-t0)] hover:bg-[color:var(--jv-hv)]">DESATIVAR ✕</button>
+          </div>
+        </div>
+        {/* filtro + paginação */}
+        <div className="flex flex-wrap items-center gap-2 mb-3 text-[10px] tracking-wider text-[color:var(--jv-t4)]">
+          <div className="relative">
+            <button onClick={() => setFiltroAberto((v) => !v)} className="border border-[color:var(--jv-bd)] px-2.5 py-1 hover:border-[color:var(--jv-ac)] text-[color:var(--jv-t2)]">
+              FILTRO: {sel === null ? `ABERTOS (${cartoes.length})` : `${cartoes.length} PI(s) SELECIONADO(S)`} ▾
+            </button>
+            {filtroAberto && (
+              <div className="absolute left-0 top-full mt-1 z-10 w-[min(360px,90vw)] border border-[color:var(--jv-ac)] bg-[color:var(--jv-pop)] p-2 shadow-[0_0_24px_rgba(41,211,255,.25)]">
+                <input value={buscaF} onChange={(e) => setBuscaF(e.target.value)} autoFocus placeholder="BUSCAR Nº, CLIENTE OU PROJETO" className="w-full bg-transparent border border-[color:var(--jv-bd)] px-2 py-1.5 text-[11px] text-[color:var(--jv-t0)] placeholder:text-[color:var(--jv-t6)] outline-none focus:border-[color:var(--jv-ac)]" />
+                <div className="flex gap-1.5 my-2">
+                  <button onClick={() => { salvarSel(null); setPagina(0); }} className="border border-[color:var(--jv-bd)] px-2 py-0.5 hover:border-[color:var(--jv-ac)]">ABERTOS</button>
+                  <button onClick={() => { salvarSel(principais.map((p) => p.id)); setPagina(0); }} className="border border-[color:var(--jv-bd)] px-2 py-0.5 hover:border-[color:var(--jv-ac)]">TODOS</button>
+                  <button onClick={() => { salvarSel([]); setPagina(0); }} className="border border-[color:var(--jv-bd)] px-2 py-0.5 hover:border-[color:var(--jv-ac)]">NENHUM</button>
+                </div>
+                <div className="max-h-[50vh] overflow-y-auto rolagem-fina">
+                  {listaFiltro.map((p) => (
+                    <label key={p.id} className="flex items-center gap-2 px-1 py-1 text-[11px] cursor-pointer hover:bg-[color:var(--jv-hv)]">
+                      <input type="checkbox" checked={marcado(p.id)} onChange={() => alternar(p.id)} className="accent-[color:var(--jv-ac)]" />
+                      <span className="text-[color:var(--jv-ac)]">{p.codigo}</span>
+                      <span className="truncate text-[color:var(--jv-t3)]">{p.cliente}</span>
+                      <span className="ml-auto text-[9px] text-[color:var(--jv-t5)]">{(STATUS_PI[p.status] || p.status || "").toUpperCase()}</span>
+                    </label>
+                  ))}
+                </div>
+                <button onClick={() => setFiltroAberto(false)} className="w-full mt-2 border border-[color:var(--jv-ac)] py-1 text-[color:var(--jv-t0)] hover:bg-[color:var(--jv-hv)]">APLICAR</button>
+              </div>
+            )}
+          </div>
+          <span className="hidden sm:inline"><span style={{color:"#ff4d5e"}}>●</span> EM ALERTA</span><span className="hidden sm:inline text-[#ffb547]">▲ RDO/OCORRÊNCIA NÃO LIDO OU EM APROVAÇÃO</span>
+          <div className="flex items-center gap-1 ml-auto">
+            <span>PÁG</span>
+            <button onClick={() => setPagina(Math.max(0, pag - 1))} disabled={pag === 0} className="border border-[color:var(--jv-bd)] px-2 py-0.5 disabled:opacity-30">‹</button>
+            {Array.from({ length: paginas }, (_, i) => (
+              <button key={i} onClick={() => setPagina(i)} className={`border px-2 py-0.5 ${i === pag ? "border-[color:var(--jv-ac)] bg-[color:var(--jv-hv)] text-[color:var(--jv-t0)]" : "border-[color:var(--jv-bd)]"}`}>{i + 1}</button>
+            ))}
+            <button onClick={() => setPagina(Math.min(paginas - 1, pag + 1))} disabled={pag >= paginas - 1} className="border border-[color:var(--jv-bd)] px-2 py-0.5 disabled:opacity-30">›</button>
+            <label className="ml-2 flex items-center gap-1">POR TELA
+              <select value={porTela} onChange={(e) => { const n = Number(e.target.value); setPorTela(n); setPagina(0); try { localStorage.setItem(`${chave}:porTela`, String(n)); } catch { /* ignora */ } }}
+                className="bg-[color:var(--jv-pop)] border border-[color:var(--jv-bd)] px-1 py-0.5 text-[color:var(--jv-t0)] outline-none focus:border-[color:var(--jv-ac)]" aria-label="PIs por tela">
+                {OPCOES_POR_TELA.map((n) => <option key={n} value={n}>{n}</option>)}
+              </select>
+            </label>
+          </div>
+        </div>
+
+        {cartoes.length === 0 && <div className="jv-c p-8 text-center text-[12px] tracking-widest text-[color:var(--jv-t4)]">NENHUM PI NO FILTRO · ABRA O FILTRO E SELECIONE AS OBRAS</div>}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-2">
+          {daPagina.map((c) => {
+            const triangulo = c.rdoAprov + c.ocAprov + c.naoLidos > 0;
+            const dicaTri = [c.rdoAprov && `${c.rdoAprov} RDO em aprovação`, c.ocAprov && `${c.ocAprov} ocorrência(s) em aprovação`, c.naoLidos && `${c.naoLidos} RDO/ocorrência não lido(s) (30 dias)`].filter(Boolean).join(" · ");
+            return (
+              <Link key={c.p.id} href={`/pi?id=${c.p.id}`} onClick={onFechar} className="jv-c block px-2 pt-1.5 pb-1.5 hover:bg-[color:var(--jv-cardh)] transition-colors">
+                <div className="flex items-center gap-1.5 text-[11px] mb-0.5 min-w-0">
+                  <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: c.qtdPerigo ? JV.ru : JV.bom, boxShadow: `0 0 6px ${c.qtdPerigo ? JV.ru : JV.bom}` }} />
+                  <span className="text-[color:var(--jv-ac)] font-semibold shrink-0">{c.p.codigo}</span>
+                  <span className="truncate text-[10px] text-[color:var(--jv-t3)]">{c.p.cliente}{c.obras ? ` · ${c.obras} OBRAS` : c.p.projeto ? ` · ${c.p.projeto}` : ""}</span>
+                  {triangulo && (
+                    <span className="ml-auto shrink-0 jv-pisca rounded px-0.5" title={dicaTri} aria-label={dicaTri}>
+                      <svg viewBox="0 0 24 24" className="w-4 h-4" aria-hidden="true"><path d="M12 3 L22 20 H2 Z" fill="#ffb547" stroke="#ffb547" strokeWidth="1.5" strokeLinejoin="round" style={{ filter: "drop-shadow(0 0 4px #ffb547)" }} /><rect x="11" y="9" width="2" height="6" fill="#020b14" /><rect x="11" y="16.5" width="2" height="2" fill="#020b14" /></svg>
+                    </span>
+                  )}
+                </div>
+                <div className="grid grid-cols-6 gap-0.5">
+                  <MiniMedidor rotulo="AVANÇO" valor={c.avanco} cor={JV.ok} t={t} dica="Avanço físico (média das macro-etapas)" />
+                  <MiniMedidor rotulo="RITMO" valor={c.ritmo} max={150} t={t} perigo={c.perigo.ritmo}
+                    cor={c.ritmo === null ? JV.off : c.ritmo >= 95 ? JV.bom : c.ritmo >= 80 ? JV.at : JV.ru} dica={c.plan === null ? "Cronograma sem datas" : `Previsto hoje ${c.plan}%`} />
+                  <MiniMedidor rotulo="ONTEM" valor={c.ontem} cor={JV.ok} t={t}
+                    dica={c.ontem === null ? "A foto diária do avanço começa no próximo dia (rotina das 7h)" : `Avanço no fim do dia anterior · variação ${(c.avanco ?? 0) - c.ontem >= 0 ? "+" : ""}${(c.avanco ?? 0) - c.ontem} pts`} />
+                  <MiniMedidor rotulo="MATER." valor={verValores ? c.material : null} t={t} perigo={verValores && c.perigo.material}
+                    cor={c.material !== null && c.avanco !== null && c.material > c.avanco ? JV.ru : JV.bom} dica={verValores ? "Consumo de material (realizado ÷ orçado)" : "Sem permissão para valores"} />
+                  <MiniMedidor rotulo="HORAS" valor={verHoras ? c.horas : null} t={t} perigo={verHoras && c.perigo.horas}
+                    cor={c.horas !== null && c.avanco !== null && c.horas > c.avanco ? JV.ru : JV.bom} dica="Consumo de horas (realizado ÷ orçado)" />
+                  <MiniMedidor rotulo="ATRAS." valor={c.atrasadas} max={Math.max(5, c.atrasadas)} sufixo="" t={t} perigo={c.perigo.atrasadas} cor={c.atrasadas ? JV.ru : JV.bom} dica="Etapas atrasadas" />
+                </div>
+                <div className="grid grid-cols-4 gap-0.5 mt-1 text-[8.5px] tracking-wide text-[color:var(--jv-t5)] leading-tight">
+                  <div className="px-0.5">PRAZO<span className="block text-[10px] text-[color:var(--jv-t0)]">{dataBR(c.prazo)}</span></div>
+                  <div className={`px-0.5 ${c.perigo.fim ? "jv-pisca" : ""}`}>FIM PREV<span className="block text-[10px]" style={{ color: c.perigo.fim ? "#ff6b78" : "var(--jv-t0)" }}>{dataBR(c.finalizacao)}</span></div>
+                  <div className={`px-0.5 ${c.perigo.med ? "jv-pisca" : ""}`} title={verValores && c.medValor ? `R$ ${c.medValor.toLocaleString("pt-BR")}` : undefined}>MED {PRAZOS.medicoes}D<span className="block text-[10px] text-[color:var(--jv-t0)]">{c.med20}</span></div>
+                  <div className={`px-0.5 ${c.perigo.pend ? "jv-pisca" : ""}`}>PEND<span className="block text-[10px]" style={{ color: c.pend ? "#ff6b78" : "var(--jv-t0)" }}>{c.pend}</span></div>
+                </div>
+              </Link>
+            );
           })}
         </div>
-      )}
-    </Modal>
+        <div className="mt-3 text-[9px] tracking-wider text-[color:var(--jv-t6)]">CLIQUE NUM PI PARA ABRIR A PÁGINA DELE · ESC PARA SAIR · PISCANDO = FORA DO NORMAL (RITMO &lt; 80%, CONSUMO ACIMA DO AVANÇO, ETAPA ATRASADA, FIM APÓS O PRAZO, MEDIÇÃO VENCIDA, PENDÊNCIA)</div>
+      </div>
+    </div>
   );
 }
 
-// Lista das empresas terceiras cadastradas (Recursos → Empresas terceiras).
-// O cadastro do usuário guarda o NOME da empresa; um nome antigo fora da lista continua aparecendo.
-function SeletorEmpresa({ empresas, valor, onChange, disabled, compacto }) {
-  const nomes = empresas.map((e) => e.nome);
-  const fora = valor && !nomes.some((n) => n.trim().toLowerCase() === valor.trim().toLowerCase());
+// PIs ativos sem cronograma ou sem nenhuma etapa iniciada (avanço > 0%, em andamento ou concluída)
+function PisNaoIniciados({ pis, etapas }) {
+  const [filtro, setFiltro] = useState(""); // "" | sem | nada
+  const iniciada = (e) => e.status === "concluida" || e.status === "em_andamento" || (Number(e.percentual) || 0) > 0;
+  const lista = pis.map((pi) => {
+    const doPi = etapas.filter((e) => e.pi_id === pi.id);
+    if (doPi.some(iniciada)) return null;
+    const inicio = doPi.map((e) => e.data_prevista_inicio).filter(Boolean).sort()[0] || null;
+    const d = diasAte(inicio);
+    return { pi, qtd: doPi.length, inicio, sem: doPi.length === 0, atrasado: d !== null && d < 0 };
+  }).filter(Boolean)
+    // sem cronograma primeiro, depois atrasados para iniciar, depois pela data de início
+    .sort((a, b) => (b.sem - a.sem) || (b.atrasado - a.atrasado) || (a.inicio || "9999").localeCompare(b.inicio || "9999"));
+  const visiveis = lista.filter((l) => !filtro || (filtro === "sem" ? l.sem : !l.sem));
   return (
-    <>
-      <select value={fora ? valor : (nomes.find((n) => n.trim().toLowerCase() === (valor || "").trim().toLowerCase()) || "")} disabled={disabled}
-        onChange={(e) => onChange(e.target.value)} className={compacto ? "input !py-1.5 !px-2 !text-sm" : `input ${!valor ? "!border-amber" : ""}`}>
-        <option value="">Selecione a empresa...</option>
-        {empresas.map((e) => <option key={e.id} value={e.nome}>{e.nome}{e.cnpj && !compacto ? ` — ${e.cnpj}` : ""}</option>)}
-        {fora && <option value={valor}>{valor} (não cadastrada)</option>}
-      </select>
-      {!compacto && !empresas.length && <span className="block text-xs text-amber mt-1">Nenhuma empresa cadastrada — cadastre em Recursos → Empresas terceiras.</span>}
-    </>
+    <section className="cartao p-4 md:p-5 h-full flex flex-col min-h-0">
+      <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+        <h2 className="titulo-quadro">PIs não iniciados <span className={`selo ml-1 ${lista.length ? "bg-amber/10 text-amber" : "bg-green/10 text-green"}`}>{lista.length}</span></h2>
+        <div className="flex flex-wrap gap-1.5">
+          {[["", "Todos"], ["sem", "Sem cronograma"], ["nada", "Nada iniciado"]].map(([v, l]) => (
+            <button key={v} onClick={() => setFiltro(v)} className={`chip ${filtro === v ? "chip-ativo" : ""}`}>{l}</button>
+          ))}
+        </div>
+      </div>
+      {visiveis.length === 0 ? (
+        <EstadoVazio icone="obra" titulo="Tudo em andamento" texto="Todos os PIs ativos têm cronograma com alguma etapa iniciada." />
+      ) : (
+        <div className="overflow-auto rolagem-fina flex-1 min-h-0">
+          <table className="w-full text-sm min-w-[620px]">
+            <thead className="sticky top-0 bg-white z-10">
+              <tr className="text-left border-b border-line">
+                <th className="py-2 pr-3 titulo-secao">PI</th>
+                <th className="py-2 pr-3 titulo-secao">Cliente / projeto</th>
+                <th className="py-2 pr-3 titulo-secao">Situação</th>
+                <th className="py-2 pr-3 titulo-secao">1º início previsto</th>
+                <th className="py-2 pr-3 titulo-secao text-right">Etapas</th>
+                <th className="py-2 titulo-secao" />
+              </tr>
+            </thead>
+            <tbody>
+              {visiveis.map(({ pi, qtd, inicio, sem, atrasado }) => (
+                <tr key={pi.id} className="border-b border-line/60 hover:bg-panel/60">
+                  <td className="py-2 pr-3 font-mono font-semibold text-cyan whitespace-nowrap">{pi.codigo}</td>
+                  <td className="py-2 pr-3 max-w-[280px]"><div className="truncate">{pi.cliente || "—"}{pi.projeto ? <span className="text-muted"> · {pi.projeto}</span> : ""}</div></td>
+                  <td className="py-2 pr-3 whitespace-nowrap">
+                    <span className={`selo ${sem ? "bg-red/10 text-red" : atrasado ? "bg-amber/10 text-amber" : "bg-panel text-muted"}`}>{sem ? "Sem cronograma" : atrasado ? "Atrasado p/ iniciar" : "Nada iniciado"}</span>
+                  </td>
+                  <td className={`py-2 pr-3 whitespace-nowrap tabular-nums ${atrasado ? "text-red" : ""}`}>{inicio ? formatarData(inicio) : "—"}</td>
+                  <td className="py-2 pr-3 text-right tabular-nums">{qtd}</td>
+                  <td className="py-2 text-right whitespace-nowrap">
+                    <Link href={sem ? `/cronograma?pi=${pi.id}` : `/pi?id=${pi.id}`} className="text-cyan text-sm font-semibold hover:underline">{sem ? "Configurar →" : "Abrir PI →"}</Link>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </section>
+  );
+}
+
+function Indicador({ titulo, valor, detalhe, icone, cor, href, destaque }) {
+  return (
+    <div className={`cartao p-4 h-full flex flex-col overflow-hidden ${destaque ? "ring-2 ring-amber/30" : ""}`}>
+      <div className="flex items-start justify-between gap-2">
+        <div className="text-xs md:text-sm font-medium text-muted leading-tight">{titulo}</div>
+        <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${cor}`}><Icone nome={icone} className="w-[18px] h-[18px]" /></div>
+      </div>
+      <div className="font-head font-bold text-3xl mt-1">{valor}</div>
+      <div className="flex items-end justify-between gap-2 mt-auto">
+        {detalhe && <div className="text-xs text-muteddim truncate">{detalhe}</div>}
+        {href && <Link href={href} draggable={false} className="text-xs font-semibold text-cyan hover:underline shrink-0">Ver →</Link>}
+      </div>
+    </div>
   );
 }
