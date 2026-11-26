@@ -11,7 +11,7 @@ import AlterarSenha from "../../components/AlterarSenha";
 import { Spinner } from "../../components/ui";
 import Icone from "../../components/Icone";
 
-const STATUS_PI = { ativo: "Em andamento", pausado: "Pausada", concluido: "Concluída", cancelado: "Cancelada" };
+const STATUS_PI = { nao_iniciado: "Não iniciada", ativo: "Em andamento", pausado: "Pausada", concluido: "Concluída", cancelado: "Cancelada" };
 
 // Portal "Acesso Clientes Contric": só mostra o que foi liberado (dados vêm do servidor).
 export default function PortalCliente() {

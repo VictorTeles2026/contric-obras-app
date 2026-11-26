@@ -103,7 +103,7 @@ async function resumoDiario(admin) {
   const codigo = (id) => pis.find((p) => p.id === id)?.codigo || "?";
   const nomeEtapa = (id) => etapas.find((e) => e.id === id)?.nome || "etapa";
   const piDaEtapa = (id) => etapas.find((e) => e.id === id)?.pi_id;
-  const ativos = new Set(pis.filter((p) => p.status === "ativo" || !p.status).map((p) => p.id));
+  const ativos = new Set(pis.filter((p) => p.status === "ativo" || p.status === "nao_iniciado" || !p.status).map((p) => p.id));
   const horasPend = horas.filter((h) => h.status === "pendente" && !(h.entrada && !h.saida));
   const solicPend = solic.filter((s) => String(s.status || "").startsWith("pendente")).map((s) => ({ ...s, pi_id: piDaEtapa(s.etapa_id) }));
   const rdosPend = rdos.filter((r) => r.status === "pendente");

@@ -232,7 +232,7 @@ export function FormHorasRecursos({ usuario, meusPis, todosPis, onEnviado, largo
   const escopoTotal = valorPermissao(usuario, "horas.lancar_equipe") === "S";
   // PI Pai (contrato) não recebe horas: os lançamentos são sempre nas obras
   const ehPai = (id) => todosPis.some((p) => p.pi_pai_id === id);
-  const pisDisponiveis = (escopoTotal ? todosPis.filter((p) => p.status === "ativo" || !p.status) : meusPis).filter((p) => !ehPai(p.id));
+  const pisDisponiveis = (escopoTotal ? todosPis.filter((p) => p.status === "ativo" || p.status === "nao_iniciado" || !p.status) : meusPis).filter((p) => !ehPai(p.id));
   const { dados: recursos } = useTabela("recursos", { order: { coluna: "nome" } });
   const { dados: alocacoes } = useTabela("alocacoes_recurso", { select: "recurso_id,pi_id" });
   const [piId, setPiId] = useState(pisDisponiveis.length === 1 ? pisDisponiveis[0].id : "");

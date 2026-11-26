@@ -924,7 +924,7 @@ function SelecionarPisModal({ pis, selecionados, onConfirmar, onCancelar }) {
   const [statusFiltro, setStatusFiltro] = useState("");
   const [locais, setLocais] = useState(selecionados);
 
-  const ehAberto = (p) => p.status === "ativo" || p.status === "pausado";
+  const ehAberto = (p) => p.status === "ativo" || p.status === "pausado" || p.status === "nao_iniciado";
   // filtra enquanto digita (antes era preciso clicar em "Pesquisar")
   const termo = busca.trim().toLowerCase();
   const resultados = pis.filter((p) =>

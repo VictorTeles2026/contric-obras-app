@@ -323,7 +323,7 @@ export default function ControleHorasPage() {
 
 // ---------------- Horas orçadas: tipos de hora (MOI + Contric da abertura do PI) × PIs ----------------
 // Orçamento não tem data, pessoa nem aprovação: valem só os filtros de PI, cliente e status do PI.
-const STATUS_PI = [["ativo", "Ativos"], ["concluido", "Concluídos"], ["pausado", "Pausados"], ["cancelado", "Cancelados"]];
+const STATUS_PI = [["nao_iniciado", "Não iniciados"], ["ativo", "Ativos"], ["concluido", "Concluídos"], ["pausado", "Pausados"], ["cancelado", "Cancelados"]];
 function HorasOrcadas({ pis }) {
   const { dados: categorias, carregando } = useTabela("categorias_orcamento", { order: { coluna: "ordem" } });
   const { dados: orcamentos } = useTabela("orcamento_pi_item");
