@@ -10,6 +10,7 @@ import { STATUS_ETAPA, STATUS_SOLICITACAO } from "../../lib/constantes";
 import { notificar } from "../../lib/notificacoes";
 import { repartirNormaisExtras } from "../../lib/horas";
 import { gerarPdfRdoSeguro } from "../../lib/pdfRdo";
+import { decidirOcorrencia } from "../../lib/edicoes";
 import { useToast } from "../../lib/Toast";
 import PainelShell from "../../components/PainelShell";
 import { EditorRdo, EditorHoras, EditorSolicitacao } from "../../components/Editores";
@@ -58,9 +59,9 @@ export default function AprovacoesPage() {
   const agora = () => new Date().toISOString();
 
   // ---------------- RDO ----------------
-  const aprovarRdo = async (rdo, aplicarNoCronograma) => {
+  const aprovarRdo = async (rdo, aplicarNoCronograma, sil = false) => {
     const { error } = await supabase.from("rdos").update({ status: "aprovado", decidido_por: usuario.id, decidido_em: agora() }).eq("id", rdo.id);
-    if (error) { avisar(`Erro ao aprovar: ${error.message}`, "erro", 6000); return; }
+    if (error) { avisar(`Erro ao aprovar: ${error.message}`, "erro", 6000); return false; }
     let aplicadas = 0;
     if (aplicarNoCronograma) {
       const mudancas = (rdo.atividades || []).filter((a) => {
@@ -77,40 +78,48 @@ export default function AprovacoesPage() {
     const pi = piInfo(rdo.pi_id);
     await registrarLog(usuario, "Aprovou RDO", `${pi?.codigo} — ${rdo.data}${aplicadas ? ` · ${aplicadas} etapa(s) atualizada(s)` : ""}`);
     await notificar(rdo.lider_id, `RDO aprovado — ${pi?.codigo} (${formatarData(rdo.data)})`, `Aprovado por ${usuario.nome}.`, "/lider");
+    gerarPdfRdoSeguro(rdo.id, avisar); // o PDF passa a mostrar "APROVADO"
+    if (sil) return true;
     recarregarRdos(); if (aplicadas) recarregarEtapas();
     avisar(aplicadas ? `RDO aprovado · ${aplicadas} etapa(s) atualizada(s) no cronograma.` : "RDO aprovado.");
-    gerarPdfRdoSeguro(rdo.id, avisar); // o PDF passa a mostrar "APROVADO"
+    return true;
   };
-  const reprovarRdo = async (rdo, motivo) => {
+  const reprovarRdo = async (rdo, motivo, sil = false) => {
     const { error } = await supabase.from("rdos").update({ status: "rejeitado", decidido_por: usuario.id, decidido_em: agora(), motivo_rejeicao: motivo }).eq("id", rdo.id);
-    if (error) { avisar(`Erro ao reprovar: ${error.message}`, "erro", 6000); return; }
+    if (error) { avisar(`Erro ao reprovar: ${error.message}`, "erro", 6000); return false; }
     await decidirOcorrenciasDoRdo(rdo, "rejeitada", motivo);
     const pi = piInfo(rdo.pi_id);
     await registrarLog(usuario, "Reprovou RDO", `${pi?.codigo} · motivo: ${motivo}`);
     await notificar(rdo.lider_id, `RDO reprovado — ${pi?.codigo} (${formatarData(rdo.data)})`, `Reprovado por ${usuario.nome}.\nMotivo: ${motivo}`, "/lider/rdo");
+    gerarPdfRdoSeguro(rdo.id, avisar);
+    if (sil) return true;
     recarregarRdos();
     avisar("RDO reprovado — o responsável foi notificado.", "info");
-    gerarPdfRdoSeguro(rdo.id, avisar);
+    return true;
   };
 
   // ---------------- Horas ----------------
-  const aprovarHoras = async (h, normais, extras) => {
+  const aprovarHoras = async (h, normais, extras, sil = false) => {
     const { error } = await supabase.from("apontamentos_horas").update({
       status: "aprovado", decidido_por: usuario.id, decidido_em: agora(), horas_normais: normais, horas_extras: extras,
     }).eq("id", h.id);
-    if (error) { avisar(`Erro ao aprovar: ${error.message}`, "erro", 6000); return; }
+    if (error) { avisar(`Erro ao aprovar: ${error.message}`, "erro", 6000); return false; }
     await registrarLog(usuario, "Aprovou horas", `${nomeHoras(h)} · ${piInfo(h.pi_id)?.codigo} — ${normais}h normais + ${extras}h extras`);
     await notificar(h.usuario_id, `Horas aprovadas — ${formatarData(h.data)}`, `${piInfo(h.pi_id)?.codigo}: ${normais}h normais${extras ? ` + ${extras}h extras` : ""}. Aprovado por ${usuario.nome}.`);
+    if (sil) return true;
     recarregarHoras();
     avisar("Horas aprovadas.");
+    return true;
   };
-  const reprovarHoras = async (h, motivo) => {
+  const reprovarHoras = async (h, motivo, sil = false) => {
     const { error } = await supabase.from("apontamentos_horas").update({ status: "rejeitado", decidido_por: usuario.id, decidido_em: agora(), motivo_rejeicao: motivo }).eq("id", h.id);
-    if (error) { avisar(`Erro ao reprovar: ${error.message}`, "erro", 6000); return; }
+    if (error) { avisar(`Erro ao reprovar: ${error.message}`, "erro", 6000); return false; }
     await registrarLog(usuario, "Reprovou horas", `${nomeHoras(h)} · ${piInfo(h.pi_id)?.codigo} · motivo: ${motivo}`);
     await notificar(h.usuario_id, `Horas reprovadas — ${formatarData(h.data)}`, `${piInfo(h.pi_id)?.codigo}. Reprovado por ${usuario.nome}.\nMotivo: ${motivo}`);
+    if (sil) return true;
     recarregarHoras();
     avisar("Horas reprovadas — a pessoa foi notificada.", "info");
+    return true;
   };
 
   // ---------------- Horas: "dia dividido" do líder (vários PIs, um grupo) ----------------
@@ -125,30 +134,34 @@ export default function AprovacoesPage() {
     return lista;
   })();
   // aprova o dia inteiro: grava as horas de cada PI (se ajustadas) e reparte normais/extras
-  const aprovarGrupo = async (itens, horasPorPi, normaisDia) => {
+  const aprovarGrupo = async (itens, horasPorPi, normaisDia, sil = false) => {
     const partes = repartirNormaisExtras(horasPorPi, normaisDia);
     for (let i = 0; i < itens.length; i++) {
       const { error } = await supabase.from("apontamentos_horas").update({
         status: "aprovado", decidido_por: usuario.id, decidido_em: agora(),
         horas_totais: horasPorPi[i], horas_normais: partes[i].normais, horas_extras: partes[i].extras,
       }).eq("id", itens[i].id);
-      if (error) { avisar(`Erro ao aprovar: ${error.message}`, "erro", 6000); recarregarHoras(); return; }
+      if (error) { avisar(`Erro ao aprovar: ${error.message}`, "erro", 6000); recarregarHoras(); return false; }
     }
     const total = horasPorPi.reduce((s, h) => s + h, 0);
     const detalhe = itens.map((h, i) => `${piInfo(h.pi_id)?.codigo}: ${horasPorPi[i]}h`).join(" · ");
     await registrarLog(usuario, "Aprovou horas (dia dividido)", `${nomeUsuario(itens[0].usuario_id)} · ${formatarData(itens[0].data)} · ${total}h (${normaisDia}h normais) · ${detalhe}`);
     await notificar(itens[0].usuario_id, `Horas aprovadas — ${formatarData(itens[0].data)}`, `${total}h em ${itens.length} obras (${detalhe}). Aprovado por ${usuario.nome}.`);
+    if (sil) return true;
     recarregarHoras();
     avisar(`Dia aprovado — ${itens.length} obras.`);
+    return true;
   };
-  const reprovarGrupo = async (itens, motivo) => {
+  const reprovarGrupo = async (itens, motivo, sil = false) => {
     const { error } = await supabase.from("apontamentos_horas").update({ status: "rejeitado", decidido_por: usuario.id, decidido_em: agora(), motivo_rejeicao: motivo })
       .in("id", itens.map((h) => h.id));
-    if (error) { avisar(`Erro ao reprovar: ${error.message}`, "erro", 6000); return; }
+    if (error) { avisar(`Erro ao reprovar: ${error.message}`, "erro", 6000); return false; }
     await registrarLog(usuario, "Reprovou horas (dia dividido)", `${nomeUsuario(itens[0].usuario_id)} · ${formatarData(itens[0].data)} · ${itens.length} obras · motivo: ${motivo}`);
     await notificar(itens[0].usuario_id, `Horas reprovadas — ${formatarData(itens[0].data)}`, `Lançamento do dia em ${itens.length} obras. Reprovado por ${usuario.nome}.\nMotivo: ${motivo}`);
+    if (sil) return true;
     recarregarHoras();
     avisar("Dia reprovado — a pessoa foi notificada.", "info");
+    return true;
   };
 
   // ---------------- Solicitações ----------------
@@ -160,7 +173,7 @@ export default function AprovacoesPage() {
     // Diretor, Gerente de Obras, de Equipes e de Processo decidem a fase do Gerente
     (s.status === "pendente_gerente" && ehGerencia(usuario?.perfil)));
 
-  const decidirSolicitacao = async (s, aprovar, motivo) => {
+  const decidirSolicitacao = async (s, aprovar, motivo, sil = false) => {
     const etapa = etapas.find((e) => e.id === s.etapa_id);
     const naEtapaCoord = s.status === "pendente_coordenador";
     // master aprova as duas fases de uma vez
@@ -179,19 +192,74 @@ export default function AprovacoesPage() {
         avisar("O valor proposto não é uma data válida — ajuste a etapa manualmente em Configurar Cronograma.", "erro", 7000);
       } else {
         const { error } = await supabase.from("etapas").update({ [s.campo_alterado]: valor }).eq("id", etapa.id);
-        if (error) { avisar(`Não foi possível aplicar na etapa: ${error.message}`, "erro", 6000); return; }
+        if (error) { avisar(`Não foi possível aplicar na etapa: ${error.message}`, "erro", 6000); return false; }
       }
     }
     const { error } = await supabase.from("solicitacoes_alteracao_cronograma").update(patch).eq("id", s.id);
-    if (error) { avisar(`Erro: ${error.message}`, "erro", 6000); return; }
+    if (error) { avisar(`Erro: ${error.message}`, "erro", 6000); return false; }
     const oQue = `${etapa?.nome || "Etapa"} — ${ROTULO_CAMPO[s.campo_alterado] || s.campo_alterado}`;
     await registrarLog(usuario, aprovar ? "Aprovou solicitação de alteração" : "Reprovou solicitação de alteração", `${oQue}${motivo ? ` · ${motivo}` : ""}`);
     await notificar(s.solicitado_por,
       !aprovar ? `Solicitação reprovada — ${etapa?.nome || "etapa"}` : finaliza ? `Solicitação aprovada — ${etapa?.nome || "etapa"}` : `Solicitação aprovada pelo Coordenador — ${etapa?.nome || "etapa"}`,
       !aprovar ? `${oQue}. Reprovado por ${usuario.nome}.\nMotivo: ${motivo}` : finaliza ? `${oQue}. A alteração foi aplicada ao cronograma.` : `${oQue}. Agora aguarda o Gerente.`,
       "/lider/solicitar");
+    if (sil) return true;
     recarregarSolicitacoes(); recarregarEtapas();
     avisar(!aprovar ? "Solicitação reprovada — o solicitante foi notificado." : finaliza ? "Solicitação aprovada e aplicada ao cronograma." : "Aprovada — segue para o Gerente.");
+  };
+
+  // ---------------- seleção em lote (por aba) ----------------
+  const [selecao, setSelecao] = useState({}); // { aba: Set de chaves }
+  const [loteOcupado, setLoteOcupado] = useState("");
+  const [motivoLote, setMotivoLote] = useState(null); // null = fechado; texto = recusando
+  // itens selecionáveis de cada aba: chave + como aprovar/recusar
+  const itensLote = {
+    rdos: podeRdo ? rdosPendentes.map((rdo) => ({ chave: rdo.id, aprovar: () => aprovarRdo(rdo, true, true), recusar: (m) => reprovarRdo(rdo, m, true) })) : [],
+    horas: podeHoras ? cartoesHoras.map(({ chave, itens }) => {
+      const aberto = itens.some((h) => h.entrada && !h.saida);
+      if (itens.length > 1) {
+        const hs = itens.map((h) => Number(h.horas_totais) || 0);
+        return { chave, bloqueado: aberto, aprovar: () => aprovarGrupo(itens, hs, Math.round(hs.reduce((s, x) => s + x, 0) * 100) / 100, true), recusar: (m) => reprovarGrupo(itens, m, true) };
+      }
+      const h = itens[0], total = Number(h.horas_totais) || 0, sug = h.horas_normais != null;
+      return { chave, bloqueado: aberto, aprovar: () => aprovarHoras(h, sug ? Number(h.horas_normais) : total, sug ? Number(h.horas_extras) || 0 : 0, true), recusar: (m) => reprovarHoras(h, m, true) };
+    }) : [],
+    ocorrencias: podeOcorrencia ? ocorrenciasPendentes.map((o) => ({ chave: o.id,
+      aprovar: async () => !(await decidirOcorrencia({ oc: o, aprovar: true, motivo: "", pis, usuario, avisar: () => {} }))?.erro,
+      recusar: async (m) => !(await decidirOcorrencia({ oc: o, aprovar: false, motivo: m, pis, usuario, avisar: () => {} }))?.erro })) : [],
+    solicitacoes: solicitacoesPendentes.filter((s) => podeDecidirSolicitacao(s)).map((s) => ({ chave: s.id, aprovar: () => decidirSolicitacao(s, true, "", true), recusar: (m) => decidirSolicitacao(s, false, m, true) })),
+  };
+  const selAba = selecao[aba] || new Set();
+  const disponiveisLote = itensLote[aba] || [];
+  const selecionados = disponiveisLote.filter((i) => selAba.has(i.chave));
+  const marcar = (chave) => setSelecao((p) => { const s = new Set(p[aba] || []); s.has(chave) ? s.delete(chave) : s.add(chave); return { ...p, [aba]: s }; });
+  const marcarTodos = () => setSelecao((p) => ({ ...p, [aba]: new Set(disponiveisLote.filter((i) => !i.bloqueado).map((i) => i.chave)) }));
+  const desmarcarTodos = () => setSelecao((p) => ({ ...p, [aba]: new Set() }));
+  const recarregarAba = () => { recarregarRdos(); recarregarHoras(); recarregarOcorrencias(); recarregarSolicitacoes(); recarregarEtapas(); };
+  const executarLote = async (aprovar, motivo = "") => {
+    const lista = selecionados.filter((i) => !(aprovar && i.bloqueado));
+    const pulados = selecionados.length - lista.length;
+    if (!lista.length) { avisar("Nenhum item selecionado pode ser aprovado (horas com check-in em aberto precisam de check-out).", "erro", 6000); return; }
+    setLoteOcupado(aprovar ? "Aprovando" : "Recusando");
+    let ok = 0;
+    for (const i of lista) { if (await (aprovar ? i.aprovar() : i.recusar(motivo))) ok++; }
+    await registrarLog(usuario, aprovar ? "Aprovou em lote" : "Recusou em lote", `${abas.find(([k]) => k === aba)?.[1]}: ${ok} de ${lista.length}${!aprovar ? ` · motivo: ${motivo}` : ""}`);
+    setLoteOcupado(""); setMotivoLote(null); desmarcarTodos(); recarregarAba();
+    const falhas = lista.length - ok;
+    avisar(`${ok} item(ns) ${aprovar ? "aprovado(s)" : "recusado(s)"}${falhas ? ` · ${falhas} com erro` : ""}${pulados ? ` · ${pulados} pulado(s) (check-in em aberto)` : ""}.`, falhas ? "erro" : aprovar ? "sucesso" : "info", 7000);
+  };
+  // caixa de seleção ao lado de cada cartão
+  const comCaixa = (chave, children, className = "") => {
+    const item = disponiveisLote.find((i) => i.chave === chave);
+    if (!item) return <div key={chave} className={className}>{children}</div>;
+    return (
+      <div key={chave} className={`flex gap-2 items-start ${className}`}>
+        <input type="checkbox" checked={selAba.has(chave)} onChange={() => marcar(chave)} disabled={!!loteOcupado}
+          className="mt-4 w-5 h-5 accent-cyan shrink-0 cursor-pointer" aria-label="Selecionar para aprovar ou recusar em lote"
+          title={item.bloqueado ? "Check-in em aberto: pode ser recusado, mas só é aprovado depois do check-out" : "Selecionar"} />
+        <div className={`flex-1 min-w-0 rounded-xl ${selAba.has(chave) ? "ring-2 ring-cyan/50" : ""}`}>{children}</div>
+      </div>
+    );
   };
 
   const abas = [
@@ -219,11 +287,36 @@ export default function AprovacoesPage() {
           ))}
         </div>
 
+        {/* ações em lote: marcar, aprovar e recusar vários itens de uma vez */}
+        {disponiveisLote.length > 0 && (
+          <div className="cartao p-3 mb-4 flex flex-wrap items-center gap-2 sticky top-2 z-20">
+            <span className="text-sm font-semibold mr-1">{selecionados.length} de {disponiveisLote.length} selecionado(s)</span>
+            <button onClick={marcarTodos} disabled={!!loteOcupado} className="btn btn-contorno btn-sm">Marcar todos</button>
+            <button onClick={desmarcarTodos} disabled={!!loteOcupado || !selecionados.length} className="btn btn-fantasma btn-sm">Desmarcar todos</button>
+            <div className="flex flex-wrap items-center gap-2 ml-auto">
+              {motivoLote !== null ? (<>
+                <input value={motivoLote} onChange={(e) => setMotivoLote(e.target.value)} autoFocus placeholder="Motivo da recusa (obrigatório)" className="input !py-1.5 !w-64 max-w-full" />
+                <button onClick={() => setMotivoLote(null)} disabled={!!loteOcupado} className="btn btn-fantasma btn-sm">Cancelar</button>
+                <button onClick={() => executarLote(false, motivoLote.trim())} disabled={!motivoLote.trim() || !!loteOcupado || !selecionados.length} className="btn btn-perigo btn-sm">
+                  {loteOcupado === "Recusando" ? <><Spinner /> Recusando...</> : `Confirmar recusa (${selecionados.length})`}
+                </button>
+              </>) : (<>
+                <button onClick={() => setMotivoLote("")} disabled={!!loteOcupado || !selecionados.length} className="btn btn-perigo btn-sm">Recusar ({selecionados.length})</button>
+                <button onClick={() => executarLote(true)} disabled={!!loteOcupado || !selecionados.length} className="btn btn-sucesso btn-sm">
+                  {loteOcupado === "Aprovando" ? <><Spinner /> Aprovando...</> : `Aprovar (${selecionados.length})`}
+                </button>
+              </>)}
+            </div>
+            {aba === "horas" && <div className="w-full texto-apoio">Em lote, as horas são aprovadas como lançadas (sem extras, ou com a sugestão de normais/extras do lançamento). Para ajustar, use o botão do cartão.</div>}
+            {aba === "rdos" && <div className="w-full texto-apoio">Em lote, os RDOs aprovados também atualizam o andamento das etapas no cronograma.</div>}
+          </div>
+        )}
+
         {aba === "rdos" && (
           <div className="flex flex-col gap-3">
             {c1 && <Esqueleto linhas={2} altura={140} />}
             {!c1 && rdosPendentes.length === 0 && <EstadoVazio icone="aprovar" titulo="Tudo em dia" texto="Nenhum RDO aguardando aprovação." />}
-            {rdosPendentes.map((rdo) => (
+            {rdosPendentes.map((rdo) => comCaixa(rdo.id,
               <RdoCard key={`${rdo.id}-${rdo.editado_em || ""}`} rdo={rdo} pi={piInfo(rdo.pi_id)} lider={nomeUsuario(rdo.lider_id)} editavel={podeRdo}
                 editadoPor={rdo.editado_por ? nomeUsuario(rdo.editado_por) : null}
                 ocorrencias={ocorrencias.filter((o) => o.rdo_id === rdo.id)}
@@ -240,10 +333,10 @@ export default function AprovacoesPage() {
             {c2 && <Esqueleto linhas={2} altura={120} />}
             {!c2 && horasPendentes.length === 0 && <EstadoVazio icone="relogio" titulo="Tudo em dia" texto="Nenhum registro de horas pendente." />}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              {cartoesHoras.map(({ chave, itens }) => itens.length > 1 ? (
+              {cartoesHoras.map(({ chave, itens }) => itens.length > 1 ? comCaixa(chave,
                 <GrupoHorasCard key={`${chave}-${itens.map((h) => h.horas_totais).join("|")}`} itens={itens} piInfo={piInfo} pessoa={nomeHoras(itens[0])}
-                  editavel={podeHoras} onAprovar={aprovarGrupo} onReprovar={(m) => reprovarGrupo(itens, m)} />
-              ) : itens.map((h) => (
+                  editavel={podeHoras} onAprovar={(a, b, c) => aprovarGrupo(a, b, c)} onReprovar={(m) => reprovarGrupo(itens, m)} />, "md:col-span-2"
+              ) : itens.map((h) => comCaixa(chave,
                 // a chave inclui o total: quando o check-out ou uma edição chega, o card reinicia os campos com o valor novo
                 <HorasCard key={`${h.id}-${h.horas_totais}`} registro={h} pi={piInfo(h.pi_id)} pessoa={nomeHoras(h)} editavel={podeHoras}
                   editadoPor={h.editado_por ? nomeUsuario(h.editado_por) : null}
@@ -259,7 +352,7 @@ export default function AprovacoesPage() {
           <div className="flex flex-col gap-3">
             {ocorrenciasPendentes.length === 0 && <EstadoVazio icone="alerta" titulo="Nenhuma ocorrência pendente" texto="Ocorrências registradas pela equipe no celular aparecem aqui (as de dentro de um RDO são aprovadas junto com o RDO)." />}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              {ocorrenciasPendentes.map((o) => (
+              {ocorrenciasPendentes.map((o) => comCaixa(o.id,
                 <CartaoOcorrencia key={`${o.id}-${o.editado_em || ""}`} oc={o} pi={piInfo(o.pi_id)} pis={pis} podeDecidir={podeOcorrencia}
                   pessoa={usuarios.find((u) => u.id === o.registrado_por)} onMudou={recarregarOcorrencias}
                   rodapeMaster={<AcoesMaster permissaoExcluir="ocorrencia.excluir" excluir={(motivo) => excluirOcorrencia({ oc: o, pi: piInfo(o.pi_id), usuario, motivo })} onExcluido={recarregarOcorrencias}
@@ -275,7 +368,7 @@ export default function AprovacoesPage() {
             {!c3 && solicitacoesPendentes.length === 0 && <EstadoVazio icone="editar" titulo="Nenhuma solicitação" texto="Pedidos de alteração de cronograma feitos pelos líderes aparecem aqui." />}
             {solicitacoesPendentes.map((s) => {
               const etapa = etapas.find((e) => e.id === s.etapa_id);
-              return (
+              return comCaixa(s.id,
                 <SolicitacaoCard key={s.id} s={s} etapa={etapa} pi={piInfo(etapa?.pi_id)} solicitante={nomeUsuario(s.solicitado_por)}
                   editadoPor={s.editado_por ? nomeUsuario(s.editado_por) : null}
                   editavel={podeSolicitacao} podeDecidir={podeDecidirSolicitacao(s)} finalizaDireto={usuario?.perfil === "master"}
